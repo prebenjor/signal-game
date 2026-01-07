@@ -1,0 +1,99 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Image Tabs Site</title>
+  <link rel="stylesheet" href="/styles.css" />
+</head>
+<body>
+  <div class="container">
+    <div class="header">
+      <div>
+        <div class="hTitle">Image Tabs Site</div>
+        <div class="hSub">Images + YouTube + Video detection (A+B+C)</div>
+      </div>
+    </div>
+
+    <div class="tabs">
+      <button id="tabImages" class="tab active">Images</button>
+      <button id="tabYoutube" class="tab">YouTube</button>
+      <button id="tabVideo" class="tab">Video (MP4/HLS)</button>
+      <button id="tabHistory" class="tab">History</button>
+    </div>
+
+    <div id="panelImages" class="panel">
+      <div class="toolbar">
+        <input id="urlInput" class="input" placeholder="Paste a page URL (https://...)" />
+        <button id="btnLoadImages" class="btn primary">Fetch images</button>
+      </div>
+      <div id="status" class="status"></div>
+      <div id="imageGrid" class="grid"></div>
+    </div>
+
+    <div id="panelYoutube" class="panel hidden">
+      <div class="toolbar">
+        <input id="ytInput" class="input" placeholder="Paste YouTube URL or ID" />
+        <button id="ytLoad" class="btn primary">Load</button>
+      </div>
+      <iframe id="ytFrame" class="ytFrame" allowfullscreen referrerpolicy="no-referrer"></iframe>
+    </div>
+
+    <div id="panelVideo" class="panel hidden">
+      <div class="hSub" style="margin-bottom:10px;">
+        Paste a direct MP4/WebM URL, a direct HLS (.m3u8), or a page URL with an embedded player.
+        If embedding is blocked by X-Frame-Options/CSP, use Advanced detection (headless).
+      </div>
+
+      <textarea id="videoInput" class="textarea" rows="4"
+        placeholder="Direct MP4: https://example.com/video.mp4
+Direct HLS: https://example.com/master.m3u8
+Page URL:  https://example.com/watch/123"></textarea>
+
+      <div class="videoControls">
+        <div class="left">
+          <button id="videoLoad" class="btn primary">Load</button>
+          <button id="videoDetect" class="btn">Detect</button>
+          <button id="videoEmbed" class="btn">Embed page</button>
+          <button id="videoOpen" class="btn">Open page</button>
+          <button id="videoClear" class="btn">Clear</button>
+        </div>
+
+        <label class="chk">
+          <input id="videoAdvanced" type="checkbox" />
+          Advanced detection (headless)
+        </label>
+      </div>
+
+      <div id="videoMsg" class="status" style="margin-top:10px;"></div>
+
+      <div id="streamCandidates" class="candidates hidden">
+        <div class="candTitle">Detected candidates</div>
+        <div id="candList"></div>
+      </div>
+
+      <video id="customVideo" class="customVideo" controls playsinline></video>
+
+      <div id="embedWrap" class="embedWrap hidden">
+        <div class="embedHead">
+          <div class="embedTitle">Embedded page</div>
+          <div class="embedNote" id="embedNote">If it’s blank, the site likely blocks iframes (CSP/X-Frame-Options).</div>
+        </div>
+        <iframe id="embedFrame" class="embedFrame" referrerpolicy="no-referrer"></iframe>
+      </div>
+    </div>
+
+    <div id="panelHistory" class="panel hidden">
+      <div class="history">
+        <div class="hSub">Stored locally in your browser.</div>
+        <div id="historyList"></div>
+      </div>
+    </div>
+  </div>
+
+  <div id="toast" class="toast"></div>
+
+  <script src="/vendor/hls.min.js"></script>
+  <script src="/app.js"></script>
+</body>
+</html>
