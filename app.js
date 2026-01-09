@@ -6,7 +6,7 @@
   const STORAGE_KEY = "signalDeskProfiles";
   const ACTIVE_KEY = "signalDeskActive";
   const TICK_RATE = 250;
-  const UI_RATE = 750;
+  const RENDER_MIN_MS = 120;
   const HEAVY_UI_RATE = 2000;
   const SAVE_INTERVAL = 10000;
   const AD_DURATION_MS = 8000;
@@ -365,7 +365,10 @@
     lastMapSeed: null,
     cachedRates: null,
     lastHeavyRenderAt: 0,
-    needsFullRender: true
+    needsFullRender: true,
+    dirty: {},
+    rafHandle: null,
+    nextRenderAt: 0
   };
 
   let ui = {};
@@ -379,6 +382,7 @@
     loadProfiles();
     applyActiveProfile();
     startLoops();
+    startRenderLoop();
   }
 
   function cacheUi() {
@@ -642,11 +646,11 @@
     applyPrefs(state.active.prefs);
     applyOfflineProgress(state.active.game);
     renderAccountSelect();
-    state.needsFullRender = true;
+    markFullRender();
     state.lastHeavyRenderAt = 0;
     state.lastMapSeed = null;
     drawMapIfNeeded();
-    render();
+    renderFrame(true);
   }
 
   function setActiveProfile(id) {
@@ -658,11 +662,11 @@
     applyPrefs(profile.prefs);
     applyOfflineProgress(profile.game);
     renderAccountSelect();
-    state.needsFullRender = true;
+    markFullRender();
     state.lastHeavyRenderAt = 0;
     state.lastMapSeed = null;
     drawMapIfNeeded();
-    render();
+    renderFrame(true);
     scheduleSave();
   }
 
@@ -717,7 +721,20 @@
   function startLoops() {
     state.lastTickAt = Date.now();
     setInterval(tick, TICK_RATE);
-    setInterval(render, UI_RATE);
+  }
+
+  function startRenderLoop() {
+    if (state.rafHandle) cancelAnimationFrame(state.rafHandle);
+    const loop = () => {
+      const now = performance.now();
+      if (now >= state.nextRenderAt) {
+        renderFrame(false);
+        state.nextRenderAt = now + RENDER_MIN_MS;
+      }
+      state.rafHandle = requestAnimationFrame(loop);
+    };
+    state.nextRenderAt = performance.now();
+    state.rafHandle = requestAnimationFrame(loop);
   }
 
   function tick() {
@@ -745,7 +762,7 @@
     if (now - state.lastSaveAt > SAVE_INTERVAL) saveState();
   }
 
-  function render() {
+  function renderFrame(force) {
     const game = getGame();
     if (!game) return;
 
@@ -759,23 +776,25 @@
     renderAccountSummary(game, rates);
     renderAdRelay(game, now);
 
-    const heavyDue = state.needsFullRender || now - state.lastHeavyRenderAt >= HEAVY_UI_RATE;
+    const heavyDue = force || state.needsFullRender || now - state.lastHeavyRenderAt >= HEAVY_UI_RATE;
+    const d = state.dirty;
+    if (heavyDue || d.upgrades) renderUpgrades(game, rates);
+    if (heavyDue || d.research) renderResearch(game);
+    if (heavyDue || d.meta) renderMeta(game);
+    if (heavyDue || d.faction) renderFactions(game);
+    if (heavyDue || d.legacy) renderLegacy(game, rates);
+    if (heavyDue || d.expeditions) renderExpeditions(game, rates, now);
+    if (heavyDue || d.missions) renderMissions(game, rates);
+    if (heavyDue || d.archive) renderArchive(game);
+    if (heavyDue || d.story) renderStory(game);
+    if (heavyDue || d.achievements) renderAchievements(game);
+    if (heavyDue || d.log) renderLog(game);
+    checkStoryUnlocks(game, rates);
+    checkAchievements(game, rates);
     if (heavyDue) {
-      renderUpgrades(game, rates);
-      renderResearch(game);
-      renderMeta(game);
-      renderFactions(game);
-      renderLegacy(game, rates);
-      renderExpeditions(game, rates, now);
-      renderMissions(game, rates);
-      renderArchive(game);
-      checkStoryUnlocks(game, rates);
-      renderStory(game);
-      checkAchievements(game, rates);
-      renderAchievements(game);
-      renderLog(game);
       state.needsFullRender = false;
       state.lastHeavyRenderAt = now;
+      clearDirty();
     }
 
     drawMapIfNeeded();
@@ -783,6 +802,30 @@
 
   function markFullRender() {
     state.needsFullRender = true;
+    state.dirty = {
+      upgrades: true,
+      research: true,
+      meta: true,
+      faction: true,
+      legacy: true,
+      expeditions: true,
+      missions: true,
+      archive: true,
+      story: true,
+      achievements: true,
+      log: true
+    };
+  }
+
+  function markSections(keys) {
+    if (!state.dirty) state.dirty = {};
+    keys.forEach((key) => {
+      state.dirty[key] = true;
+    });
+  }
+
+  function clearDirty() {
+    state.dirty = {};
   }
 
   function handleCollect() {
@@ -809,7 +852,7 @@
     const gain = Math.max(1, Math.floor((spend / 100) * rates.insightMult));
     gainInsight(game, gain);
     logEvent(game, `Converted ${formatNumber(spend)} signal into ${formatNumber(gain)} insight.`);
-    markFullRender();
+    markSections(["stats", "log", "research"]);
     scheduleSave();
   }
 
@@ -819,7 +862,7 @@
     game.mapSeed = randomSeed();
     state.lastMapSeed = null;
     logEvent(game, "Constellation map recalibrated.");
-    markFullRender();
+    markSections(["log"]);
     scheduleSave();
     drawMapIfNeeded();
   }
@@ -871,7 +914,7 @@
     ui.accountName.value = "";
     renderAccountSelect();
     renderAccountSummary(state.active.game, state.cachedRates || calculateRates(state.active.game, Date.now()));
-    markFullRender();
+    markSections(["log"]);
     scheduleSave();
   }
 
@@ -921,7 +964,7 @@
     game.cycle.upgrades += 1;
     game.stats.totalUpgrades += 1;
     logEvent(game, `Upgrade purchased: ${def.name}.`);
-    markFullRender();
+    markSections(["upgrades", "log", "missions", "stats"]);
     scheduleSave();
   }
 
@@ -962,7 +1005,7 @@
     game.insight -= cost;
     game.research[id] = level + 1;
     logEvent(game, `Research upgraded: ${def.name}.`);
-    markFullRender();
+    markSections(["research", "log", "stats"]);
     scheduleSave();
   }
 
@@ -987,7 +1030,7 @@
     game.starlight -= cost;
     game.meta[id] = level + 1;
     logEvent(game, `Meta upgraded: ${def.name}.`);
-    markFullRender();
+    markSections(["meta", "log"]);
     scheduleSave();
   }
 
@@ -1012,7 +1055,7 @@
     game.resonance -= cost;
     game.legacy[id] = level + 1;
     logEvent(game, `Legacy upgraded: ${def.name}.`);
-    markFullRender();
+    markSections(["legacy", "log"]);
     scheduleSave();
   }
 
@@ -1050,7 +1093,7 @@
     };
 
     logEvent(game, `${def.name} launched. ETA ${formatDuration(duration)}.`);
-    markFullRender();
+    markSections(["expeditions", "log"]);
     scheduleSave();
   }
 
@@ -1083,7 +1126,7 @@
       gainFactionRep(game, 3);
     }
 
-    markFullRender();
+    markSections(["expeditions", "log", "archive", "faction", "missions", "stats"]);
     scheduleSave();
   }
 
@@ -1126,7 +1169,7 @@
       logEvent(game, `Mission tier ${game.missions.tier} unlocked.`);
     }
 
-    markFullRender();
+    markSections(["missions", "log", "stats", "faction"]);
     scheduleSave();
   }
 
@@ -1723,7 +1766,7 @@
       if (entry.condition(game, rates)) {
         game.story.unlocked.push(entry.id);
         logEvent(game, `Transmission recovered: ${entry.title}.`);
-        markFullRender();
+        markSections(["story", "log"]);
       }
     });
   }
@@ -1979,7 +2022,7 @@
     const relic = createRelic();
     game.archive.push(relic);
     logEvent(game, `Relic recovered: ${relic.name}.`);
-    markFullRender();
+    markSections(["archive", "log", "story"]);
   }
 
   function createRelic() {
@@ -2176,46 +2219,54 @@
     if (!game || !ui.signalMap) return;
     if (state.lastMapSeed === game.mapSeed) return;
 
-    const canvas = ui.signalMap;
-    const ctx = canvas.getContext("2d");
-    const width = canvas.width;
-    const height = canvas.height;
-    const rand = makeSeededRandom(game.mapSeed);
+    const draw = () => {
+      const canvas = ui.signalMap;
+      const ctx = canvas.getContext("2d");
+      const width = canvas.width;
+      const height = canvas.height;
+      const rand = makeSeededRandom(game.mapSeed);
 
-    ctx.clearRect(0, 0, width, height);
-    ctx.fillStyle = "rgba(5, 10, 16, 0.8)";
-    ctx.fillRect(0, 0, width, height);
+      ctx.clearRect(0, 0, width, height);
+      ctx.fillStyle = "rgba(5, 10, 16, 0.8)";
+      ctx.fillRect(0, 0, width, height);
 
-    const stars = [];
-    const count = 42;
-    for (let i = 0; i < count; i += 1) {
-      stars.push({
-        x: rand() * width,
-        y: rand() * height,
-        r: 1 + rand() * 2.5
+      const stars = [];
+      const count = 42;
+      for (let i = 0; i < count; i += 1) {
+        stars.push({
+          x: rand() * width,
+          y: rand() * height,
+          r: 1 + rand() * 2.5
+        });
+      }
+
+      ctx.strokeStyle = "rgba(34, 211, 238, 0.25)";
+      ctx.lineWidth = 1;
+      for (let i = 0; i < stars.length - 1; i += 3) {
+        const a = stars[i];
+        const b = stars[i + 1];
+        if (!a || !b) continue;
+        ctx.beginPath();
+        ctx.moveTo(a.x, a.y);
+        ctx.lineTo(b.x, b.y);
+        ctx.stroke();
+      }
+
+      ctx.fillStyle = "rgba(255, 255, 255, 0.85)";
+      stars.forEach((star) => {
+        ctx.beginPath();
+        ctx.arc(star.x, star.y, star.r, 0, Math.PI * 2);
+        ctx.fill();
       });
+
+      state.lastMapSeed = game.mapSeed;
+    };
+
+    if (typeof window.requestIdleCallback === "function") {
+      requestIdleCallback(draw, { timeout: 120 });
+    } else {
+      setTimeout(draw, 0);
     }
-
-    ctx.strokeStyle = "rgba(34, 211, 238, 0.25)";
-    ctx.lineWidth = 1;
-    for (let i = 0; i < stars.length - 1; i += 3) {
-      const a = stars[i];
-      const b = stars[i + 1];
-      if (!a || !b) continue;
-      ctx.beginPath();
-      ctx.moveTo(a.x, a.y);
-      ctx.lineTo(b.x, b.y);
-      ctx.stroke();
-    }
-
-    ctx.fillStyle = "rgba(255, 255, 255, 0.85)";
-    stars.forEach((star) => {
-      ctx.beginPath();
-      ctx.arc(star.x, star.y, star.r, 0, Math.PI * 2);
-      ctx.fill();
-    });
-
-    state.lastMapSeed = game.mapSeed;
   }
 
   function openAdModal() {
@@ -2271,7 +2322,7 @@
   function logEvent(game, text) {
     game.log.push({ time: Date.now(), text });
     if (game.log.length > 50) game.log.shift();
-    markFullRender();
+    markSections(["log"]);
   }
 
   function toast(message) {
