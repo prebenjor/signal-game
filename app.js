@@ -6,12 +6,16 @@
   const STORAGE_KEY = "signalDeskProfiles";
   const ACTIVE_KEY = "signalDeskActive";
   const TICK_RATE = 250;
-  const UI_RATE = 500;
+  const UI_RATE = 750;
+  const HEAVY_UI_RATE = 2000;
   const SAVE_INTERVAL = 10000;
   const AD_DURATION_MS = 8000;
   const AD_BOOST_MS = 10 * 60 * 1000;
   const AD_COOLDOWN_MS = 15 * 60 * 1000;
   const AD_MULT = 1.4;
+  const OFFLINE_BASE_CAP = 4 * 60 * 60;
+  const OFFLINE_BASE_MULT = 0.65;
+  const FACTION_SWITCH_COOLDOWN = 12 * 60 * 60 * 1000;
 
   const UPGRADE_DEFS = [
     { id: "scanner", name: "Scanner Drones", desc: "Autonomous drones harvesting weak signal.", baseCost: 15, growth: 1.18, perSec: 0.4, click: 0.05 },
@@ -37,6 +41,13 @@
     { id: "shadow", name: "Shadow Ops", desc: "+2% mission rewards per level.", baseCost: 3, growth: 1.5, max: 20 },
     { id: "dampers", name: "Anomaly Dampers", desc: "-8% anomaly duration per level.", baseCost: 6, growth: 1.55, max: 8 },
     { id: "sponsor", name: "Sponsor Relations", desc: "-5% sponsor cooldown per level.", baseCost: 8, growth: 1.6, max: 8 }
+  ];
+
+  const META_DEFS = [
+    { id: "atlas", name: "Atlas Memory", desc: "+7% signal output per level.", baseCost: 2, growth: 1.7, max: 12 },
+    { id: "stasis", name: "Stasis Vaults", desc: "+25% offline cap per level.", baseCost: 2, growth: 1.65, max: 10 },
+    { id: "covenant", name: "Faction Concord", desc: "+10% faction reputation per level.", baseCost: 3, growth: 1.7, max: 10 },
+    { id: "uplink", name: "Star Uplink", desc: "+6% expedition rewards per level.", baseCost: 2, growth: 1.6, max: 12 }
   ];
 
   const EXPEDITION_DEFS = [
@@ -111,6 +122,35 @@
     { id: "insight", label: "Insight Focus", signal: 1, click: 1, insight: 1.15, mission: 1 },
     { id: "click", label: "Manual Edge", signal: 1, click: 1.2, insight: 1, mission: 1 },
     { id: "mission", label: "Mission Rally", signal: 1, click: 1, insight: 1, mission: 1.15 }
+  ];
+
+  const FACTION_DEFS = [
+    {
+      id: "helios",
+      name: "Helios Union",
+      desc: "Industrial harvesters focused on steady signal expansion.",
+      bonus: { signal: 0.08, offline: 0.2 }
+    },
+    {
+      id: "umbra",
+      name: "Umbra Collective",
+      desc: "Shadow analysts that amplify mission outcomes and relics.",
+      bonus: { mission: 0.12, relic: 0.05 }
+    },
+    {
+      id: "aether",
+      name: "Aether Guild",
+      desc: "Explorers who favor insight conversion and expeditions.",
+      bonus: { insight: 0.1, expedition: 0.08 }
+    }
+  ];
+
+  const FACTION_RANKS = [
+    { name: "Initiate", threshold: 0, mult: 1 },
+    { name: "Agent", threshold: 75, mult: 1.1 },
+    { name: "Operative", threshold: 200, mult: 1.2 },
+    { name: "Command", threshold: 500, mult: 1.35 },
+    { name: "Director", threshold: 1000, mult: 1.5 }
   ];
 
   const AI_EVENT_LIBRARY = [
@@ -263,6 +303,52 @@
       desc: "Reach mission tier 3.",
       test: (game) => game.missions.tier >= 3,
       reward: { type: "insight", amount: 20 }
+    },
+    {
+      id: "transcend",
+      name: "Starlight",
+      desc: "Transcend once.",
+      test: (game) => game.stats.transcends >= 1,
+      reward: { type: "starlight", amount: 2 }
+    }
+  ];
+
+  const STORY_ENTRIES = [
+    {
+      id: "signal_first",
+      title: "First Broadcast",
+      body: "The console hums to life. A faint signal breaks the noise and the relay lights up.",
+      condition: (game) => game.stats.totalEarned >= 2000
+    },
+    {
+      id: "faction_choice",
+      title: "Council Invitation",
+      body: "Three factions request your alignment. Each offers a different path through the drift.",
+      condition: (game) => !!game.faction.id
+    },
+    {
+      id: "ascend_echo",
+      title: "Resonance Echo",
+      body: "Your first ascent reverberates across the array. The system remembers you.",
+      condition: (game) => game.stats.lifetimeAscensions >= 1
+    },
+    {
+      id: "relic_found",
+      title: "Relic Recovered",
+      body: "A relic surfaces from the void, humming with archived intelligence.",
+      condition: (game) => game.archive.length >= 1
+    },
+    {
+      id: "directive_chain",
+      title: "Director's Pattern",
+      body: "The Director AI starts predicting your moves. Patterns emerge in the anomalies.",
+      condition: (game) => game.stats.anomalies >= 3
+    },
+    {
+      id: "starlight_seed",
+      title: "Starlight Seed",
+      body: "Beyond resonance lies starlight. A new lattice of power becomes available.",
+      condition: (game) => game.starlight >= 1
     }
   ];
 
@@ -277,7 +363,9 @@
     adTimeout: null,
     adEndsAt: 0,
     lastMapSeed: null,
-    cachedRates: null
+    cachedRates: null,
+    lastHeavyRenderAt: 0,
+    needsFullRender: true
   };
 
   let ui = {};
@@ -317,6 +405,7 @@
       anomalyStatus: $("#anomalyStatus"),
       buffStatus: $("#buffStatus"),
       adStatus: $("#adStatus"),
+      offlineStatus: $("#offlineStatus"),
       upgradeList: $("#upgradeList"),
       researchList: $("#researchList"),
       expeditionStatus: $("#expeditionStatus"),
@@ -327,12 +416,19 @@
       missionList: $("#missionList"),
       aiStatus: $("#aiStatus"),
       aiEvent: $("#aiEvent"),
+      factionStatus: $("#factionStatus"),
+      factionList: $("#factionList"),
       adRelayStatus: $("#adRelayStatus"),
       adBoostBtn: $("#adBoostBtn"),
+      metaStatus: $("#metaStatus"),
+      metaList: $("#metaList"),
+      transcendBtn: $("#transcendBtn"),
       legacyStatus: $("#legacyStatus"),
       legacyList: $("#legacyList"),
       archiveStatus: $("#archiveStatus"),
       archiveList: $("#archiveList"),
+      storyStatus: $("#storyStatus"),
+      storyList: $("#storyList"),
       achievementList: $("#achievementList"),
       logList: $("#logList"),
       accountName: $("#accountName"),
@@ -381,6 +477,13 @@
       });
     }
 
+    if (ui.metaList) {
+      ui.metaList.addEventListener("click", (event) => {
+        const btn = event.target.closest("button[data-meta]");
+        if (btn) buyMeta(btn.dataset.meta);
+      });
+    }
+
     if (ui.legacyList) {
       ui.legacyList.addEventListener("click", (event) => {
         const btn = event.target.closest("button[data-legacy]");
@@ -402,12 +505,21 @@
       });
     }
 
+    if (ui.factionList) {
+      ui.factionList.addEventListener("click", (event) => {
+        const btn = event.target.closest("button[data-faction]");
+        if (btn) selectFaction(btn.dataset.faction);
+      });
+    }
+
     if (ui.aiEvent) {
       ui.aiEvent.addEventListener("click", (event) => {
         const btn = event.target.closest("button[data-ai-option]");
         if (btn) resolveAiOption(btn.dataset.aiOption);
       });
     }
+
+    if (ui.transcendBtn) ui.transcendBtn.addEventListener("click", attemptTranscend);
 
     if (ui.accountCreate) ui.accountCreate.addEventListener("click", handleAccountCreate);
     if (ui.accountRename) ui.accountRename.addEventListener("click", handleAccountRename);
@@ -474,6 +586,14 @@
       if (event.altKey && event.key === "1") setMainTab("game");
       if (event.altKey && event.key === "2") setMainTab("profile");
     });
+
+    window.addEventListener("beforeunload", () => {
+      const game = getGame();
+      if (game) {
+        game.lastActiveAt = Date.now();
+        saveState();
+      }
+    });
   }
 
   function loadProfiles() {
@@ -501,6 +621,7 @@
 
   function saveState() {
     try {
+      if (state.active?.game) state.active.game.lastActiveAt = Date.now();
       localStorage.setItem(STORAGE_KEY, JSON.stringify({ version: 2, profiles: state.profiles }));
       localStorage.setItem(ACTIVE_KEY, state.activeId);
       state.lastSaveAt = Date.now();
@@ -519,7 +640,10 @@
     if (!state.active) return;
     normalizeProfile(state.active);
     applyPrefs(state.active.prefs);
+    applyOfflineProgress(state.active.game);
     renderAccountSelect();
+    state.needsFullRender = true;
+    state.lastHeavyRenderAt = 0;
     state.lastMapSeed = null;
     drawMapIfNeeded();
     render();
@@ -532,7 +656,10 @@
     state.activeId = profile.id;
     normalizeProfile(profile);
     applyPrefs(profile.prefs);
+    applyOfflineProgress(profile.game);
     renderAccountSelect();
+    state.needsFullRender = true;
+    state.lastHeavyRenderAt = 0;
     state.lastMapSeed = null;
     drawMapIfNeeded();
     render();
@@ -623,27 +750,39 @@
     if (!game) return;
 
     const now = Date.now();
-    applyDaily(game);
 
     const rates = state.cachedRates || calculateRates(game, now);
     state.cachedRates = rates;
 
     renderStats(game, rates, now);
-    renderUpgrades(game, rates);
-    renderResearch(game);
-    renderLegacy(game, rates);
-    renderExpeditions(game, rates, now);
-    renderMissions(game, rates);
     renderAiEvent(game, now);
-    renderArchive(game);
-
-    checkAchievements(game, rates);
-    renderAchievements(game);
-    renderLog(game);
     renderAccountSummary(game, rates);
     renderAdRelay(game, now);
 
+    const heavyDue = state.needsFullRender || now - state.lastHeavyRenderAt >= HEAVY_UI_RATE;
+    if (heavyDue) {
+      renderUpgrades(game, rates);
+      renderResearch(game);
+      renderMeta(game);
+      renderFactions(game);
+      renderLegacy(game, rates);
+      renderExpeditions(game, rates, now);
+      renderMissions(game, rates);
+      renderArchive(game);
+      checkStoryUnlocks(game, rates);
+      renderStory(game);
+      checkAchievements(game, rates);
+      renderAchievements(game);
+      renderLog(game);
+      state.needsFullRender = false;
+      state.lastHeavyRenderAt = now;
+    }
+
     drawMapIfNeeded();
+  }
+
+  function markFullRender() {
+    state.needsFullRender = true;
   }
 
   function handleCollect() {
@@ -670,6 +809,7 @@
     const gain = Math.max(1, Math.floor((spend / 100) * rates.insightMult));
     gainInsight(game, gain);
     logEvent(game, `Converted ${formatNumber(spend)} signal into ${formatNumber(gain)} insight.`);
+    markFullRender();
     scheduleSave();
   }
 
@@ -679,6 +819,7 @@
     game.mapSeed = randomSeed();
     state.lastMapSeed = null;
     logEvent(game, "Constellation map recalibrated.");
+    markFullRender();
     scheduleSave();
     drawMapIfNeeded();
   }
@@ -730,6 +871,7 @@
     ui.accountName.value = "";
     renderAccountSelect();
     renderAccountSummary(state.active.game, state.cachedRates || calculateRates(state.active.game, Date.now()));
+    markFullRender();
     scheduleSave();
   }
 
@@ -757,6 +899,7 @@
     state.active.game = createNewGame();
     state.lastMapSeed = null;
     applyActiveProfile();
+    markFullRender();
     scheduleSave();
   }
 
@@ -778,6 +921,7 @@
     game.cycle.upgrades += 1;
     game.stats.totalUpgrades += 1;
     logEvent(game, `Upgrade purchased: ${def.name}.`);
+    markFullRender();
     scheduleSave();
   }
 
@@ -818,6 +962,32 @@
     game.insight -= cost;
     game.research[id] = level + 1;
     logEvent(game, `Research upgraded: ${def.name}.`);
+    markFullRender();
+    scheduleSave();
+  }
+
+  function buyMeta(id) {
+    const game = getGame();
+    if (!game) return;
+    const def = META_DEFS.find((item) => item.id === id);
+    if (!def) return;
+
+    const level = getLevel(game.meta, id);
+    if (level >= def.max) {
+      toast("Meta upgrade already maxed.");
+      return;
+    }
+
+    const cost = getMetaCost(def, level);
+    if (game.starlight < cost) {
+      toast("Not enough starlight.");
+      return;
+    }
+
+    game.starlight -= cost;
+    game.meta[id] = level + 1;
+    logEvent(game, `Meta upgraded: ${def.name}.`);
+    markFullRender();
     scheduleSave();
   }
 
@@ -842,6 +1012,7 @@
     game.resonance -= cost;
     game.legacy[id] = level + 1;
     logEvent(game, `Legacy upgraded: ${def.name}.`);
+    markFullRender();
     scheduleSave();
   }
 
@@ -863,8 +1034,11 @@
 
     const rates = state.cachedRates || calculateRates(game, Date.now());
     const duration = Math.floor(def.duration * rates.expeditionSpeed);
-    const rewardSignal = Math.floor(def.rewardSignal * (1 + getLevel(game.legacy, "echo") * 0.02));
-    const rewardInsight = Math.floor(def.rewardInsight * (1 + getArchiveBonuses(game).insight));
+    const factionBonus = getFactionBonus(game);
+    const uplink = 1 + getLevel(game.meta, "uplink") * 0.06;
+    const rewardSignal = Math.floor(def.rewardSignal * uplink * (1 + getLevel(game.legacy, "echo") * 0.02));
+    const rewardInsight = Math.floor(def.rewardInsight * uplink * (1 + getArchiveBonuses(game).insight));
+    const successRate = clamp(def.success + factionBonus.expedition, 0.6, 0.95);
 
     game.expedition = {
       id: def.id,
@@ -872,10 +1046,11 @@
       endsAt: Date.now() + duration,
       rewardSignal,
       rewardInsight,
-      success: def.success
+      success: successRate
     };
 
     logEvent(game, `${def.name} launched. ETA ${formatDuration(duration)}.`);
+    markFullRender();
     scheduleSave();
   }
 
@@ -900,12 +1075,15 @@
       gainInsight(game, expedition.rewardInsight);
       logEvent(game, `${def.name} succeeded. +${formatNumber(expedition.rewardSignal)} signal.`);
       maybeDiscoverRelic(game, rates);
+      gainFactionRep(game, 8);
     } else {
       const salvage = Math.floor(expedition.rewardSignal * 0.25);
       gainSignal(game, salvage);
       logEvent(game, `${def.name} failed. Salvaged ${formatNumber(salvage)} signal.`);
+      gainFactionRep(game, 3);
     }
 
+    markFullRender();
     scheduleSave();
   }
 
@@ -938,6 +1116,7 @@
     const rates = state.cachedRates || calculateRates(game, Date.now());
     const reward = Math.floor(mission.reward * rates.missionMult);
     applyReward(game, { type: mission.rewardType, amount: reward });
+    gainFactionRep(game, Math.floor(4 + game.missions.tier * 2));
     mission.claimed = true;
     logEvent(game, `Mission complete: ${template.label.replace("{goal}", formatNumber(mission.goal))}.`);
 
@@ -947,6 +1126,29 @@
       logEvent(game, `Mission tier ${game.missions.tier} unlocked.`);
     }
 
+    markFullRender();
+    scheduleSave();
+  }
+
+  function selectFaction(id) {
+    const game = getGame();
+    if (!game) return;
+    const def = getFactionById(id);
+    if (!def) return;
+
+    const now = Date.now();
+    const remaining = getFactionCooldownRemaining(game);
+    if (game.faction.id && remaining > 0) {
+      toast(`Faction switch available in ${formatDuration(remaining)}.`);
+      return;
+    }
+
+    if (game.faction.id === id) return;
+    game.faction.id = id;
+    game.faction.rep = 0;
+    game.faction.selectedAt = now;
+    logEvent(game, `Aligned with ${def.name}.`);
+    markFullRender();
     scheduleSave();
   }
 
@@ -981,8 +1183,53 @@
     game.nextAnomalyAt = Date.now() + randRange(60000, 120000);
     game.expedition = null;
     game.stats.ascensions += 1;
+    game.stats.lifetimeAscensions += 1;
 
     logEvent(game, `Ascended. +${formatNumber(gain)} resonance gained.`);
+    markFullRender();
+    scheduleSave();
+  }
+
+  function attemptTranscend() {
+    const game = getGame();
+    if (!game) return;
+    const gain = getTranscendGain(game);
+
+    if (gain <= 0) {
+      toast("Not enough resonance to transcend.");
+      return;
+    }
+
+    const confirmed = window.confirm(
+      `Transcend for +${formatNumber(gain)} starlight? This resets resonance, legacy, upgrades, research, missions, expeditions, anomalies, relics, and ascension count.`
+    );
+    if (!confirmed) return;
+
+    game.starlight += gain;
+    game.signal = 0;
+    game.insight = 0;
+    game.resonance = 0;
+    game.upgrades = {};
+    game.research = {};
+    game.legacy = {};
+    game.missions = { tier: 1, list: [] };
+    game.cycle = createCycle();
+    game.aiEvent = null;
+    game.aiCooldownAt = Date.now() + randRange(60000, 120000);
+    game.buff = null;
+    game.ads = { cooldownUntil: 0, boostEndsAt: 0 };
+    game.anomaly = { label: "", mult: 1, endsAt: 0 };
+    game.nextAnomalyAt = Date.now() + randRange(60000, 120000);
+    game.expedition = null;
+    game.archive = [];
+    game.faction.rep = 0;
+    game.offline = { lastGain: 0, lastSeconds: 0, lastAt: Date.now() };
+    game.lastActiveAt = Date.now();
+    game.stats.ascensions = 0;
+    game.stats.transcends += 1;
+
+    logEvent(game, `Transcended. +${formatNumber(gain)} starlight gained.`);
+    markFullRender();
     scheduleSave();
   }
 
@@ -1017,9 +1264,12 @@
       signal: 0,
       insight: 0,
       resonance: 0,
+      starlight: 0,
       upgrades: {},
       research: {},
       legacy: {},
+      meta: {},
+      faction: { id: "", rep: 0, selectedAt: 0 },
       cycle: createCycle(),
       missions: { tier: 1, list: [] },
       aiEvent: null,
@@ -1032,6 +1282,9 @@
       expedition: null,
       mapSeed: randomSeed(),
       archive: [],
+      story: { unlocked: [] },
+      offline: { lastGain: 0, lastSeconds: 0, lastAt: 0 },
+      lastActiveAt: now,
       achievements: {},
       log: [],
       stats: {
@@ -1042,6 +1295,9 @@
         expeditions: 0,
         anomalies: 0,
         ascensions: 0,
+        lifetimeAscensions: 0,
+        transcends: 0,
+        totalOffline: 0,
         totalUpgrades: 0
       }
     };
@@ -1051,6 +1307,10 @@
     if (!game || typeof game !== "object") return createNewGame();
     const defaults = createNewGame();
     applyDefaults(game, defaults);
+    if (!game.faction || typeof game.faction !== "object") game.faction = { id: "", rep: 0, selectedAt: 0 };
+    if (typeof game.faction.rep !== "number") game.faction.rep = 0;
+    if (typeof game.faction.selectedAt !== "number") game.faction.selectedAt = 0;
+    if (!Array.isArray(game.story.unlocked)) game.story.unlocked = [];
     return game;
   }
 
@@ -1119,6 +1379,17 @@
     } else {
       setText(ui.adStatus, "Sponsor relay ready.");
     }
+
+    const offlineCap = getOfflineCap(game);
+    const offlineMult = getOfflineMultiplier(game);
+    if (game.offline.lastGain > 0 && game.offline.lastSeconds > 0) {
+      setText(
+        ui.offlineStatus,
+        `Offline recovery: +${formatNumber(game.offline.lastGain)} signal in ${formatDuration(game.offline.lastSeconds * 1000)}.`
+      );
+    } else {
+      setText(ui.offlineStatus, `Offline cap ${formatDuration(offlineCap * 1000)} at ${Math.round(offlineMult * 100)}% rate.`);
+    }
   }
 
   function renderUpgrades(game) {
@@ -1157,6 +1428,87 @@
     }).join("");
 
     setHtml(ui.researchList, html);
+  }
+
+  function renderMeta(game) {
+    if (!ui.metaList || !ui.metaStatus) return;
+    const threshold = getTranscendThreshold(game);
+    const gain = getTranscendGain(game);
+    setText(ui.metaStatus, `Starlight ${formatNumber(game.starlight)} | Transcend at ${formatNumber(threshold)} resonance for +${formatNumber(gain)}.`);
+    if (ui.transcendBtn) ui.transcendBtn.disabled = gain <= 0;
+
+    const html = META_DEFS.map((def) => {
+      const level = getLevel(game.meta, def.id);
+      const cost = getMetaCost(def, level);
+      const disabled = level >= def.max || game.starlight < cost;
+      return `
+        <div class="metaRow">
+          <div class="rowDetails">
+            <div class="rowTitle">${def.name} <span class="tag">Lv ${level}/${def.max}</span></div>
+            <div class="rowMeta">${def.desc}</div>
+          </div>
+          <button class="btn" data-meta="${def.id}" ${disabled ? "disabled" : ""}>Invest ${formatNumber(cost)}</button>
+        </div>
+      `;
+    }).join("");
+
+    setHtml(ui.metaList, html);
+  }
+
+  function renderFactions(game) {
+    if (!ui.factionList || !ui.factionStatus) return;
+    const factionDef = getFactionById(game.faction.id);
+    const rank = getFactionRank(game.faction.rep);
+    const nextRank = getNextFactionRank(game.faction.rep);
+    const remaining = getFactionCooldownRemaining(game);
+
+    if (factionDef) {
+      const nextLabel = nextRank ? ` | Next ${nextRank.name} at ${nextRank.threshold} rep` : "";
+      setText(ui.factionStatus, `Aligned with ${factionDef.name} (${rank.name}) | Rep ${game.faction.rep}${nextLabel}`);
+    } else {
+      setText(ui.factionStatus, "No faction selected.");
+    }
+
+    const html = FACTION_DEFS.map((def) => {
+      const active = def.id === game.faction.id;
+      const canSwitch = !active && remaining <= 0;
+      const bonusText = formatFactionBonuses(def, active ? rank.mult : 1);
+      const statusTag = active ? ` <span class="tag">${rank.name}</span>` : "";
+      const buttonLabel = active ? "Active" : canSwitch ? "Enlist" : `Cooldown ${formatDuration(remaining)}`;
+      return `
+        <div class="factionRow ${active ? "active" : ""}">
+          <div class="rowDetails">
+            <div class="rowTitle">${def.name}${statusTag}</div>
+            <div class="rowMeta">${def.desc} ${bonusText}</div>
+          </div>
+          <button class="btn" data-faction="${def.id}" ${active || !canSwitch ? "disabled" : ""}>${buttonLabel}</button>
+        </div>
+      `;
+    }).join("");
+
+    setHtml(ui.factionList, html);
+  }
+
+  function renderStory(game) {
+    if (!ui.storyList || !ui.storyStatus) return;
+    const unlocked = Array.isArray(game.story.unlocked) ? game.story.unlocked : [];
+    setText(ui.storyStatus, `Unlocked ${unlocked.length} / ${STORY_ENTRIES.length} transmissions.`);
+
+    const html = STORY_ENTRIES
+      .filter((entry) => unlocked.includes(entry.id))
+      .map(
+        (entry) => `
+        <div class="storyRow">
+          <div class="rowDetails">
+            <div class="rowTitle">${entry.title}</div>
+            <div class="rowMeta">${escapeHtml(entry.body)}</div>
+          </div>
+        </div>
+      `
+      )
+      .join("");
+
+    setHtml(ui.storyList, html || "<div class=\"status\">No transmissions recovered yet.</div>");
   }
 
   function renderLegacy(game, rates) {
@@ -1331,7 +1683,7 @@
 
   function renderAccountSummary(game, rates) {
     if (!state.active || !ui.accountSummary) return;
-    const text = `Active ${state.active.name} | Ascensions ${game.stats.ascensions} | Total signal ${formatNumber(game.stats.totalEarned)} | Per sec ${formatNumber(rates.perSec)}`;
+    const text = `Active ${state.active.name} | Ascensions ${game.stats.lifetimeAscensions} | Transcends ${game.stats.transcends} | Total signal ${formatNumber(game.stats.totalEarned)} | Per sec ${formatNumber(rates.perSec)}`;
     setText(ui.accountSummary, text);
   }
 
@@ -1360,6 +1712,47 @@
 
     setText(ui.adRelayStatus, `Boost ready. Cooldown ${formatDuration(cooldown)}.`);
     ui.adBoostBtn.disabled = false;
+  }
+
+  function checkStoryUnlocks(game, rates) {
+    if (!game.story) game.story = { unlocked: [] };
+    if (!Array.isArray(game.story.unlocked)) game.story.unlocked = [];
+
+    STORY_ENTRIES.forEach((entry) => {
+      if (game.story.unlocked.includes(entry.id)) return;
+      if (entry.condition(game, rates)) {
+        game.story.unlocked.push(entry.id);
+        logEvent(game, `Transmission recovered: ${entry.title}.`);
+        markFullRender();
+      }
+    });
+  }
+
+  function applyOfflineProgress(game) {
+    if (!game) return;
+    const now = Date.now();
+    const lastAt = game.lastActiveAt || now;
+    const elapsedSeconds = Math.max(0, (now - lastAt) / 1000);
+    const capSeconds = getOfflineCap(game);
+    const seconds = Math.min(elapsedSeconds, capSeconds);
+    if (seconds < 30) {
+      game.offline.lastGain = 0;
+      game.offline.lastSeconds = 0;
+      game.lastActiveAt = now;
+      return;
+    }
+
+    const rates = calculateRates(game, now);
+    const mult = getOfflineMultiplier(game);
+    const gain = Math.floor(rates.perSec * seconds * mult);
+    if (gain > 0) {
+      gainSignal(game, gain);
+      game.stats.totalOffline += gain;
+      game.offline = { lastGain: gain, lastSeconds: seconds, lastAt: now };
+      logEvent(game, `Offline recovery: +${formatNumber(gain)} signal in ${formatDuration(seconds * 1000)}.`);
+    }
+    game.lastActiveAt = now;
+    markFullRender();
   }
 
   function checkAchievements(game, rates) {
@@ -1490,20 +1883,32 @@
     const echo = getLevel(game.legacy, "echo");
     const insightLegacy = getLevel(game.legacy, "insight");
     const shadow = getLevel(game.legacy, "shadow");
+    const atlas = getLevel(game.meta, "atlas");
 
     const archiveBonus = getArchiveBonuses(game);
     const daily = getDailyBonus(game);
     const anomalyMult = getAnomalyMultiplier(game, now);
     const buff = getBuffBonus(game, now);
     const adMult = now < game.ads.boostEndsAt ? AD_MULT : 1;
+    const factionBonus = getFactionBonus(game);
 
-    const signalMult = (1 + compression * 0.08) * (1 + echo * 0.05) * (1 + archiveBonus.signal) * daily.signal * anomalyMult * buff.signal * adMult;
+    const signalMult =
+      (1 + compression * 0.08) *
+      (1 + echo * 0.05) *
+      (1 + atlas * 0.07) *
+      (1 + archiveBonus.signal) *
+      (1 + factionBonus.signal) *
+      daily.signal *
+      anomalyMult *
+      buff.signal *
+      adMult;
     const clickMult = (1 + archiveBonus.click) * daily.click * buff.click;
-    const insightMult = (1 + distill * 0.1) * (1 + insightLegacy * 0.06) * (1 + archiveBonus.insight) * daily.insight;
-    const missionMult = (1 + analytics * 0.1) * (1 + shadow * 0.02) * daily.mission;
+    const insightMult =
+      (1 + distill * 0.1) * (1 + insightLegacy * 0.06) * (1 + archiveBonus.insight) * (1 + factionBonus.insight) * daily.insight;
+    const missionMult = (1 + analytics * 0.1) * (1 + shadow * 0.02) * (1 + factionBonus.mission) * daily.mission;
     const resonanceMult = 1 + feedback * 0.04;
     const expeditionSpeed = Math.max(0.5, 1 - logistics * 0.08);
-    const relicChance = clamp(0.08 + catalyst * 0.06, 0, 0.5);
+    const relicChance = clamp(0.08 + catalyst * 0.06 + factionBonus.relic, 0, 0.6);
 
     return {
       perSec: upgradeTotals.perSec * signalMult,
@@ -1574,6 +1979,7 @@
     const relic = createRelic();
     game.archive.push(relic);
     logEvent(game, `Relic recovered: ${relic.name}.`);
+    markFullRender();
   }
 
   function createRelic() {
@@ -1602,6 +2008,7 @@
     if (reward.type === "signal") gainSignal(game, reward.amount);
     if (reward.type === "insight") gainInsight(game, reward.amount);
     if (reward.type === "resonance") game.resonance += reward.amount;
+    if (reward.type === "starlight") game.starlight += reward.amount;
   }
 
   function gainSignal(game, amount) {
@@ -1633,9 +2040,26 @@
     return Math.floor(AD_COOLDOWN_MS * mult);
   }
 
+  function getOfflineCap(game) {
+    const stasis = getLevel(game.meta, "stasis");
+    const factionBonus = getFactionBonus(game);
+    return Math.floor(OFFLINE_BASE_CAP * (1 + stasis * 0.25 + factionBonus.offline));
+  }
+
+  function getOfflineMultiplier(game) {
+    const factionBonus = getFactionBonus(game);
+    return OFFLINE_BASE_MULT * (1 + factionBonus.offline * 0.5);
+  }
+
   function getAscendThreshold(game) {
     const base = 60000;
     const scale = Math.pow(1.28, game.stats.ascensions);
+    return Math.floor(base * scale);
+  }
+
+  function getTranscendThreshold(game) {
+    const base = 120;
+    const scale = Math.pow(1.5, game.stats.transcends);
     return Math.floor(base * scale);
   }
 
@@ -1644,6 +2068,14 @@
     if (game.signal < threshold) return 0;
     const ratio = game.signal / threshold;
     const gain = Math.floor(Math.pow(ratio, 0.85) * 10 * rates.resonanceMult);
+    return Math.max(1, gain);
+  }
+
+  function getTranscendGain(game) {
+    const threshold = getTranscendThreshold(game);
+    if (game.resonance < threshold) return 0;
+    const ratio = game.resonance / threshold;
+    const gain = Math.floor(Math.pow(ratio, 0.9) * 3);
     return Math.max(1, gain);
   }
 
@@ -1659,8 +2091,80 @@
     return Math.floor(def.baseCost * Math.pow(def.growth, level));
   }
 
+  function getMetaCost(def, level) {
+    return Math.floor(def.baseCost * Math.pow(def.growth, level));
+  }
+
   function getLevel(map, id) {
     return map[id] || 0;
+  }
+
+  function getFactionById(id) {
+    return FACTION_DEFS.find((faction) => faction.id === id);
+  }
+
+  function getFactionRank(rep) {
+    let current = FACTION_RANKS[0];
+    for (let i = 0; i < FACTION_RANKS.length; i += 1) {
+      const rank = FACTION_RANKS[i];
+      if (rep >= rank.threshold) current = rank;
+    }
+    return current;
+  }
+
+  function getNextFactionRank(rep) {
+    for (let i = 0; i < FACTION_RANKS.length; i += 1) {
+      const rank = FACTION_RANKS[i];
+      if (rep < rank.threshold) return rank;
+    }
+    return null;
+  }
+
+  function getFactionCooldownRemaining(game) {
+    if (!game?.faction?.id) return 0;
+    const readyAt = (game.faction.selectedAt || 0) + FACTION_SWITCH_COOLDOWN;
+    return Math.max(0, readyAt - Date.now());
+  }
+
+  function getFactionBonus(game) {
+    const def = getFactionById(game.faction.id);
+    if (!def) {
+      return { signal: 0, mission: 0, insight: 0, relic: 0, expedition: 0, offline: 0 };
+    }
+    const rank = getFactionRank(game.faction.rep);
+    const mult = rank.mult;
+    return {
+      signal: (def.bonus.signal || 0) * mult,
+      mission: (def.bonus.mission || 0) * mult,
+      insight: (def.bonus.insight || 0) * mult,
+      relic: (def.bonus.relic || 0) * mult,
+      expedition: (def.bonus.expedition || 0) * mult,
+      offline: (def.bonus.offline || 0) * mult
+    };
+  }
+
+  function formatFactionBonuses(def, mult) {
+    const parts = [];
+    if (def.bonus.signal) parts.push(`Signal +${Math.round(def.bonus.signal * mult * 100)}%`);
+    if (def.bonus.mission) parts.push(`Mission +${Math.round(def.bonus.mission * mult * 100)}%`);
+    if (def.bonus.insight) parts.push(`Insight +${Math.round(def.bonus.insight * mult * 100)}%`);
+    if (def.bonus.relic) parts.push(`Relic +${Math.round(def.bonus.relic * mult * 100)}%`);
+    if (def.bonus.expedition) parts.push(`Expedition +${Math.round(def.bonus.expedition * mult * 100)}%`);
+    if (def.bonus.offline) parts.push(`Offline +${Math.round(def.bonus.offline * mult * 100)}%`);
+    return parts.length ? `| ${parts.join(", ")}` : "";
+  }
+
+  function gainFactionRep(game, baseAmount) {
+    if (!game.faction.id) return;
+    const before = getFactionRank(game.faction.rep);
+    const covenant = getLevel(game.meta, "covenant");
+    const amount = Math.max(1, Math.floor(baseAmount * (1 + covenant * 0.1)));
+    game.faction.rep += amount;
+    const after = getFactionRank(game.faction.rep);
+    if (after.name !== before.name) {
+      logEvent(game, `Faction rank up: ${after.name}.`);
+    }
+    markFullRender();
   }
 
   function getGame() {
@@ -1760,12 +2264,14 @@
     game.ads.boostEndsAt = now + AD_BOOST_MS;
     game.ads.cooldownUntil = now + cooldown;
     logEvent(game, "Sponsor boost active.");
+    markFullRender();
     scheduleSave();
   }
 
   function logEvent(game, text) {
     game.log.push({ time: Date.now(), text });
     if (game.log.length > 50) game.log.shift();
+    markFullRender();
   }
 
   function toast(message) {

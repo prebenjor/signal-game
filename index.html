@@ -72,6 +72,7 @@
           <div class="status" id="anomalyStatus"></div>
           <div class="status" id="buffStatus"></div>
           <div class="status" id="adStatus"></div>
+          <div class="status" id="offlineStatus"></div>
         </div>
 
         <div class="card" data-section="command">
@@ -86,6 +87,13 @@
           <div class="cardSub">Adaptive events surface choices and risks.</div>
           <div id="aiStatus" class="status"></div>
           <div id="aiEvent" class="aiEvent"></div>
+        </div>
+
+        <div class="card" data-section="command">
+          <div class="cardTitle">Faction Council</div>
+          <div class="cardSub">Align with a faction to shape rewards and directives.</div>
+          <div id="factionStatus" class="status"></div>
+          <div id="factionList" class="list"></div>
         </div>
 
         <div class="card" data-section="command">
@@ -115,6 +123,16 @@
         </div>
 
         <div class="card" data-section="legacy">
+          <div class="cardTitle">Meta Progression</div>
+          <div class="cardSub">Transcend to earn starlight and unlock permanent systems.</div>
+          <div id="metaStatus" class="status"></div>
+          <div class="row">
+            <button id="transcendBtn" class="btn primary">Transcend</button>
+          </div>
+          <div id="metaList" class="list"></div>
+        </div>
+
+        <div class="card" data-section="legacy">
           <div class="cardTitle">Legacy Vault</div>
           <div class="cardSub">Ascend to earn resonance, then invest in permanent upgrades.</div>
           <div id="legacyStatus" class="status"></div>
@@ -134,6 +152,13 @@
           <div class="cardSub">Relics discovered during expeditions boost passive output.</div>
           <div id="archiveStatus" class="status"></div>
           <div id="archiveList" class="list"></div>
+        </div>
+
+        <div class="card" data-section="records">
+          <div class="cardTitle">Story Archives</div>
+          <div class="cardSub">Recovered transmissions and faction reports.</div>
+          <div id="storyStatus" class="status"></div>
+          <div id="storyList" class="list"></div>
         </div>
 
         <div class="card" data-section="records">
