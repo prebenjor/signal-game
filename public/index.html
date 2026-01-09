@@ -1,99 +1,205 @@
-<!doctype html>
+﻿<!doctype html>
 <html lang="en">
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width,initial-scale=1" />
-  <title>Image Tabs Site</title>
+  <title>Signal Desk</title>
   <link rel="stylesheet" href="/styles.css" />
 </head>
 <body>
-  <div class="container">
-    <div class="header">
-      <div>
-        <div class="hTitle">Image Tabs Site</div>
-        <div class="hSub">Images + YouTube + Video detection (A+B+C)</div>
+  <div class="app">
+    <header class="topbar">
+      <div class="brand">
+        <div class="brandBadge">Signal Desk</div>
+        <div class="brandSub">Focus mode: game lab with local profiles.</div>
       </div>
-    </div>
-
-    <div class="tabs">
-      <button id="tabImages" class="tab active">Images</button>
-      <button id="tabYoutube" class="tab">YouTube</button>
-      <button id="tabVideo" class="tab">Video (MP4/HLS)</button>
-      <button id="tabHistory" class="tab">History</button>
-    </div>
-
-    <div id="panelImages" class="panel">
-      <div class="toolbar">
-        <input id="urlInput" class="input" placeholder="Paste a page URL (https://...)" />
-        <button id="btnLoadImages" class="btn primary">Fetch images</button>
+      <div class="tabs">
+        <button id="tab-game" class="tab active">Game</button>
+        <button id="tab-profile" class="tab">Profile</button>
       </div>
-      <div id="status" class="status"></div>
-      <div id="imageGrid" class="grid"></div>
-    </div>
+    </header>
 
-    <div id="panelYoutube" class="panel hidden">
-      <div class="toolbar">
-        <input id="ytInput" class="input" placeholder="Paste YouTube URL or ID" />
-        <button id="ytLoad" class="btn primary">Load</button>
-      </div>
-      <iframe id="ytFrame" class="ytFrame" allowfullscreen referrerpolicy="no-referrer"></iframe>
-    </div>
-
-    <div id="panelVideo" class="panel hidden">
-      <div class="hSub" style="margin-bottom:10px;">
-        Paste a direct MP4/WebM URL, a direct HLS (.m3u8), or a page URL with an embedded player.
-        If embedding is blocked by X-Frame-Options/CSP, use Advanced detection (headless).
+    <section id="panel-game" class="panel">
+      <div class="panelHeader">
+        <div>
+          <div class="panelTitle">Signal Miner</div>
+          <div class="panelSub">Collect signal, unlock research, run expeditions, and shape your constellation.</div>
+        </div>
+        <div class="panelActions">
+          <button id="gameClick" class="btn primary">Collect Signal (Space)</button>
+          <button id="convertInsight" class="btn">Convert Insight (C)</button>
+          <button id="ascendBtn" class="btn">Ascend</button>
+        </div>
       </div>
 
-      <textarea id="videoInput" class="textarea" rows="4"
-        placeholder="Direct MP4: https://example.com/video.mp4
-Direct HLS: https://example.com/master.m3u8
-Page URL:  https://example.com/watch/123"></textarea>
+      <div class="subtabs">
+        <button class="subtab active" data-section="command">Command</button>
+        <button class="subtab" data-section="ops">Operations</button>
+        <button class="subtab" data-section="legacy">Legacy</button>
+        <button class="subtab" data-section="records">Records</button>
+      </div>
 
-      <div class="videoControls">
-        <div class="left">
-          <button id="videoLoad" class="btn primary">Load</button>
-          <button id="videoDetect" class="btn">Detect</button>
-          <button id="videoEmbed" class="btn">Embed page</button>
-          <button id="videoOpen" class="btn">Open page</button>
-          <button id="videoClear" class="btn">Clear</button>
+      <div class="gameGrid">
+        <div class="card" data-section="command">
+          <div class="cardTitle">Core Stats</div>
+          <div class="statGrid">
+            <div class="statBox">
+              <span>Signal</span>
+              <strong id="statSignal">0</strong>
+            </div>
+            <div class="statBox">
+              <span>Per sec</span>
+              <strong id="statPerSec">0</strong>
+            </div>
+            <div class="statBox">
+              <span>Insight</span>
+              <strong id="statInsight">0</strong>
+            </div>
+            <div class="statBox">
+              <span>Resonance</span>
+              <strong id="statResonance">0</strong>
+            </div>
+            <div class="statBox">
+              <span>Click power</span>
+              <strong id="statClick">1</strong>
+            </div>
+            <div class="statBox">
+              <span>Forecast (60s)</span>
+              <strong id="statForecast">0</strong>
+            </div>
+          </div>
+          <div class="status" id="dailyStatus"></div>
+          <div class="status" id="anomalyStatus"></div>
+          <div class="status" id="buffStatus"></div>
+          <div class="status" id="adStatus"></div>
         </div>
 
-        <label class="chk">
-          <input id="videoAdvanced" type="checkbox" />
-          Advanced detection (headless)
-        </label>
-      </div>
-
-      <div id="videoMsg" class="status" style="margin-top:10px;"></div>
-
-      <div id="streamCandidates" class="candidates hidden">
-        <div class="candTitle">Detected candidates</div>
-        <div id="candList"></div>
-      </div>
-
-      <video id="customVideo" class="customVideo" controls playsinline></video>
-
-      <div id="embedWrap" class="embedWrap hidden">
-        <div class="embedHead">
-          <div class="embedTitle">Embedded page</div>
-          <div class="embedNote" id="embedNote">If it’s blank, the site likely blocks iframes (CSP/X-Frame-Options).</div>
+        <div class="card" data-section="command">
+          <div class="cardTitle">Mission Board</div>
+          <div class="cardSub">Cycle tasks scale with each ascent.</div>
+          <div id="missionStatus" class="status"></div>
+          <div id="missionList" class="list"></div>
         </div>
-        <iframe id="embedFrame" class="embedFrame" referrerpolicy="no-referrer"></iframe>
-      </div>
-    </div>
 
-    <div id="panelHistory" class="panel hidden">
-      <div class="history">
-        <div class="hSub">Stored locally in your browser.</div>
-        <div id="historyList"></div>
+        <div class="card" data-section="command">
+          <div class="cardTitle">Director AI</div>
+          <div class="cardSub">Adaptive events surface choices and risks.</div>
+          <div id="aiStatus" class="status"></div>
+          <div id="aiEvent" class="aiEvent"></div>
+        </div>
+
+        <div class="card" data-section="command">
+          <div class="cardTitle">Sponsor Relay</div>
+          <div class="cardSub">Optional boosts with cooldown timers.</div>
+          <div id="adRelayStatus" class="status"></div>
+          <div class="row">
+            <button id="adBoostBtn" class="btn primary">Watch Sponsor Clip</button>
+          </div>
+        </div>
+
+        <div class="card" data-section="ops">
+          <div class="cardTitle">Upgrades</div>
+          <div id="upgradeList" class="list"></div>
+        </div>
+
+        <div class="card" data-section="ops">
+          <div class="cardTitle">Research Lab</div>
+          <div class="cardSub">Spend insight to unlock permanent modifiers.</div>
+          <div id="researchList" class="list"></div>
+        </div>
+
+        <div class="card" data-section="ops">
+          <div class="cardTitle">Expeditions</div>
+          <div id="expeditionStatus" class="status"></div>
+          <div id="expeditionList" class="list"></div>
+        </div>
+
+        <div class="card" data-section="legacy">
+          <div class="cardTitle">Legacy Vault</div>
+          <div class="cardSub">Ascend to earn resonance, then invest in permanent upgrades.</div>
+          <div id="legacyStatus" class="status"></div>
+          <div id="legacyList" class="list"></div>
+        </div>
+
+        <div class="card" data-section="legacy">
+          <div class="cardTitle">Constellation Map</div>
+          <canvas id="signalMap" width="480" height="220"></canvas>
+          <div class="row">
+            <button id="mapRegen" class="btn">Recalibrate Map</button>
+          </div>
+        </div>
+
+        <div class="card" data-section="legacy">
+          <div class="cardTitle">Constellation Archive</div>
+          <div class="cardSub">Relics discovered during expeditions boost passive output.</div>
+          <div id="archiveStatus" class="status"></div>
+          <div id="archiveList" class="list"></div>
+        </div>
+
+        <div class="card" data-section="records">
+          <div class="cardTitle">Achievements</div>
+          <div id="achievementList" class="list"></div>
+        </div>
+
+        <div class="card" data-section="records">
+          <div class="cardTitle">Signal Log</div>
+          <div id="logList" class="list"></div>
+        </div>
+      </div>
+    </section>
+
+    <section id="panel-profile" class="panel hidden">
+      <div class="gridTwo">
+        <div class="card">
+          <div class="cardTitle">Accounts</div>
+          <div class="row">
+            <input id="accountName" class="input" placeholder="Account name" />
+            <button id="accountCreate" class="btn primary">Create</button>
+            <button id="accountRename" class="btn">Rename</button>
+            <button id="accountDelete" class="btn">Delete</button>
+          </div>
+          <div class="row">
+            <label class="chk">Active account:</label>
+            <select id="accountSelect" class="select"></select>
+          </div>
+          <div id="accountSummary" class="status"></div>
+        </div>
+
+        <div class="card">
+          <div class="cardTitle">Preferences</div>
+          <div class="row">
+            <label class="chk">Default tab:</label>
+            <select id="prefDefaultTab" class="select">
+              <option value="game">Game</option>
+              <option value="profile">Profile</option>
+            </select>
+          </div>
+          <div class="row">
+            <label class="chk"><input id="prefCompact" type="checkbox" /> Compact layout</label>
+          </div>
+          <div class="row">
+            <label class="chk"><input id="prefAdsEnabled" type="checkbox" /> Sponsor clips enabled</label>
+          </div>
+          <div class="row">
+            <button id="resetGame" class="btn">Reset Game</button>
+          </div>
+        </div>
+      </div>
+    </section>
+  </div>
+
+  <div id="adModal" class="adModal hidden">
+    <div class="adCard">
+      <div class="adTitle">Sponsor Clip</div>
+      <div class="adBody">A quick sponsor clip unlocks a timed signal boost.</div>
+      <div id="adCountdown" class="adCountdown">Preparing relay...</div>
+      <div class="row">
+        <button id="adCancel" class="btn">Cancel</button>
       </div>
     </div>
   </div>
 
   <div id="toast" class="toast"></div>
-
-  <script src="/vendor/hls.min.js"></script>
   <script src="/app.js"></script>
 </body>
 </html>

@@ -1,691 +1,1870 @@
-/* public/app.js */
-/* global Hls */
 
-const $ = (sel) => document.querySelector(sel);
+(() => {
+  const $ = (sel) => document.querySelector(sel);
+  const $$ = (sel) => Array.from(document.querySelectorAll(sel));
 
-// --------------------
-// UI helpers
-// --------------------
-function toast(msg) {
-  const el = $("#toast");
-  el.textContent = msg || "";
-  el.classList.add("show");
-  setTimeout(() => el.classList.remove("show"), 1800);
-}
+  const STORAGE_KEY = "signalDeskProfiles";
+  const ACTIVE_KEY = "signalDeskActive";
+  const TICK_RATE = 250;
+  const UI_RATE = 500;
+  const SAVE_INTERVAL = 10000;
+  const AD_DURATION_MS = 8000;
+  const AD_BOOST_MS = 10 * 60 * 1000;
+  const AD_COOLDOWN_MS = 15 * 60 * 1000;
+  const AD_MULT = 1.4;
 
-function setStatus(msg) {
-  $("#status").textContent = msg || "";
-}
+  const UPGRADE_DEFS = [
+    { id: "scanner", name: "Scanner Drones", desc: "Autonomous drones harvesting weak signal.", baseCost: 15, growth: 1.18, perSec: 0.4, click: 0.05 },
+    { id: "relay", name: "Relay Towers", desc: "Signal amplification backbone for long-haul sweeps.", baseCost: 85, growth: 1.2, perSec: 2.4, click: 0.15 },
+    { id: "well", name: "Quantum Wells", desc: "Stabilized wells that pull in dense signal.", baseCost: 460, growth: 1.22, perSec: 10, click: 0.35 },
+    { id: "forge", name: "Pulse Forge", desc: "High-frequency pulses convert noise to signal.", baseCost: 2200, growth: 1.23, perSec: 45, click: 0.8 },
+    { id: "neural", name: "Neural Arrays", desc: "Adaptive pattern mining for constant yield.", baseCost: 10000, growth: 1.24, perSec: 210, click: 1.6 },
+    { id: "void", name: "Void Extractors", desc: "Deep field extractors siphon latent signal.", baseCost: 65000, growth: 1.25, perSec: 920, click: 3.2 }
+  ];
 
-function setVideoMsg(msg) {
-  $("#videoMsg").textContent = msg || "";
-}
+  const RESEARCH_DEFS = [
+    { id: "compression", name: "Signal Compression", desc: "+8% signal output per level.", baseCost: 25, growth: 1.5, max: 6 },
+    { id: "distill", name: "Insight Distillation", desc: "+10% insight conversion per level.", baseCost: 20, growth: 1.45, max: 6 },
+    { id: "feedback", name: "Resonant Feedback", desc: "+4% resonance gain per level.", baseCost: 35, growth: 1.55, max: 5 },
+    { id: "logistics", name: "Expedition Logistics", desc: "-8% expedition time per level.", baseCost: 28, growth: 1.5, max: 5 },
+    { id: "catalyst", name: "Archive Catalyst", desc: "+6% relic discovery per level.", baseCost: 26, growth: 1.5, max: 5 },
+    { id: "analytics", name: "Mission Analytics", desc: "+10% mission rewards per level.", baseCost: 24, growth: 1.45, max: 6 }
+  ];
 
-function fixupUrlClient(s) {
-  const v = String(s || "").trim();
-  if (!v) return v;
-  if (/^[a-zA-Z][a-zA-Z0-9+\-.]*:/.test(v)) return v;
-  return `https://${v}`;
-}
+  const LEGACY_DEFS = [
+    { id: "echo", name: "Echo Amplifiers", desc: "+5% signal output per level.", baseCost: 4, growth: 1.6, max: 10 },
+    { id: "insight", name: "Residual Insight", desc: "+6% insight conversion per level.", baseCost: 4, growth: 1.6, max: 10 },
+    { id: "shadow", name: "Shadow Ops", desc: "+2% mission rewards per level.", baseCost: 3, growth: 1.5, max: 20 },
+    { id: "dampers", name: "Anomaly Dampers", desc: "-8% anomaly duration per level.", baseCost: 6, growth: 1.55, max: 8 },
+    { id: "sponsor", name: "Sponsor Relations", desc: "-5% sponsor cooldown per level.", baseCost: 8, growth: 1.6, max: 8 }
+  ];
 
-// Robust response parsing (prevents "Unexpected token '<'")
-async function readJsonOrText(r) {
-  const ct = (r.headers.get("content-type") || "").toLowerCase();
+  const EXPEDITION_DEFS = [
+    { id: "sweep", name: "Signal Sweep", desc: "Short range scan run.", cost: 250, duration: 45000, rewardSignal: 800, rewardInsight: 6, success: 0.9 },
+    { id: "deep", name: "Deep Listen", desc: "Mid-range expedition for rare signal.", cost: 1400, duration: 120000, rewardSignal: 5200, rewardInsight: 18, success: 0.8 },
+    { id: "rift", name: "Rift Traverse", desc: "High-risk venture into unstable bands.", cost: 9000, duration: 300000, rewardSignal: 30000, rewardInsight: 55, success: 0.7 }
+  ];
 
-  if (ct.includes("application/json")) {
-    const data = await r.json();
-    if (!r.ok) throw new Error(data?.error || `HTTP ${r.status}`);
-    return data;
-  }
-
-  const text = await r.text();
-  const snippet = text.slice(0, 220).replace(/\s+/g, " ");
-  throw new Error(`Expected JSON but got ${ct || "unknown"} (HTTP ${r.status}): ${snippet}`);
-}
-
-async function api(url) {
-  const r = await fetch(url);
-  return readJsonOrText(r);
-}
-
-// --------------------
-// URL normalization for detected candidates
-// --------------------
-// Converts JSON-style escapes (e.g., \u002D -> '-') and repairs common host-splitting artifacts.
-function decodeEscapes(s) {
-  let x = String(s || "");
-
-  // JSON often escapes forward slashes
-  x = x.replace(/\\\//g, "/");
-
-  // Convert \uXXXX sequences
-  x = x.replace(/\\u([0-9a-fA-F]{4})/g, (_m, hex) => {
-    try {
-      return String.fromCharCode(parseInt(hex, 16));
-    } catch {
-      return _m;
+  const MISSION_TEMPLATES = [
+    {
+      id: "earn",
+      label: "Harvest {goal} signal",
+      goal: (tier) => Math.floor(2500 * Math.pow(1.55, tier - 1)),
+      progress: (game) => game.cycle.earned,
+      rewardType: "signal",
+      rewardScale: 0.3
+    },
+    {
+      id: "spend",
+      label: "Spend {goal} signal",
+      goal: (tier) => Math.floor(2000 * Math.pow(1.55, tier - 1)),
+      progress: (game) => game.cycle.spent,
+      rewardType: "signal",
+      rewardScale: 0.25
+    },
+    {
+      id: "clicks",
+      label: "Manual calibrations: {goal}",
+      goal: (tier) => 140 + tier * 40,
+      progress: (game) => game.cycle.clicks,
+      rewardType: "signal",
+      rewardScale: 12
+    },
+    {
+      id: "expeditions",
+      label: "Run {goal} expeditions",
+      goal: (tier) => Math.max(2, Math.ceil(tier / 2) + 1),
+      progress: (game) => game.cycle.expeditions,
+      rewardType: "insight",
+      rewardScale: 6
+    },
+    {
+      id: "upgrades",
+      label: "Purchase {goal} upgrades",
+      goal: (tier) => 4 + tier,
+      progress: (game) => game.cycle.upgrades,
+      rewardType: "signal",
+      rewardScale: 500
+    },
+    {
+      id: "insight",
+      label: "Distill {goal} insight",
+      goal: (tier) => 90 + tier * 30,
+      progress: (game) => game.cycle.insight,
+      rewardType: "insight",
+      rewardScale: 0.25
     }
-  });
+  ];
 
-  return x;
-}
+  const RELIC_DEFS = [
+    { name: "Fractal Prism", type: "signal", bonus: 0.04 },
+    { name: "Echo Coil", type: "signal", bonus: 0.05 },
+    { name: "Drift Compass", type: "insight", bonus: 0.05 },
+    { name: "Chrono Lens", type: "click", bonus: 0.04 },
+    { name: "Stellar Loom", type: "signal", bonus: 0.06 },
+    { name: "Mnemonic Key", type: "insight", bonus: 0.04 },
+    { name: "Pulse Anchors", type: "click", bonus: 0.05 }
+  ];
 
-function normalizeCandidateUrl(raw) {
-  let s = decodeEscapes(raw).trim();
-  if (!s) return "";
+  const DAILY_EFFECTS = [
+    { id: "signal", label: "Signal Surge", signal: 1.1, click: 1, insight: 1, mission: 1 },
+    { id: "insight", label: "Insight Focus", signal: 1, click: 1, insight: 1.15, mission: 1 },
+    { id: "click", label: "Manual Edge", signal: 1, click: 1.2, insight: 1, mission: 1 },
+    { id: "mission", label: "Mission Rally", signal: 1, click: 1, insight: 1, mission: 1.15 }
+  ];
 
-  // Some captures yield "https://edge11/-hel.live.mmcdn.com/..." (host split by '/')
-  // Repair only when the part after slash clearly looks like it belongs to the host (contains a dot).
-  s = s.replace(/^https?:\/\/([^/]+)\/([^-\/][^/]*\.[^/].*)$/i, "https://$1$2");
-  s = s.replace(/^https?:\/\/([^/]+)\/(-[^/]+\.[^/].*)$/i, "https://$1$2");
+  const AI_EVENT_LIBRARY = [
+    {
+      id: "surge",
+      title: "Director: Signal Surge",
+      body: "A high-energy wave is inbound. Choose a directive.",
+      options: [
+        {
+          id: "stabilize",
+          label: "Stabilize Wave",
+          summary: "Signal +25% for 2 minutes.",
+          apply: (game) => applyBuff(game, "Stabilized Surge", 120000, 1.25, 1.05)
+        },
+        {
+          id: "harvest",
+          label: "Harvest Spike",
+          summary: "Gain instant signal.",
+          apply: (game) => gainSignal(game, Math.floor(600 + game.signal * 0.15))
+        }
+      ]
+    },
+    {
+      id: "rift",
+      title: "Director: Rift Echo",
+      body: "A volatile rift opens with weak stability.",
+      options: [
+        {
+          id: "anchor",
+          label: "Anchor Beacons",
+          summary: "Signal +15% and click +10% for 3 minutes.",
+          apply: (game) => applyBuff(game, "Anchored Beacons", 180000, 1.15, 1.1)
+        },
+        {
+          id: "salvage",
+          label: "Salvage Fragments",
+          summary: "Gain insight and a relic chance.",
+          apply: (game) => {
+            gainInsight(game, 10);
+            maybeDiscoverRelic(game, calculateRates(game, Date.now()));
+          }
+        }
+      ]
+    },
+    {
+      id: "protocol",
+      title: "Director: Containment Protocol",
+      body: "Incoming drift threatens signal integrity.",
+      options: [
+        {
+          id: "contain",
+          label: "Contain Drift",
+          summary: "Remove active anomaly and gain signal.",
+          apply: (game) => {
+            game.anomaly = { label: "", mult: 1, endsAt: 0 };
+            gainSignal(game, 1200);
+          }
+        },
+        {
+          id: "observe",
+          label: "Observe Pattern",
+          summary: "Gain insight and mission bonus.",
+          apply: (game) => {
+            gainInsight(game, 12);
+            applyBuff(game, "Pattern Insight", 150000, 1.05, 1.05);
+          }
+        }
+      ]
+    },
+    {
+      id: "sponsor",
+      title: "Director: Sponsor Ping",
+      body: "A sponsor requests priority routing.",
+      options: [
+        {
+          id: "accept",
+          label: "Accept Contract",
+          summary: "Reduce sponsor cooldown and gain signal.",
+          apply: (game) => {
+            game.ads.cooldownUntil = Math.max(Date.now(), game.ads.cooldownUntil - 120000);
+            gainSignal(game, 900);
+          }
+        },
+        {
+          id: "decline",
+          label: "Decline",
+          summary: "Gain a relic and reset anomaly timer.",
+          apply: (game) => {
+            maybeDiscoverRelic(game, calculateRates(game, Date.now()));
+            game.nextAnomalyAt = Date.now() + randRange(60000, 120000);
+          }
+        }
+      ]
+    }
+  ];
 
-  // Handle occasional accidental "https:\/\/*" leftovers (very rare)
-  s = s.replace(/^https?:\/+(?!\/)/i, (m) => (m.startsWith("https") ? "https://" : "http://"));
+  const ACHIEVEMENTS = [
+    {
+      id: "spark",
+      name: "First Spark",
+      desc: "Hold 1,000 signal.",
+      test: (game) => game.signal >= 1000,
+      reward: { type: "signal", amount: 500 }
+    },
+    {
+      id: "flow",
+      name: "Signal Flow",
+      desc: "Reach 50 signal per sec.",
+      test: (game, rates) => rates.perSec >= 50,
+      reward: { type: "insight", amount: 10 }
+    },
+    {
+      id: "insight",
+      name: "Clarity",
+      desc: "Earn 50 insight.",
+      test: (game) => game.stats.totalInsight >= 50,
+      reward: { type: "signal", amount: 1200 }
+    },
+    {
+      id: "voyager",
+      name: "Voyager",
+      desc: "Complete 5 expeditions.",
+      test: (game) => game.stats.expeditions >= 5,
+      reward: { type: "insight", amount: 15 }
+    },
+    {
+      id: "architect",
+      name: "Architect",
+      desc: "Purchase 20 upgrades.",
+      test: (game) => game.stats.totalUpgrades >= 20,
+      reward: { type: "signal", amount: 2000 }
+    },
+    {
+      id: "ascend",
+      name: "First Ascension",
+      desc: "Ascend once.",
+      test: (game) => game.stats.ascensions >= 1,
+      reward: { type: "resonance", amount: 6 }
+    },
+    {
+      id: "archive",
+      name: "Archivist",
+      desc: "Discover 3 relics.",
+      test: (game) => game.archive.length >= 3,
+      reward: { type: "resonance", amount: 4 }
+    },
+    {
+      id: "mission",
+      name: "Field Marshal",
+      desc: "Reach mission tier 3.",
+      test: (game) => game.missions.tier >= 3,
+      reward: { type: "insight", amount: 20 }
+    }
+  ];
 
-  return s;
-}
+  const state = {
+    profiles: [],
+    activeId: "",
+    active: null,
+    lastTickAt: Date.now(),
+    lastSaveAt: 0,
+    saveTimer: null,
+    adTimer: null,
+    adTimeout: null,
+    adEndsAt: 0,
+    lastMapSeed: null,
+    cachedRates: null
+  };
 
-function safeUrl(u) {
-  const s = normalizeCandidateUrl(u);
-  if (!s) return "";
-  try {
-    const parsed = new URL(s);
-    if (parsed.protocol !== "http:" && parsed.protocol !== "https:") return "";
-    return parsed.toString();
-  } catch {
-    return "";
+  let ui = {};
+  let toastTimer = null;
+
+  window.addEventListener("DOMContentLoaded", init);
+
+  function init() {
+    cacheUi();
+    bindUi();
+    loadProfiles();
+    applyActiveProfile();
+    startLoops();
   }
-}
 
-// --------------------
-// Tabs
-// --------------------
-function setTab(tab) {
-  $("#tabImages").classList.toggle("active", tab === "images");
-  $("#tabYoutube").classList.toggle("active", tab === "youtube");
-  $("#tabVideo").classList.toggle("active", tab === "video");
-  $("#tabHistory").classList.toggle("active", tab === "history");
-
-  $("#panelImages").classList.toggle("hidden", tab !== "images");
-  $("#panelYoutube").classList.toggle("hidden", tab !== "youtube");
-  $("#panelVideo").classList.toggle("hidden", tab !== "video");
-  $("#panelHistory").classList.toggle("hidden", tab !== "history");
-}
-
-// --------------------
-// History
-// --------------------
-const HISTORY_KEY = "site_history_v2";
-let history = loadHistory();
-
-function loadHistory() {
-  try {
-    const raw = localStorage.getItem(HISTORY_KEY);
-    const arr = raw ? JSON.parse(raw) : [];
-    return Array.isArray(arr) ? arr : [];
-  } catch {
-    return [];
+  function cacheUi() {
+    ui = {
+      tabs: {
+        game: $("#tab-game"),
+        profile: $("#tab-profile")
+      },
+      panels: {
+        game: $("#panel-game"),
+        profile: $("#panel-profile")
+      },
+      subtabs: $$(".subtab"),
+      gameClick: $("#gameClick"),
+      convertInsight: $("#convertInsight"),
+      ascendBtn: $("#ascendBtn"),
+      statSignal: $("#statSignal"),
+      statPerSec: $("#statPerSec"),
+      statInsight: $("#statInsight"),
+      statResonance: $("#statResonance"),
+      statClick: $("#statClick"),
+      statForecast: $("#statForecast"),
+      dailyStatus: $("#dailyStatus"),
+      anomalyStatus: $("#anomalyStatus"),
+      buffStatus: $("#buffStatus"),
+      adStatus: $("#adStatus"),
+      upgradeList: $("#upgradeList"),
+      researchList: $("#researchList"),
+      expeditionStatus: $("#expeditionStatus"),
+      expeditionList: $("#expeditionList"),
+      signalMap: $("#signalMap"),
+      mapRegen: $("#mapRegen"),
+      missionStatus: $("#missionStatus"),
+      missionList: $("#missionList"),
+      aiStatus: $("#aiStatus"),
+      aiEvent: $("#aiEvent"),
+      adRelayStatus: $("#adRelayStatus"),
+      adBoostBtn: $("#adBoostBtn"),
+      legacyStatus: $("#legacyStatus"),
+      legacyList: $("#legacyList"),
+      archiveStatus: $("#archiveStatus"),
+      archiveList: $("#archiveList"),
+      achievementList: $("#achievementList"),
+      logList: $("#logList"),
+      accountName: $("#accountName"),
+      accountCreate: $("#accountCreate"),
+      accountRename: $("#accountRename"),
+      accountDelete: $("#accountDelete"),
+      accountSelect: $("#accountSelect"),
+      accountSummary: $("#accountSummary"),
+      prefDefaultTab: $("#prefDefaultTab"),
+      prefCompact: $("#prefCompact"),
+      prefAdsEnabled: $("#prefAdsEnabled"),
+      resetGame: $("#resetGame"),
+      adModal: $("#adModal"),
+      adCountdown: $("#adCountdown"),
+      adCancel: $("#adCancel"),
+      toast: $("#toast")
+    };
   }
-}
 
-function saveHistory() {
-  try {
-    localStorage.setItem(HISTORY_KEY, JSON.stringify(history.slice(0, 200)));
-  } catch {}
-}
+  function bindUi() {
+    if (ui.tabs.game) ui.tabs.game.addEventListener("click", () => setMainTab("game"));
+    if (ui.tabs.profile) ui.tabs.profile.addEventListener("click", () => setMainTab("profile"));
 
-function addHistory(url) {
-  const u = (url || "").trim();
-  if (!u) return;
-  history = [u, ...history.filter((x) => x !== u)].slice(0, 200);
-  saveHistory();
-  renderHistory();
-}
-
-function renderHistory() {
-  const list = $("#historyList");
-  list.innerHTML = "";
-
-  if (!history.length) {
-    list.innerHTML = `<div class="empty">No history yet.</div>`;
-    return;
-  }
-
-  for (const url of history) {
-    const row = document.createElement("div");
-    row.className = "histRow";
-
-    const label = document.createElement("div");
-    label.className = "histLabel";
-    label.textContent = url;
-
-    const btnUseImages = document.createElement("button");
-    btnUseImages.className = "btn";
-    btnUseImages.textContent = "Use (Images)";
-    btnUseImages.addEventListener("click", () => {
-      $("#urlInput").value = url;
-      setTab("images");
-      toast("Loaded URL");
+    ui.subtabs.forEach((btn) => {
+      btn.addEventListener("click", () => setSubtab(btn.dataset.section));
     });
 
-    const btnUseVideo = document.createElement("button");
-    btnUseVideo.className = "btn";
-    btnUseVideo.textContent = "Use (Video)";
-    btnUseVideo.addEventListener("click", () => {
-      $("#videoInput").value = url;
-      setTab("video");
-      toast("Loaded URL");
-    });
+    if (ui.gameClick) ui.gameClick.addEventListener("click", handleCollect);
+    if (ui.convertInsight) ui.convertInsight.addEventListener("click", handleConvertInsight);
+    if (ui.ascendBtn) ui.ascendBtn.addEventListener("click", attemptAscend);
+    if (ui.mapRegen) ui.mapRegen.addEventListener("click", handleMapRegen);
+    if (ui.adBoostBtn) ui.adBoostBtn.addEventListener("click", handleAdBoost);
+    if (ui.adCancel) ui.adCancel.addEventListener("click", closeAdModal);
 
-    row.appendChild(label);
-    row.appendChild(btnUseImages);
-    row.appendChild(btnUseVideo);
-    list.appendChild(row);
-  }
-}
+    if (ui.upgradeList) {
+      ui.upgradeList.addEventListener("click", (event) => {
+        const btn = event.target.closest("button[data-upgrade]");
+        if (btn) buyUpgrade(btn.dataset.upgrade);
+      });
+    }
 
-// --------------------
-// Images
-// --------------------
-function isDataUrl(s) {
-  return typeof s === "string" && s.toLowerCase().startsWith("data:");
-}
+    if (ui.researchList) {
+      ui.researchList.addEventListener("click", (event) => {
+        const btn = event.target.closest("button[data-research]");
+        if (btn) buyResearch(btn.dataset.research);
+      });
+    }
 
-function isSvgSrc(src) {
-  const s = String(src || "").toLowerCase();
-  if (s.startsWith("data:image/svg+xml")) return true;
-  try {
-    const u = new URL(src);
-    return (u.pathname || "").toLowerCase().endsWith(".svg");
-  } catch {
-    return false;
-  }
-}
+    if (ui.legacyList) {
+      ui.legacyList.addEventListener("click", (event) => {
+        const btn = event.target.closest("button[data-legacy]");
+        if (btn) buyLegacy(btn.dataset.legacy);
+      });
+    }
 
-function proxiedImageSrc(src) {
-  return `/api/proxy?url=${encodeURIComponent(src)}`;
-}
+    if (ui.expeditionList) {
+      ui.expeditionList.addEventListener("click", (event) => {
+        const btn = event.target.closest("button[data-expedition]");
+        if (btn) startExpedition(btn.dataset.expedition);
+      });
+    }
 
-async function loadImages() {
-  const raw = ($("#urlInput").value || "").trim();
-  if (!raw) return toast("Paste a URL first.");
+    if (ui.missionList) {
+      ui.missionList.addEventListener("click", (event) => {
+        const btn = event.target.closest("button[data-mission]");
+        if (btn) claimMission(btn.dataset.mission);
+      });
+    }
 
-  const url = fixupUrlClient(raw);
-  addHistory(url);
+    if (ui.aiEvent) {
+      ui.aiEvent.addEventListener("click", (event) => {
+        const btn = event.target.closest("button[data-ai-option]");
+        if (btn) resolveAiOption(btn.dataset.aiOption);
+      });
+    }
 
-  setStatus("Fetching images…");
-  $("#imageGrid").innerHTML = "";
+    if (ui.accountCreate) ui.accountCreate.addEventListener("click", handleAccountCreate);
+    if (ui.accountRename) ui.accountRename.addEventListener("click", handleAccountRename);
+    if (ui.accountDelete) ui.accountDelete.addEventListener("click", handleAccountDelete);
+    if (ui.accountSelect) {
+      ui.accountSelect.addEventListener("change", (event) => {
+        setActiveProfile(event.target.value);
+      });
+    }
 
-  try {
-    const data = await api(`/api/scrape?url=${encodeURIComponent(url)}`);
-    const imgs = (data.images || []).filter((i) => i?.src && !isSvgSrc(i.src));
+    if (ui.accountName) {
+      ui.accountName.addEventListener("keydown", (event) => {
+        if (event.key === "Enter") handleAccountCreate();
+      });
+    }
 
-    setStatus(`Found ${imgs.length} candidates (SVG removed).`);
-    renderImages(imgs);
-  } catch (e) {
-    console.error(e);
-    setStatus("");
-    toast(e.message || "Failed");
-  }
-}
+    if (ui.prefDefaultTab) {
+      ui.prefDefaultTab.addEventListener("change", (event) => {
+        const value = event.target.value;
+        if (state.active) {
+          state.active.prefs.defaultTab = value;
+          setMainTab(value, false);
+          scheduleSave();
+        }
+      });
+    }
 
-function renderImages(imgs) {
-  const grid = $("#imageGrid");
-  grid.innerHTML = "";
+    if (ui.prefCompact) {
+      ui.prefCompact.addEventListener("change", (event) => {
+        if (state.active) {
+          state.active.prefs.compact = event.target.checked;
+          document.body.classList.toggle("compact", event.target.checked);
+          scheduleSave();
+        }
+      });
+    }
 
-  if (!imgs.length) {
-    grid.innerHTML = `<div class="empty">No images found.</div>`;
-    return;
-  }
+    if (ui.prefAdsEnabled) {
+      ui.prefAdsEnabled.addEventListener("change", (event) => {
+        if (state.active) {
+          state.active.prefs.adsEnabled = event.target.checked;
+          scheduleSave();
+        }
+      });
+    }
 
-  for (const img of imgs) {
-    const card = document.createElement("div");
-    card.className = "card pending";
-    card.style.visibility = "hidden";
+    if (ui.resetGame) ui.resetGame.addEventListener("click", handleResetGame);
 
-    const wrap = document.createElement("div");
-    wrap.className = "thumbWrap";
+    document.addEventListener("keydown", (event) => {
+      const tag = event.target?.tagName;
+      if (tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT") return;
 
-    const el = document.createElement("img");
-    el.className = "thumb";
-    el.loading = "lazy";
-    el.alt = img.alt || "";
-    el.src = proxiedImageSrc(img.src);
-
-    el.addEventListener("error", () => card.remove());
-    el.addEventListener("load", () => {
-      const w = el.naturalWidth || 0;
-      const h = el.naturalHeight || 0;
-
-      if (w === 0 || h === 0 || (w <= 2 && h <= 2) || (w < 32 && h < 32)) {
-        card.remove();
+      if (event.code === "Space") {
+        event.preventDefault();
+        handleCollect();
         return;
       }
 
-      card.style.visibility = "visible";
-      card.classList.remove("pending");
+      if (event.key === "c" || event.key === "C") handleConvertInsight();
+      if (event.key === "a" || event.key === "A") attemptAscend();
+      if (event.key === "u" || event.key === "U") buyCheapestUpgrade();
+      if (event.key === "e" || event.key === "E") startQuickExpedition();
+
+      if (event.altKey && event.key === "1") setMainTab("game");
+      if (event.altKey && event.key === "2") setMainTab("profile");
+    });
+  }
+
+  function loadProfiles() {
+    let data = null;
+    const raw = localStorage.getItem(STORAGE_KEY);
+    if (raw) {
+      try {
+        data = JSON.parse(raw);
+      } catch {}
+    }
+
+    if (data && Array.isArray(data.profiles)) {
+      state.profiles = data.profiles;
+    } else {
+      state.profiles = [createProfile("Pilot")];
+    }
+
+    state.profiles.forEach(normalizeProfile);
+
+    const storedActive = localStorage.getItem(ACTIVE_KEY);
+    const found = state.profiles.find((profile) => profile.id === storedActive);
+    state.active = found || state.profiles[0];
+    state.activeId = state.active.id;
+  }
+
+  function saveState() {
+    try {
+      localStorage.setItem(STORAGE_KEY, JSON.stringify({ version: 2, profiles: state.profiles }));
+      localStorage.setItem(ACTIVE_KEY, state.activeId);
+      state.lastSaveAt = Date.now();
+    } catch {}
+  }
+
+  function scheduleSave() {
+    if (state.saveTimer) return;
+    state.saveTimer = setTimeout(() => {
+      state.saveTimer = null;
+      saveState();
+    }, 1500);
+  }
+
+  function applyActiveProfile() {
+    if (!state.active) return;
+    normalizeProfile(state.active);
+    applyPrefs(state.active.prefs);
+    renderAccountSelect();
+    state.lastMapSeed = null;
+    drawMapIfNeeded();
+    render();
+  }
+
+  function setActiveProfile(id) {
+    const profile = state.profiles.find((p) => p.id === id);
+    if (!profile) return;
+    state.active = profile;
+    state.activeId = profile.id;
+    normalizeProfile(profile);
+    applyPrefs(profile.prefs);
+    renderAccountSelect();
+    state.lastMapSeed = null;
+    drawMapIfNeeded();
+    render();
+    scheduleSave();
+  }
+
+  function renderAccountSelect() {
+    if (!ui.accountSelect) return;
+    const html = state.profiles
+      .map((profile) => `<option value="${profile.id}">${escapeHtml(profile.name)}</option>`)
+      .join("");
+    setHtml(ui.accountSelect, html);
+    ui.accountSelect.value = state.activeId;
+  }
+
+  function applyPrefs(prefs) {
+    if (!prefs) return;
+    if (ui.prefDefaultTab) ui.prefDefaultTab.value = prefs.defaultTab || "game";
+    if (ui.prefCompact) ui.prefCompact.checked = !!prefs.compact;
+    if (ui.prefAdsEnabled) ui.prefAdsEnabled.checked = prefs.adsEnabled !== false;
+    document.body.classList.toggle("compact", !!prefs.compact);
+    setMainTab(prefs.defaultTab || "game", false);
+    setSubtab(prefs.gameSection || "command", false);
+  }
+
+  function setMainTab(tab, persist = true) {
+    if (!ui.panels.game || !ui.panels.profile) return;
+    const isGame = tab === "game";
+    ui.panels.game.classList.toggle("hidden", !isGame);
+    ui.panels.profile.classList.toggle("hidden", isGame);
+    if (ui.tabs.game) ui.tabs.game.classList.toggle("active", isGame);
+    if (ui.tabs.profile) ui.tabs.profile.classList.toggle("active", !isGame);
+
+    if (persist && state.active) {
+      state.active.prefs.defaultTab = tab;
+      scheduleSave();
+    }
+  }
+
+  function setSubtab(section, persist = true) {
+    ui.subtabs.forEach((btn) => {
+      btn.classList.toggle("active", btn.dataset.section === section);
     });
 
-    wrap.appendChild(el);
+    document.querySelectorAll(".gameGrid .card[data-section]").forEach((card) => {
+      card.classList.toggle("hidden", card.getAttribute("data-section") !== section);
+    });
 
-    const meta = document.createElement("div");
-    meta.className = "meta";
-
-    const title = document.createElement("div");
-    title.className = "metaTitle";
-    title.textContent = isDataUrl(img.src) ? "Inline image (base64)" : img.src;
-
-    const alt = document.createElement("div");
-    alt.className = "metaAlt";
-    alt.textContent = img.alt || " ";
-
-    meta.appendChild(title);
-    meta.appendChild(alt);
-
-    card.appendChild(wrap);
-    card.appendChild(meta);
-    grid.appendChild(card);
-  }
-}
-
-// --------------------
-// YouTube
-// --------------------
-function extractYoutubeId(s) {
-  const v = String(s || "").trim();
-  if (/^[a-zA-Z0-9_-]{11}$/.test(v)) return v;
-
-  try {
-    const u = new URL(v);
-    if (u.hostname.includes("youtu.be")) {
-      const id = u.pathname.split("/").filter(Boolean)[0];
-      if (id && /^[a-zA-Z0-9_-]{11}$/.test(id)) return id;
+    if (persist && state.active) {
+      state.active.prefs.gameSection = section;
+      scheduleSave();
     }
-    if (u.hostname.includes("youtube.com")) {
-      const id = u.searchParams.get("v");
-      if (id && /^[a-zA-Z0-9_-]{11}$/.test(id)) return id;
+  }
+
+  function startLoops() {
+    state.lastTickAt = Date.now();
+    setInterval(tick, TICK_RATE);
+    setInterval(render, UI_RATE);
+  }
+
+  function tick() {
+    const game = getGame();
+    if (!game) return;
+
+    const now = Date.now();
+    const delta = Math.min((now - state.lastTickAt) / 1000, 3);
+    state.lastTickAt = now;
+
+    applyDaily(game);
+    updateAnomaly(game, now);
+    updateAiEvent(game, now);
+    updateBuff(game, now);
+
+    const rates = calculateRates(game, now);
+    state.cachedRates = rates;
+
+    if (rates.perSec > 0 && delta > 0) {
+      gainSignal(game, rates.perSec * delta);
     }
-  } catch {}
-  return null;
-}
 
-function loadYoutube() {
-  const input = ($("#ytInput").value || "").trim();
-  if (!input) return toast("Paste a YouTube link or ID.");
+    updateExpedition(game, now, rates);
 
-  const id = extractYoutubeId(input);
-  if (!id) return toast("Could not parse YouTube ID.");
-
-  $("#ytFrame").src = `https://www.youtube-nocookie.com/embed/${encodeURIComponent(id)}?rel=0`;
-  toast("Loaded YouTube");
-}
-
-// --------------------
-// Video (A+B+C)
-// --------------------
-let hlsInstance = null;
-
-function destroyHls() {
-  if (hlsInstance) {
-    try {
-      hlsInstance.destroy();
-    } catch {}
-    hlsInstance = null;
-  }
-}
-
-function hideCandidates() {
-  $("#streamCandidates").classList.add("hidden");
-  $("#candList").innerHTML = "";
-}
-
-function hideEmbed() {
-  $("#embedWrap").classList.add("hidden");
-  $("#embedFrame").src = "about:blank";
-}
-
-function clearVideo() {
-  destroyHls();
-  hideCandidates();
-  hideEmbed();
-
-  const v = $("#customVideo");
-  try {
-    v.pause();
-  } catch {}
-  v.removeAttribute("src");
-  v.load();
-
-  setVideoMsg("");
-}
-
-function parseVideoUrl(raw) {
-  const s0 = String(raw || "").trim();
-  if (!s0) return { error: "Paste a URL first." };
-
-  if (s0.toLowerCase().startsWith("blob:")) {
-    return { error: "blob: URLs only work inside the original page/tab and cannot be embedded elsewhere." };
+    if (now - state.lastSaveAt > SAVE_INTERVAL) saveState();
   }
 
-  const s = fixupUrlClient(s0);
-  let u;
-  try {
-    u = new URL(s);
-  } catch {
-    return { error: "Invalid URL." };
-  }
-  if (u.protocol !== "http:" && u.protocol !== "https:") return { error: "Only http/https URLs are supported." };
+  function render() {
+    const game = getGame();
+    if (!game) return;
 
-  const p = (u.pathname || "").toLowerCase();
-  const isHls = p.endsWith(".m3u8");
-  const isDash = p.endsWith(".mpd");
-  const isFile = p.endsWith(".mp4") || p.endsWith(".webm") || p.endsWith(".ogg");
-  const isPage = !isHls && !isDash && !isFile;
+    const now = Date.now();
+    applyDaily(game);
 
-  return { url: u.toString(), isHls, isDash, isFile, isPage };
-}
+    const rates = state.cachedRates || calculateRates(game, now);
+    state.cachedRates = rates;
 
-function canPlayNativeHls(videoEl) {
-  const t = videoEl.canPlayType("application/vnd.apple.mpegurl");
-  return t === "probably" || t === "maybe";
-}
+    renderStats(game, rates, now);
+    renderUpgrades(game, rates);
+    renderResearch(game);
+    renderLegacy(game, rates);
+    renderExpeditions(game, rates, now);
+    renderMissions(game, rates);
+    renderAiEvent(game, now);
+    renderArchive(game);
 
-async function loadHls(urlRaw) {
-  const url = safeUrl(urlRaw);
-  if (!url) {
-    setVideoMsg("HLS candidate URL could not be normalized into a valid URL.");
-    return;
+    checkAchievements(game, rates);
+    renderAchievements(game);
+    renderLog(game);
+    renderAccountSummary(game, rates);
+    renderAdRelay(game, now);
+
+    drawMapIfNeeded();
   }
 
-  hideEmbed();
-  const video = $("#customVideo");
-  destroyHls();
-
-  if (canPlayNativeHls(video)) {
-    video.src = url;
-    video.load();
-    video.play().catch(() => {});
-    setVideoMsg("Loaded HLS (native).");
-    return;
+  function handleCollect() {
+    const game = getGame();
+    if (!game) return;
+    const rates = state.cachedRates || calculateRates(game, Date.now());
+    gainSignal(game, rates.clickPower);
+    game.cycle.clicks += 1;
+    game.stats.totalClicks += 1;
+    scheduleSave();
   }
 
-  if (!window.Hls) {
-    setVideoMsg("hls.js not loaded. Check /vendor/hls.min.js.");
-    return;
-  }
-  if (!window.Hls.isSupported()) {
-    setVideoMsg("HLS not supported by this browser.");
-    return;
+  function handleConvertInsight() {
+    const game = getGame();
+    if (!game) return;
+    const rates = state.cachedRates || calculateRates(game, Date.now());
+    const spend = Math.floor(game.signal * 0.2);
+    if (spend < 50) {
+      toast("Need at least 50 signal to convert.");
+      return;
+    }
+
+    if (!spendSignal(game, spend)) return;
+    const gain = Math.max(1, Math.floor((spend / 100) * rates.insightMult));
+    gainInsight(game, gain);
+    logEvent(game, `Converted ${formatNumber(spend)} signal into ${formatNumber(gain)} insight.`);
+    scheduleSave();
   }
 
-  hlsInstance = new window.Hls({ enableWorker: true, lowLatencyMode: true });
+  function handleMapRegen() {
+    const game = getGame();
+    if (!game) return;
+    game.mapSeed = randomSeed();
+    state.lastMapSeed = null;
+    logEvent(game, "Constellation map recalibrated.");
+    scheduleSave();
+    drawMapIfNeeded();
+  }
 
-  hlsInstance.on(window.Hls.Events.ERROR, (_ev, data) => {
-    console.error("[HLS ERROR]", data);
-    if (data?.type === "networkError") {
-      setVideoMsg("HLS network error. Likely CORS blocked playlist/segments or signed segments require origin cookies.");
+  function handleAdBoost() {
+    const profile = state.active;
+    if (!profile || !profile.prefs.adsEnabled) {
+      toast("Sponsor clips are disabled.");
+      return;
+    }
+
+    const game = getGame();
+    if (!game) return;
+    const now = Date.now();
+    const cooldown = getAdCooldownMs(game);
+
+    if (now < game.ads.cooldownUntil) {
+      toast(`Sponsor available in ${formatDuration(game.ads.cooldownUntil - now)}.`);
+      return;
+    }
+
+    openAdModal();
+  }
+
+  function handleAccountCreate() {
+    if (!ui.accountName) return;
+    const name = (ui.accountName.value || "").trim();
+    if (!name) {
+      toast("Enter a name to create an account.");
+      return;
+    }
+
+    const profile = createProfile(name);
+    state.profiles.push(profile);
+    ui.accountName.value = "";
+    setActiveProfile(profile.id);
+    scheduleSave();
+  }
+
+  function handleAccountRename() {
+    if (!ui.accountName || !state.active) return;
+    const name = (ui.accountName.value || "").trim();
+    if (!name) {
+      toast("Enter a new name.");
+      return;
+    }
+
+    state.active.name = name;
+    ui.accountName.value = "";
+    renderAccountSelect();
+    renderAccountSummary(state.active.game, state.cachedRates || calculateRates(state.active.game, Date.now()));
+    scheduleSave();
+  }
+
+  function handleAccountDelete() {
+    if (!state.active) return;
+    if (state.profiles.length <= 1) {
+      toast("Create another account before deleting this one.");
+      return;
+    }
+
+    const confirmed = window.confirm("Delete this account and its progress?");
+    if (!confirmed) return;
+
+    state.profiles = state.profiles.filter((profile) => profile.id !== state.activeId);
+    state.active = state.profiles[0];
+    state.activeId = state.active.id;
+    applyActiveProfile();
+    scheduleSave();
+  }
+
+  function handleResetGame() {
+    if (!state.active) return;
+    const confirmed = window.confirm("Reset game progress for this account?");
+    if (!confirmed) return;
+    state.active.game = createNewGame();
+    state.lastMapSeed = null;
+    applyActiveProfile();
+    scheduleSave();
+  }
+
+  function buyUpgrade(id) {
+    const game = getGame();
+    if (!game) return;
+    const def = UPGRADE_DEFS.find((item) => item.id === id);
+    if (!def) return;
+
+    const level = getLevel(game.upgrades, id);
+    const cost = getUpgradeCost(def, level);
+
+    if (!spendSignal(game, cost)) {
+      toast("Not enough signal.");
+      return;
+    }
+
+    game.upgrades[id] = level + 1;
+    game.cycle.upgrades += 1;
+    game.stats.totalUpgrades += 1;
+    logEvent(game, `Upgrade purchased: ${def.name}.`);
+    scheduleSave();
+  }
+
+  function buyCheapestUpgrade() {
+    const game = getGame();
+    if (!game) return;
+
+    let cheapest = null;
+    UPGRADE_DEFS.forEach((def) => {
+      const level = getLevel(game.upgrades, def.id);
+      const cost = getUpgradeCost(def, level);
+      if (!cheapest || cost < cheapest.cost) {
+        cheapest = { def, cost };
+      }
+    });
+
+    if (cheapest) buyUpgrade(cheapest.def.id);
+  }
+
+  function buyResearch(id) {
+    const game = getGame();
+    if (!game) return;
+    const def = RESEARCH_DEFS.find((item) => item.id === id);
+    if (!def) return;
+
+    const level = getLevel(game.research, id);
+    if (level >= def.max) {
+      toast("Research already maxed.");
+      return;
+    }
+
+    const cost = getResearchCost(def, level);
+    if (game.insight < cost) {
+      toast("Not enough insight.");
+      return;
+    }
+
+    game.insight -= cost;
+    game.research[id] = level + 1;
+    logEvent(game, `Research upgraded: ${def.name}.`);
+    scheduleSave();
+  }
+
+  function buyLegacy(id) {
+    const game = getGame();
+    if (!game) return;
+    const def = LEGACY_DEFS.find((item) => item.id === id);
+    if (!def) return;
+
+    const level = getLevel(game.legacy, id);
+    if (level >= def.max) {
+      toast("Legacy already maxed.");
+      return;
+    }
+
+    const cost = getLegacyCost(def, level);
+    if (game.resonance < cost) {
+      toast("Not enough resonance.");
+      return;
+    }
+
+    game.resonance -= cost;
+    game.legacy[id] = level + 1;
+    logEvent(game, `Legacy upgraded: ${def.name}.`);
+    scheduleSave();
+  }
+
+  function startExpedition(id) {
+    const game = getGame();
+    if (!game) return;
+    if (game.expedition) {
+      toast("Expedition already running.");
+      return;
+    }
+
+    const def = EXPEDITION_DEFS.find((item) => item.id === id);
+    if (!def) return;
+
+    if (!spendSignal(game, def.cost)) {
+      toast("Not enough signal.");
+      return;
+    }
+
+    const rates = state.cachedRates || calculateRates(game, Date.now());
+    const duration = Math.floor(def.duration * rates.expeditionSpeed);
+    const rewardSignal = Math.floor(def.rewardSignal * (1 + getLevel(game.legacy, "echo") * 0.02));
+    const rewardInsight = Math.floor(def.rewardInsight * (1 + getArchiveBonuses(game).insight));
+
+    game.expedition = {
+      id: def.id,
+      startedAt: Date.now(),
+      endsAt: Date.now() + duration,
+      rewardSignal,
+      rewardInsight,
+      success: def.success
+    };
+
+    logEvent(game, `${def.name} launched. ETA ${formatDuration(duration)}.`);
+    scheduleSave();
+  }
+
+  function startQuickExpedition() {
+    if (state.active?.game?.expedition) return;
+    startExpedition(EXPEDITION_DEFS[0].id);
+  }
+
+  function updateExpedition(game, now, rates) {
+    if (!game.expedition) return;
+    if (now < game.expedition.endsAt) return;
+
+    const expedition = game.expedition;
+    const def = EXPEDITION_DEFS.find((item) => item.id === expedition.id);
+    game.expedition = null;
+    game.cycle.expeditions += 1;
+    game.stats.expeditions += 1;
+
+    const success = Math.random() <= expedition.success;
+    if (success) {
+      gainSignal(game, expedition.rewardSignal);
+      gainInsight(game, expedition.rewardInsight);
+      logEvent(game, `${def.name} succeeded. +${formatNumber(expedition.rewardSignal)} signal.`);
+      maybeDiscoverRelic(game, rates);
     } else {
-      setVideoMsg(`HLS error: ${data?.details || "unknown"}`);
-    }
-  });
-
-  hlsInstance.loadSource(url);
-  hlsInstance.attachMedia(video);
-
-  hlsInstance.on(window.Hls.Events.MANIFEST_PARSED, () => {
-    video.play().catch(() => {});
-    setVideoMsg("Loaded HLS (hls.js).");
-  });
-}
-
-async function loadDirect(urlRaw) {
-  const url = safeUrl(urlRaw);
-  if (!url) {
-    setVideoMsg("Video candidate URL could not be normalized into a valid URL.");
-    return;
-  }
-
-  hideEmbed();
-  destroyHls();
-  const video = $("#customVideo");
-  video.src = url;
-  video.load();
-  video.play().catch(() => {});
-  setVideoMsg("Loaded direct video.");
-}
-
-function showCandidates(groups, sourceLabel) {
-  const wrap = $("#streamCandidates");
-  const list = $("#candList");
-  list.innerHTML = "";
-
-  const sections = [
-    { key: "hls", title: "HLS (.m3u8)", loader: loadHls },
-    { key: "file", title: "Direct files (.mp4/.webm/.ogg)", loader: loadDirect },
-    { key: "dash", title: "DASH (.mpd) (listed only)", loader: null }
-  ];
-
-  let any = false;
-
-  for (const s of sections) {
-    const arr = Array.isArray(groups?.[s.key]) ? groups[s.key] : [];
-    if (!arr.length) continue;
-    any = true;
-
-    const sec = document.createElement("div");
-    sec.className = "candSection";
-
-    const h = document.createElement("div");
-    h.className = "candSectionTitle";
-    h.textContent = `${s.title} (${arr.length})`;
-    sec.appendChild(h);
-
-    for (const rawUrl of arr.slice(0, 25)) {
-      const fixed = safeUrl(rawUrl);
-      if (!fixed) continue;
-
-      const row = document.createElement("div");
-      row.className = "candRow";
-
-      const u = document.createElement("div");
-      u.className = "candUrl";
-      u.textContent = fixed;
-
-      const btnLoad = document.createElement("button");
-      btnLoad.className = "btn";
-      btnLoad.textContent = s.loader ? "Load" : "N/A";
-      btnLoad.disabled = !s.loader;
-      btnLoad.addEventListener("click", async () => {
-        if (!s.loader) return;
-        await s.loader(fixed);
-      });
-
-      const btnOpen = document.createElement("button");
-      btnOpen.className = "btn";
-      btnOpen.textContent = "Open";
-      btnOpen.addEventListener("click", () => window.open(fixed, "_blank", "noopener,noreferrer"));
-
-      row.appendChild(u);
-      row.appendChild(btnLoad);
-      row.appendChild(btnOpen);
-      sec.appendChild(row);
+      const salvage = Math.floor(expedition.rewardSignal * 0.25);
+      gainSignal(game, salvage);
+      logEvent(game, `${def.name} failed. Salvaged ${formatNumber(salvage)} signal.`);
     }
 
-    list.appendChild(sec);
+    scheduleSave();
   }
 
-  if (!any) {
-    hideCandidates();
-    return false;
-  }
-
-  wrap.classList.remove("hidden");
-  setVideoMsg(sourceLabel ? `Candidates detected (${sourceLabel}).` : "Candidates detected.");
-  return true;
-}
-
-function mergeCandidates(into, data) {
-  for (const k of ["hls", "dash", "file"]) {
-    const arr = Array.isArray(data?.[k]) ? data[k] : [];
-    for (const u of arr) {
-      const fixed = safeUrl(u);
-      if (!fixed) continue;
-      if (!into[k].includes(fixed)) into[k].push(fixed);
-    }
-  }
-}
-
-function embedPage(urlRaw) {
-  const url = safeUrl(urlRaw) || fixupUrlClient(urlRaw);
-  hideCandidates();
-  $("#embedFrame").src = url;
-  $("#embedWrap").classList.remove("hidden");
-  $("#embedNote").textContent = "If it’s blank, the site likely blocks iframes (CSP/X-Frame-Options).";
-  setVideoMsg("Embed attempt started.");
-}
-
-async function detectStreams(pageUrlRaw) {
-  const pageUrl = safeUrl(pageUrlRaw) || fixupUrlClient(pageUrlRaw);
-
-  hideCandidates();
-  const advanced = $("#videoAdvanced").checked;
-
-  setVideoMsg(advanced ? "Detecting streams (HTML + headless)..." : "Detecting streams (HTML scan)...");
-
-  const merged = { hls: [], dash: [], file: [] };
-
-  // A) HTML scan
-  try {
-    const a = await api(`/api/detect-streams?url=${encodeURIComponent(pageUrl)}`);
-    mergeCandidates(merged, a);
-  } catch (e) {
-    console.warn("[A detect failed]", e);
-    setVideoMsg(`HTML scan failed: ${e.message}`);
-  }
-
-  // C) Headless capture (optional)
-  if (advanced) {
-    try {
-      const c = await api(`/api/capture-streams?url=${encodeURIComponent(pageUrl)}`);
-      mergeCandidates(merged, c);
-    } catch (e) {
-      console.warn("[C capture failed]", e);
-      setVideoMsg(`Headless capture failed: ${e.message}`);
+  function ensureMissions(game) {
+    if (!game.missions) game.missions = { tier: 1, list: [] };
+    if (!Array.isArray(game.missions.list)) game.missions.list = [];
+    if (game.missions.list.length === 0) {
+      game.missions.list = generateMissions(game.missions.tier);
+      scheduleSave();
     }
   }
 
-  const ok = showCandidates(merged, advanced ? "HTML + headless" : "HTML");
-  if (!ok) {
-    setVideoMsg("No candidates detected. Use Open page, or try Advanced detection.");
+  function claimMission(id) {
+    const game = getGame();
+    if (!game) return;
+    ensureMissions(game);
+
+    const mission = game.missions.list.find((item) => item.id === id);
+    if (!mission) return;
+
+    const template = getMissionTemplate(mission.templateId);
+    const progress = template.progress(game);
+    if (progress < mission.goal) {
+      toast("Mission not complete yet.");
+      return;
+    }
+
+    if (mission.claimed) return;
+
+    const rates = state.cachedRates || calculateRates(game, Date.now());
+    const reward = Math.floor(mission.reward * rates.missionMult);
+    applyReward(game, { type: mission.rewardType, amount: reward });
+    mission.claimed = true;
+    logEvent(game, `Mission complete: ${template.label.replace("{goal}", formatNumber(mission.goal))}.`);
+
+    if (game.missions.list.every((item) => item.claimed)) {
+      game.missions.tier += 1;
+      game.missions.list = generateMissions(game.missions.tier);
+      logEvent(game, `Mission tier ${game.missions.tier} unlocked.`);
+    }
+
+    scheduleSave();
   }
 
-  return merged;
-}
+  function attemptAscend() {
+    const game = getGame();
+    if (!game) return;
+    const rates = state.cachedRates || calculateRates(game, Date.now());
+    const gain = getAscendGain(game, rates);
 
-async function onVideoLoad() {
-  const raw = $("#videoInput").value || "";
-  const parsed = parseVideoUrl(raw);
-  if (parsed.error) return toast(parsed.error);
+    if (gain <= 0) {
+      toast("Not enough signal to ascend.");
+      return;
+    }
 
-  addHistory(parsed.url);
-  clearVideo();
-
-  if (parsed.isFile) return loadDirect(parsed.url);
-  if (parsed.isHls) return loadHls(parsed.url);
-
-  if (parsed.isDash) {
-    setVideoMsg("DASH (.mpd) detected. This app lists it, but native playback requires a DASH player (e.g., Shaka).");
-    showCandidates({ hls: [], file: [], dash: [parsed.url] }, "direct");
-    return;
-  }
-
-  // page URL path: detect, then auto-try first HLS if any
-  const candidates = await detectStreams(parsed.url);
-
-  if (candidates.hls.length) {
-    await loadHls(candidates.hls[0]);
-  } else if (candidates.file.length) {
-    await loadDirect(candidates.file[0]);
-  } else {
-    setVideoMsg("No playable URL detected. You can try Embed page (may be blocked), or Open page.");
-  }
-}
-
-async function onVideoDetect() {
-  const raw = $("#videoInput").value || "";
-  const parsed = parseVideoUrl(raw);
-  if (parsed.error) return toast(parsed.error);
-
-  addHistory(parsed.url);
-  clearVideo();
-
-  if (!parsed.isPage) {
-    showCandidates(
-      {
-        hls: parsed.isHls ? [parsed.url] : [],
-        file: parsed.isFile ? [parsed.url] : [],
-        dash: parsed.isDash ? [parsed.url] : []
-      },
-      "direct"
+    const confirmed = window.confirm(
+      `Ascend for +${formatNumber(gain)} resonance? This resets signal, insight, upgrades, research, missions, expeditions, and anomalies.`
     );
-    return;
+    if (!confirmed) return;
+
+    game.resonance += gain;
+    game.signal = 0;
+    game.insight = 0;
+    game.upgrades = {};
+    game.research = {};
+    game.cycle = createCycle();
+    game.missions = { tier: 1, list: [] };
+    game.aiEvent = null;
+    game.aiCooldownAt = Date.now() + randRange(60000, 120000);
+    game.buff = null;
+    game.ads = { cooldownUntil: 0, boostEndsAt: 0 };
+    game.anomaly = { label: "", mult: 1, endsAt: 0 };
+    game.nextAnomalyAt = Date.now() + randRange(60000, 120000);
+    game.expedition = null;
+    game.stats.ascensions += 1;
+
+    logEvent(game, `Ascended. +${formatNumber(gain)} resonance gained.`);
+    scheduleSave();
   }
 
-  await detectStreams(parsed.url);
-}
+  function createProfile(name) {
+    return {
+      id: `profile_${Date.now()}_${Math.floor(Math.random() * 1000)}`,
+      name: name || "Pilot",
+      prefs: defaultPrefs(),
+      game: createNewGame()
+    };
+  }
 
-function onVideoEmbed() {
-  const raw = $("#videoInput").value || "";
-  const parsed = parseVideoUrl(raw);
-  if (parsed.error) return toast(parsed.error);
+  function defaultPrefs() {
+    return {
+      defaultTab: "game",
+      compact: false,
+      adsEnabled: true,
+      gameSection: "command"
+    };
+  }
 
-  addHistory(parsed.url);
-  clearVideo();
-  embedPage(parsed.url);
-}
+  function normalizeProfile(profile) {
+    profile.prefs = profile.prefs || defaultPrefs();
+    applyDefaults(profile.prefs, defaultPrefs());
+    profile.game = normalizeGame(profile.game);
+  }
 
-function onVideoOpen() {
-  const raw = $("#videoInput").value || "";
-  const parsed = parseVideoUrl(raw);
-  if (parsed.error) return toast(parsed.error);
+  function createNewGame() {
+    const now = Date.now();
+    return {
+      version: 2,
+      signal: 0,
+      insight: 0,
+      resonance: 0,
+      upgrades: {},
+      research: {},
+      legacy: {},
+      cycle: createCycle(),
+      missions: { tier: 1, list: [] },
+      aiEvent: null,
+      aiCooldownAt: now + randRange(60000, 120000),
+      buff: null,
+      ads: { cooldownUntil: 0, boostEndsAt: 0 },
+      daily: { date: "", id: "", label: "", signal: 1, click: 1, insight: 1, mission: 1 },
+      anomaly: { label: "", mult: 1, endsAt: 0 },
+      nextAnomalyAt: now + randRange(60000, 120000),
+      expedition: null,
+      mapSeed: randomSeed(),
+      archive: [],
+      achievements: {},
+      log: [],
+      stats: {
+        totalEarned: 0,
+        totalSpent: 0,
+        totalInsight: 0,
+        totalClicks: 0,
+        expeditions: 0,
+        anomalies: 0,
+        ascensions: 0,
+        totalUpgrades: 0
+      }
+    };
+  }
 
-  addHistory(parsed.url);
-  window.open(parsed.url, "_blank", "noopener,noreferrer");
-}
+  function normalizeGame(game) {
+    if (!game || typeof game !== "object") return createNewGame();
+    const defaults = createNewGame();
+    applyDefaults(game, defaults);
+    return game;
+  }
 
-// --------------------
-// Wire up
-// --------------------
-window.addEventListener("DOMContentLoaded", () => {
-  // tabs
-  $("#tabImages").addEventListener("click", () => setTab("images"));
-  $("#tabYoutube").addEventListener("click", () => setTab("youtube"));
-  $("#tabVideo").addEventListener("click", () => setTab("video"));
-  $("#tabHistory").addEventListener("click", () => setTab("history"));
+  function createCycle() {
+    return {
+      earned: 0,
+      spent: 0,
+      insight: 0,
+      clicks: 0,
+      expeditions: 0,
+      upgrades: 0
+    };
+  }
 
-  // images
-  $("#btnLoadImages").addEventListener("click", loadImages);
-  $("#urlInput").addEventListener("keydown", (e) => {
-    if (e.key === "Enter") loadImages();
-  });
+  function applyDefaults(target, defaults) {
+    Object.keys(defaults).forEach((key) => {
+      const value = defaults[key];
+      if (target[key] === undefined || target[key] === null) {
+        target[key] = cloneValue(value);
+        return;
+      }
 
-  // youtube
-  $("#ytLoad").addEventListener("click", loadYoutube);
-  $("#ytInput").addEventListener("keydown", (e) => {
-    if (e.key === "Enter") loadYoutube();
-  });
+      if (isPlainObject(value)) {
+        if (!isPlainObject(target[key])) target[key] = {};
+        applyDefaults(target[key], value);
+      }
+    });
+  }
 
-  // video
-  $("#videoLoad").addEventListener("click", onVideoLoad);
-  $("#videoDetect").addEventListener("click", onVideoDetect);
-  $("#videoEmbed").addEventListener("click", onVideoEmbed);
-  $("#videoOpen").addEventListener("click", onVideoOpen);
-  $("#videoClear").addEventListener("click", () => {
-    clearVideo();
-    $("#videoInput").value = "";
-    toast("Cleared");
-  });
+  function cloneValue(value) {
+    if (Array.isArray(value)) return value.slice();
+    if (isPlainObject(value)) return { ...value };
+    return value;
+  }
 
-  renderHistory();
-  setTab("images");
-});
+  function isPlainObject(value) {
+    return value && typeof value === "object" && !Array.isArray(value);
+  }
+
+  function renderStats(game, rates, now) {
+    setText(ui.statSignal, formatNumber(game.signal));
+    setText(ui.statPerSec, formatNumber(rates.perSec));
+    setText(ui.statInsight, formatNumber(game.insight));
+    setText(ui.statResonance, formatNumber(game.resonance));
+    setText(ui.statClick, formatNumber(rates.clickPower));
+    setText(ui.statForecast, formatNumber(game.signal + rates.perSec * 60));
+
+    setText(ui.dailyStatus, game.daily.label ? `Daily: ${game.daily.label}` : "Daily directive pending.");
+
+    if (game.anomaly.endsAt && now < game.anomaly.endsAt) {
+      setText(ui.anomalyStatus, `${game.anomaly.label} (${formatDuration(game.anomaly.endsAt - now)})`);
+    } else {
+      setText(ui.anomalyStatus, `Next anomaly in ${formatDuration(Math.max(0, game.nextAnomalyAt - now))}.`);
+    }
+
+    if (game.buff && now < game.buff.endsAt) {
+      setText(ui.buffStatus, `${game.buff.label} (${formatDuration(game.buff.endsAt - now)})`);
+    } else {
+      setText(ui.buffStatus, "No active AI buffs.");
+    }
+
+    if (game.ads.boostEndsAt && now < game.ads.boostEndsAt) {
+      setText(ui.adStatus, `Sponsor boost active (${formatDuration(game.ads.boostEndsAt - now)}).`);
+    } else if (game.ads.cooldownUntil && now < game.ads.cooldownUntil) {
+      setText(ui.adStatus, `Sponsor cooldown ${formatDuration(game.ads.cooldownUntil - now)}.`);
+    } else {
+      setText(ui.adStatus, "Sponsor relay ready.");
+    }
+  }
+
+  function renderUpgrades(game) {
+    const html = UPGRADE_DEFS.map((def) => {
+      const level = getLevel(game.upgrades, def.id);
+      const cost = getUpgradeCost(def, level);
+      const disabled = game.signal < cost;
+      return `
+        <div class="upgradeRow">
+          <div class="rowDetails">
+            <div class="rowTitle">${def.name} <span class="tag">Lv ${level}</span></div>
+            <div class="rowMeta">${def.desc} (+${formatNumber(def.perSec)} /s)</div>
+          </div>
+          <button class="btn" data-upgrade="${def.id}" ${disabled ? "disabled" : ""}>Buy ${formatNumber(cost)}</button>
+        </div>
+      `;
+    }).join("");
+
+    setHtml(ui.upgradeList, html);
+  }
+
+  function renderResearch(game) {
+    const html = RESEARCH_DEFS.map((def) => {
+      const level = getLevel(game.research, def.id);
+      const cost = getResearchCost(def, level);
+      const disabled = level >= def.max || game.insight < cost;
+      return `
+        <div class="researchRow">
+          <div class="rowDetails">
+            <div class="rowTitle">${def.name} <span class="tag">Lv ${level}/${def.max}</span></div>
+            <div class="rowMeta">${def.desc}</div>
+          </div>
+          <button class="btn" data-research="${def.id}" ${disabled ? "disabled" : ""}>Spend ${formatNumber(cost)}</button>
+        </div>
+      `;
+    }).join("");
+
+    setHtml(ui.researchList, html);
+  }
+
+  function renderLegacy(game, rates) {
+    const threshold = getAscendThreshold(game);
+    const gain = getAscendGain(game, rates);
+    setText(ui.legacyStatus, `Resonance ${formatNumber(game.resonance)} | Ascend at ${formatNumber(threshold)} for +${formatNumber(gain)}.`);
+
+    const html = LEGACY_DEFS.map((def) => {
+      const level = getLevel(game.legacy, def.id);
+      const cost = getLegacyCost(def, level);
+      const disabled = level >= def.max || game.resonance < cost;
+      return `
+        <div class="legacyRow">
+          <div class="rowDetails">
+            <div class="rowTitle">${def.name} <span class="tag">Lv ${level}/${def.max}</span></div>
+            <div class="rowMeta">${def.desc}</div>
+          </div>
+          <button class="btn" data-legacy="${def.id}" ${disabled ? "disabled" : ""}>Invest ${formatNumber(cost)}</button>
+        </div>
+      `;
+    }).join("");
+
+    setHtml(ui.legacyList, html);
+  }
+
+  function renderExpeditions(game, rates, now) {
+    if (game.expedition) {
+      const def = EXPEDITION_DEFS.find((item) => item.id === game.expedition.id);
+      const remaining = Math.max(0, game.expedition.endsAt - now);
+      setText(ui.expeditionStatus, `Active: ${def.name} (${formatDuration(remaining)}).`);
+    } else {
+      setText(ui.expeditionStatus, "No active expedition.");
+    }
+
+    const html = EXPEDITION_DEFS.map((def) => {
+      const disabled = !!game.expedition || game.signal < def.cost;
+      const duration = Math.floor(def.duration * rates.expeditionSpeed);
+      return `
+        <div class="expeditionRow">
+          <div class="rowDetails">
+            <div class="rowTitle">${def.name}</div>
+            <div class="rowMeta">${def.desc} | ETA ${formatDuration(duration)}</div>
+          </div>
+          <button class="btn" data-expedition="${def.id}" ${disabled ? "disabled" : ""}>Launch ${formatNumber(def.cost)}</button>
+        </div>
+      `;
+    }).join("");
+
+    setHtml(ui.expeditionList, html);
+  }
+
+  function renderMissions(game, rates) {
+    ensureMissions(game);
+    setText(ui.missionStatus, `Tier ${game.missions.tier} | Rewards x${rates.missionMult.toFixed(2)}.`);
+
+    const html = game.missions.list
+      .map((mission) => {
+        const template = getMissionTemplate(mission.templateId);
+        const progress = template.progress(game);
+        const done = progress >= mission.goal;
+        const reward = Math.floor(mission.reward * rates.missionMult);
+        const label = template.label.replace("{goal}", formatNumber(mission.goal));
+        const statusLabel = mission.claimed ? "Claimed" : done ? "Claim" : "In progress";
+        const btnClass = done && !mission.claimed ? "btn primary" : "btn";
+        const disabled = mission.claimed || !done;
+        return `
+          <div class="missionRow ${mission.claimed ? "done" : ""}">
+            <div class="rowDetails">
+              <div class="rowTitle">${label}</div>
+              <div class="rowMeta">Progress ${formatNumber(progress)} / ${formatNumber(mission.goal)} | Reward ${formatNumber(reward)} ${mission.rewardType}</div>
+            </div>
+            <button class="${btnClass}" data-mission="${mission.id}" ${disabled ? "disabled" : ""}>${statusLabel}</button>
+          </div>
+        `;
+      })
+      .join("");
+
+    setHtml(ui.missionList, html);
+  }
+
+  function renderAiEvent(game, now) {
+    if (game.aiEvent) {
+      const remaining = Math.max(0, game.aiEvent.expiresAt - now);
+      setText(ui.aiStatus, `Directive active (${formatDuration(remaining)}).`);
+
+      const options = game.aiEvent.options
+        .map(
+          (opt) => `
+          <div class="aiOption">
+            <div class="rowDetails">
+              <div class="rowTitle">${opt.label}</div>
+              <div class="rowMeta">${opt.summary}</div>
+            </div>
+            <button class="btn" data-ai-option="${opt.id}">Execute</button>
+          </div>
+        `
+        )
+        .join("");
+
+      const html = `
+        <div class="aiEventCard">
+          <div class="aiEventTitle">${game.aiEvent.title}</div>
+          <div class="aiEventBody">${game.aiEvent.body}</div>
+        </div>
+        <div class="list">${options}</div>
+      `;
+      setHtml(ui.aiEvent, html);
+    } else {
+      const next = Math.max(0, game.aiCooldownAt - now);
+      setText(ui.aiStatus, `Next directive in ${formatDuration(next)}.`);
+      setHtml(ui.aiEvent, "<div class=\"status\">No active directives.</div>");
+    }
+  }
+
+  function renderArchive(game) {
+    const bonuses = getArchiveBonuses(game);
+    const signalBonus = (bonuses.signal * 100).toFixed(1);
+    const clickBonus = (bonuses.click * 100).toFixed(1);
+    const insightBonus = (bonuses.insight * 100).toFixed(1);
+    setText(ui.archiveStatus, `Relics ${game.archive.length} | Signal +${signalBonus}% | Click +${clickBonus}% | Insight +${insightBonus}%`);
+
+    const html = game.archive
+      .map(
+        (relic) => `
+        <div class="archiveRow">
+          <div class="rowDetails">
+            <div class="rowTitle">${relic.name}</div>
+            <div class="rowMeta">${relic.type} +${(relic.bonus * 100).toFixed(1)}%</div>
+          </div>
+        </div>
+      `
+      )
+      .join("");
+
+    setHtml(ui.archiveList, html || "<div class=\"status\">No relics discovered.</div>");
+  }
+
+  function renderAchievements(game) {
+    const html = ACHIEVEMENTS.map((ach) => {
+      const unlocked = !!game.achievements[ach.id];
+      return `
+        <div class="achievementRow ${unlocked ? "unlocked" : ""}">
+          <div class="rowDetails">
+            <div class="rowTitle">${ach.name}</div>
+            <div class="rowMeta">${ach.desc}</div>
+          </div>
+          <span class="tag">${unlocked ? "Unlocked" : "Locked"}</span>
+        </div>
+      `;
+    }).join("");
+
+    setHtml(ui.achievementList, html);
+  }
+
+  function renderLog(game) {
+    const entries = game.log.slice(-12).reverse();
+    const html = entries
+      .map(
+        (entry) => `
+        <div class="logRow">
+          <div class="rowDetails">
+            <div class="rowTitle">${escapeHtml(entry.text)}</div>
+            <div class="rowMeta">${new Date(entry.time).toLocaleTimeString()}</div>
+          </div>
+        </div>
+      `
+      )
+      .join("");
+
+    setHtml(ui.logList, html || "<div class=\"status\">No activity yet.</div>");
+  }
+
+  function renderAccountSummary(game, rates) {
+    if (!state.active || !ui.accountSummary) return;
+    const text = `Active ${state.active.name} | Ascensions ${game.stats.ascensions} | Total signal ${formatNumber(game.stats.totalEarned)} | Per sec ${formatNumber(rates.perSec)}`;
+    setText(ui.accountSummary, text);
+  }
+
+  function renderAdRelay(game, now) {
+    if (!ui.adRelayStatus || !ui.adBoostBtn) return;
+    const enabled = state.active?.prefs.adsEnabled !== false;
+    const cooldown = getAdCooldownMs(game);
+
+    if (!enabled) {
+      setText(ui.adRelayStatus, "Sponsor clips disabled in preferences.");
+      ui.adBoostBtn.disabled = true;
+      return;
+    }
+
+    if (game.ads.boostEndsAt && now < game.ads.boostEndsAt) {
+      setText(ui.adRelayStatus, `Boost active (${formatDuration(game.ads.boostEndsAt - now)}).`);
+      ui.adBoostBtn.disabled = true;
+      return;
+    }
+
+    if (game.ads.cooldownUntil && now < game.ads.cooldownUntil) {
+      setText(ui.adRelayStatus, `Cooldown ${formatDuration(game.ads.cooldownUntil - now)}.`);
+      ui.adBoostBtn.disabled = true;
+      return;
+    }
+
+    setText(ui.adRelayStatus, `Boost ready. Cooldown ${formatDuration(cooldown)}.`);
+    ui.adBoostBtn.disabled = false;
+  }
+
+  function checkAchievements(game, rates) {
+    ACHIEVEMENTS.forEach((ach) => {
+      if (game.achievements[ach.id]) return;
+      if (ach.test(game, rates)) {
+        game.achievements[ach.id] = true;
+        applyReward(game, ach.reward);
+        logEvent(game, `Achievement unlocked: ${ach.name}.`);
+        scheduleSave();
+      }
+    });
+  }
+
+  function updateAnomaly(game, now) {
+    if (game.anomaly.endsAt && now >= game.anomaly.endsAt) {
+      logEvent(game, `Anomaly ended: ${game.anomaly.label}.`);
+      game.anomaly = { label: "", mult: 1, endsAt: 0 };
+      game.nextAnomalyAt = now + randRange(60000, 120000);
+    }
+
+    if (!game.anomaly.endsAt && now >= game.nextAnomalyAt) {
+      const surge = Math.random() < 0.5;
+      const baseDuration = randRange(45000, 90000);
+      const dampers = getLevel(game.legacy, "dampers");
+      const duration = Math.max(30000, Math.floor(baseDuration * (1 - dampers * 0.08)));
+
+      game.anomaly = {
+        label: surge ? "Anomaly Surge" : "Signal Drag",
+        mult: surge ? 1.25 : 0.8,
+        endsAt: now + duration
+      };
+      game.nextAnomalyAt = now + duration + randRange(60000, 120000);
+      game.stats.anomalies += 1;
+      logEvent(game, `${game.anomaly.label} active for ${formatDuration(duration)}.`);
+    }
+  }
+
+  function updateAiEvent(game, now) {
+    if (game.aiEvent && now >= game.aiEvent.expiresAt) {
+      logEvent(game, "Director directive expired.");
+      game.aiEvent = null;
+      game.aiCooldownAt = now + randRange(90000, 150000);
+    }
+
+    if (!game.aiEvent && now >= game.aiCooldownAt) {
+      game.aiEvent = createAiEvent();
+      logEvent(game, `Director directive: ${game.aiEvent.title}.`);
+    }
+  }
+
+  function updateBuff(game, now) {
+    if (game.buff && now >= game.buff.endsAt) {
+      logEvent(game, `${game.buff.label} expired.`);
+      game.buff = null;
+    }
+
+    if (game.ads.boostEndsAt && now >= game.ads.boostEndsAt) {
+      game.ads.boostEndsAt = 0;
+    }
+  }
+
+  function createAiEvent() {
+    const template = pick(AI_EVENT_LIBRARY);
+    return {
+      id: template.id,
+      title: template.title,
+      body: template.body,
+      options: template.options.map((opt) => ({ id: opt.id, label: opt.label, summary: opt.summary })),
+      createdAt: Date.now(),
+      expiresAt: Date.now() + 120000
+    };
+  }
+
+  function resolveAiOption(optionId) {
+    const game = getGame();
+    if (!game || !game.aiEvent) return;
+    const template = AI_EVENT_LIBRARY.find((item) => item.id === game.aiEvent.id);
+    if (!template) return;
+    const option = template.options.find((opt) => opt.id === optionId);
+    if (!option) return;
+
+    option.apply(game);
+    logEvent(game, `${game.aiEvent.title}: ${option.label}.`);
+    game.aiEvent = null;
+    game.aiCooldownAt = Date.now() + randRange(90000, 150000);
+    scheduleSave();
+  }
+
+  function generateMissions(tier) {
+    const pool = shuffle(MISSION_TEMPLATES.slice());
+    return pool.slice(0, 3).map((template) => {
+      const goal = template.goal(tier);
+      const reward = Math.floor(goal * template.rewardScale);
+      return {
+        id: `${template.id}_${tier}_${Math.floor(Math.random() * 10000)}`,
+        templateId: template.id,
+        goal,
+        reward,
+        rewardType: template.rewardType,
+        claimed: false
+      };
+    });
+  }
+
+  function getMissionTemplate(id) {
+    return MISSION_TEMPLATES.find((template) => template.id === id);
+  }
+
+  function calculateRates(game, now) {
+    const upgradeTotals = UPGRADE_DEFS.reduce(
+      (acc, def) => {
+        const level = getLevel(game.upgrades, def.id);
+        acc.perSec += level * def.perSec;
+        acc.click += level * def.click;
+        return acc;
+      },
+      { perSec: 0, click: 0 }
+    );
+
+    const compression = getLevel(game.research, "compression");
+    const distill = getLevel(game.research, "distill");
+    const feedback = getLevel(game.research, "feedback");
+    const logistics = getLevel(game.research, "logistics");
+    const catalyst = getLevel(game.research, "catalyst");
+    const analytics = getLevel(game.research, "analytics");
+
+    const echo = getLevel(game.legacy, "echo");
+    const insightLegacy = getLevel(game.legacy, "insight");
+    const shadow = getLevel(game.legacy, "shadow");
+
+    const archiveBonus = getArchiveBonuses(game);
+    const daily = getDailyBonus(game);
+    const anomalyMult = getAnomalyMultiplier(game, now);
+    const buff = getBuffBonus(game, now);
+    const adMult = now < game.ads.boostEndsAt ? AD_MULT : 1;
+
+    const signalMult = (1 + compression * 0.08) * (1 + echo * 0.05) * (1 + archiveBonus.signal) * daily.signal * anomalyMult * buff.signal * adMult;
+    const clickMult = (1 + archiveBonus.click) * daily.click * buff.click;
+    const insightMult = (1 + distill * 0.1) * (1 + insightLegacy * 0.06) * (1 + archiveBonus.insight) * daily.insight;
+    const missionMult = (1 + analytics * 0.1) * (1 + shadow * 0.02) * daily.mission;
+    const resonanceMult = 1 + feedback * 0.04;
+    const expeditionSpeed = Math.max(0.5, 1 - logistics * 0.08);
+    const relicChance = clamp(0.08 + catalyst * 0.06, 0, 0.5);
+
+    return {
+      perSec: upgradeTotals.perSec * signalMult,
+      clickPower: (1 + upgradeTotals.click) * clickMult,
+      insightMult,
+      missionMult,
+      resonanceMult,
+      expeditionSpeed,
+      relicChance,
+      signalMult,
+      adMult
+    };
+  }
+
+  function applyDaily(game) {
+    const today = getDateKey();
+    if (game.daily.date === today) return;
+    const daily = pick(DAILY_EFFECTS);
+    game.daily = {
+      date: today,
+      id: daily.id,
+      label: daily.label,
+      signal: daily.signal,
+      click: daily.click,
+      insight: daily.insight,
+      mission: daily.mission
+    };
+    logEvent(game, `Daily directive: ${daily.label}.`);
+    scheduleSave();
+  }
+
+  function getDailyBonus(game) {
+    if (!game.daily) return { signal: 1, click: 1, insight: 1, mission: 1 };
+    return {
+      signal: game.daily.signal || 1,
+      click: game.daily.click || 1,
+      insight: game.daily.insight || 1,
+      mission: game.daily.mission || 1
+    };
+  }
+
+  function getAnomalyMultiplier(game, now) {
+    if (game.anomaly && game.anomaly.endsAt && now < game.anomaly.endsAt) return game.anomaly.mult || 1;
+    return 1;
+  }
+
+  function applyBuff(game, label, duration, signalMult, clickMult) {
+    game.buff = {
+      label,
+      mult: signalMult,
+      click: clickMult,
+      endsAt: Date.now() + duration
+    };
+  }
+
+  function getBuffBonus(game, now) {
+    if (game.buff && now < game.buff.endsAt) {
+      return {
+        signal: game.buff.mult || 1,
+        click: game.buff.click || 1
+      };
+    }
+    return { signal: 1, click: 1 };
+  }
+
+  function maybeDiscoverRelic(game, rates) {
+    if (Math.random() > rates.relicChance) return;
+    const relic = createRelic();
+    game.archive.push(relic);
+    logEvent(game, `Relic recovered: ${relic.name}.`);
+  }
+
+  function createRelic() {
+    const base = pick(RELIC_DEFS);
+    return {
+      id: `relic_${Date.now()}_${Math.floor(Math.random() * 1000)}`,
+      name: base.name,
+      type: base.type,
+      bonus: base.bonus,
+      acquiredAt: Date.now()
+    };
+  }
+
+  function getArchiveBonuses(game) {
+    return game.archive.reduce(
+      (acc, relic) => {
+        if (acc[relic.type] !== undefined) acc[relic.type] += relic.bonus;
+        return acc;
+      },
+      { signal: 0, click: 0, insight: 0 }
+    );
+  }
+
+  function applyReward(game, reward) {
+    if (!reward) return;
+    if (reward.type === "signal") gainSignal(game, reward.amount);
+    if (reward.type === "insight") gainInsight(game, reward.amount);
+    if (reward.type === "resonance") game.resonance += reward.amount;
+  }
+
+  function gainSignal(game, amount) {
+    if (!amount || amount <= 0) return;
+    game.signal += amount;
+    game.stats.totalEarned += amount;
+    game.cycle.earned += amount;
+  }
+
+  function gainInsight(game, amount) {
+    if (!amount || amount <= 0) return;
+    game.insight += amount;
+    game.stats.totalInsight += amount;
+    game.cycle.insight += amount;
+  }
+
+  function spendSignal(game, amount) {
+    if (amount <= 0) return false;
+    if (game.signal < amount) return false;
+    game.signal -= amount;
+    game.stats.totalSpent += amount;
+    game.cycle.spent += amount;
+    return true;
+  }
+
+  function getAdCooldownMs(game) {
+    const sponsor = getLevel(game.legacy, "sponsor");
+    const mult = Math.max(0.5, 1 - sponsor * 0.05);
+    return Math.floor(AD_COOLDOWN_MS * mult);
+  }
+
+  function getAscendThreshold(game) {
+    const base = 60000;
+    const scale = Math.pow(1.28, game.stats.ascensions);
+    return Math.floor(base * scale);
+  }
+
+  function getAscendGain(game, rates) {
+    const threshold = getAscendThreshold(game);
+    if (game.signal < threshold) return 0;
+    const ratio = game.signal / threshold;
+    const gain = Math.floor(Math.pow(ratio, 0.85) * 10 * rates.resonanceMult);
+    return Math.max(1, gain);
+  }
+
+  function getUpgradeCost(def, level) {
+    return Math.floor(def.baseCost * Math.pow(def.growth, level));
+  }
+
+  function getResearchCost(def, level) {
+    return Math.floor(def.baseCost * Math.pow(def.growth, level));
+  }
+
+  function getLegacyCost(def, level) {
+    return Math.floor(def.baseCost * Math.pow(def.growth, level));
+  }
+
+  function getLevel(map, id) {
+    return map[id] || 0;
+  }
+
+  function getGame() {
+    return state.active ? state.active.game : null;
+  }
+
+  function drawMapIfNeeded() {
+    const game = getGame();
+    if (!game || !ui.signalMap) return;
+    if (state.lastMapSeed === game.mapSeed) return;
+
+    const canvas = ui.signalMap;
+    const ctx = canvas.getContext("2d");
+    const width = canvas.width;
+    const height = canvas.height;
+    const rand = makeSeededRandom(game.mapSeed);
+
+    ctx.clearRect(0, 0, width, height);
+    ctx.fillStyle = "rgba(5, 10, 16, 0.8)";
+    ctx.fillRect(0, 0, width, height);
+
+    const stars = [];
+    const count = 42;
+    for (let i = 0; i < count; i += 1) {
+      stars.push({
+        x: rand() * width,
+        y: rand() * height,
+        r: 1 + rand() * 2.5
+      });
+    }
+
+    ctx.strokeStyle = "rgba(34, 211, 238, 0.25)";
+    ctx.lineWidth = 1;
+    for (let i = 0; i < stars.length - 1; i += 3) {
+      const a = stars[i];
+      const b = stars[i + 1];
+      if (!a || !b) continue;
+      ctx.beginPath();
+      ctx.moveTo(a.x, a.y);
+      ctx.lineTo(b.x, b.y);
+      ctx.stroke();
+    }
+
+    ctx.fillStyle = "rgba(255, 255, 255, 0.85)";
+    stars.forEach((star) => {
+      ctx.beginPath();
+      ctx.arc(star.x, star.y, star.r, 0, Math.PI * 2);
+      ctx.fill();
+    });
+
+    state.lastMapSeed = game.mapSeed;
+  }
+
+  function openAdModal() {
+    if (!ui.adModal || !ui.adCountdown) return;
+    ui.adModal.classList.remove("hidden");
+    state.adEndsAt = Date.now() + AD_DURATION_MS;
+    setText(ui.adCountdown, `Relay sync ${formatDuration(AD_DURATION_MS)}`);
+    updateAdCountdown();
+    if (state.adTimer) clearInterval(state.adTimer);
+    if (state.adTimeout) clearTimeout(state.adTimeout);
+    state.adTimer = setInterval(updateAdCountdown, 200);
+    state.adTimeout = setTimeout(() => finishAdRelay(), AD_DURATION_MS + 250);
+  }
+
+  function closeAdModal() {
+    if (state.adTimer) {
+      clearInterval(state.adTimer);
+      state.adTimer = null;
+    }
+    if (state.adTimeout) {
+      clearTimeout(state.adTimeout);
+      state.adTimeout = null;
+    }
+    if (ui.adModal) ui.adModal.classList.add("hidden");
+  }
+
+  function updateAdCountdown() {
+    const remaining = state.adEndsAt - Date.now();
+    if (remaining <= 0) {
+      finishAdRelay();
+      return;
+    }
+    setText(ui.adCountdown, `Relay sync ${formatDuration(remaining)}`);
+  }
+
+  function finishAdRelay() {
+    closeAdModal();
+    applyAdBoost();
+  }
+
+  function applyAdBoost() {
+    const game = getGame();
+    if (!game) return;
+    const now = Date.now();
+    const cooldown = getAdCooldownMs(game);
+    game.ads.boostEndsAt = now + AD_BOOST_MS;
+    game.ads.cooldownUntil = now + cooldown;
+    logEvent(game, "Sponsor boost active.");
+    scheduleSave();
+  }
+
+  function logEvent(game, text) {
+    game.log.push({ time: Date.now(), text });
+    if (game.log.length > 50) game.log.shift();
+  }
+
+  function toast(message) {
+    if (!ui.toast) return;
+    ui.toast.textContent = message;
+    ui.toast.classList.add("show");
+    if (toastTimer) clearTimeout(toastTimer);
+    toastTimer = setTimeout(() => {
+      ui.toast.classList.remove("show");
+    }, 2000);
+  }
+
+  function formatNumber(value) {
+    if (!Number.isFinite(value)) return "0";
+    const sign = value < 0 ? "-" : "";
+    let num = Math.abs(value);
+
+    if (num < 1000) {
+      const digits = num < 10 ? 2 : num < 100 ? 1 : 0;
+      return sign + num.toFixed(digits);
+    }
+
+    const units = ["K", "M", "B", "T"];
+    let unitIndex = -1;
+    while (num >= 1000 && unitIndex < units.length - 1) {
+      num /= 1000;
+      unitIndex += 1;
+    }
+    const digits = num < 10 ? 2 : num < 100 ? 1 : 0;
+    return sign + num.toFixed(digits) + units[unitIndex];
+  }
+
+  function formatDuration(ms) {
+    const total = Math.max(0, Math.ceil(ms / 1000));
+    const minutes = Math.floor(total / 60);
+    const seconds = total % 60;
+    if (minutes <= 0) return `${seconds}s`;
+    return `${minutes}:${String(seconds).padStart(2, "0")}`;
+  }
+
+  function randRange(min, max) {
+    return Math.floor(Math.random() * (max - min + 1)) + min;
+  }
+
+  function pick(list) {
+    return list[Math.floor(Math.random() * list.length)];
+  }
+
+  function clamp(value, min, max) {
+    return Math.min(max, Math.max(min, value));
+  }
+
+  function shuffle(list) {
+    for (let i = list.length - 1; i > 0; i -= 1) {
+      const j = Math.floor(Math.random() * (i + 1));
+      [list[i], list[j]] = [list[j], list[i]];
+    }
+    return list;
+  }
+
+  function randomSeed() {
+    return Math.floor(Math.random() * 1000000000);
+  }
+
+  function makeSeededRandom(seed) {
+    let t = seed >>> 0;
+    return () => {
+      t = (t * 1664525 + 1013904223) >>> 0;
+      return t / 4294967296;
+    };
+  }
+
+  function getDateKey() {
+    const now = new Date();
+    const year = now.getFullYear();
+    const month = String(now.getMonth() + 1).padStart(2, "0");
+    const day = String(now.getDate()).padStart(2, "0");
+    return `${year}-${month}-${day}`;
+  }
+
+  function setText(element, text) {
+    if (!element) return;
+    const value = String(text);
+    if (element.textContent !== value) element.textContent = value;
+  }
+
+  function setHtml(element, html) {
+    if (!element) return;
+    if (element.innerHTML !== html) element.innerHTML = html;
+  }
+
+  function escapeHtml(value) {
+    const map = {
+      "&": "&amp;",
+      "<": "&lt;",
+      ">": "&gt;",
+      '"': "&quot;",
+      "'": "&#39;"
+    };
+    return String(value).replace(/[&<>"']/g, (char) => map[char]);
+  }
+})();
