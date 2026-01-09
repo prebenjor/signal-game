@@ -1,5 +1,4 @@
 import express from "express";
-import fs from "fs";
 import path from "path";
 import { fileURLToPath } from "url";
 const app = express();
@@ -11,10 +10,7 @@ const __dirname = path.dirname(__filename);
 const isProd = process.env.NODE_ENV === "production";
 
 // Static hosting AFTER API
-const publicDir = path.join(__dirname, "public");
-if (!fs.existsSync(publicDir)) {
-  console.warn(`[WARN] public/ directory not found at: ${publicDir}`);
-}
+const publicDir = __dirname;
 app.use(express.static(publicDir, { etag: true, lastModified: true, maxAge: isProd ? "1h" : 0, index: ["index.html"] }));
 
 // SPA fallback
