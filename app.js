@@ -16,6 +16,108 @@
   const OFFLINE_BASE_CAP = 4 * 60 * 60;
   const OFFLINE_BASE_MULT = 0.65;
   const FACTION_SWITCH_COOLDOWN = 12 * 60 * 60 * 1000;
+  const WORKER_SOURCE = `
+    const UPGRADE_DEFS = ${JSON.stringify([
+      { id: "scanner", perSec: 0.4, click: 0.05 },
+      { id: "relay", perSec: 2.4, click: 0.15 },
+      { id: "well", perSec: 10, click: 0.35 },
+      { id: "forge", perSec: 45, click: 0.8 },
+      { id: "neural", perSec: 210, click: 1.6 },
+      { id: "void", perSec: 920, click: 3.2 }
+    ])};
+    const FACTION_DEFS = ${JSON.stringify([
+      { id: "helios", bonus: { signal: 0.08, offline: 0.2 } },
+      { id: "umbra", bonus: { mission: 0.12, relic: 0.05 } },
+      { id: "aether", bonus: { insight: 0.1, expedition: 0.08 } }
+    ])};
+    const FACTION_RANKS = ${JSON.stringify([
+      { name: "Initiate", threshold: 0, mult: 1 },
+      { name: "Agent", threshold: 75, mult: 1.1 },
+      { name: "Operative", threshold: 200, mult: 1.2 },
+      { name: "Command", threshold: 500, mult: 1.35 },
+      { name: "Director", threshold: 1000, mult: 1.5 }
+    ])};
+    const AD_MULT = ${AD_MULT};
+    function getLevel(map, id) { return (map && map[id]) || 0; }
+    function clamp(v, a, b) { return Math.min(b, Math.max(a, v)); }
+    function getFactionById(id) { return FACTION_DEFS.find((f) => f.id === id); }
+    function getFactionRank(rep) { let cur = FACTION_RANKS[0]; for (const r of FACTION_RANKS) { if (rep >= r.threshold) cur = r; } return cur; }
+    function getFactionBonus(faction) {
+      const def = getFactionById(faction?.id);
+      if (!def) return { signal: 0, mission: 0, insight: 0, relic: 0, expedition: 0, offline: 0 };
+      const rank = getFactionRank(faction?.rep || 0);
+      const mult = rank.mult;
+      return {
+        signal: (def.bonus.signal || 0) * mult,
+        mission: (def.bonus.mission || 0) * mult,
+        insight: (def.bonus.insight || 0) * mult,
+        relic: (def.bonus.relic || 0) * mult,
+        expedition: (def.bonus.expedition || 0) * mult,
+        offline: (def.bonus.offline || 0) * mult
+      };
+    }
+    function calculate(payload) {
+      const { upgrades, research, legacy, meta, archiveBonus, daily, anomaly, buff, adsBoostEndsAt, faction, now } = payload;
+      const upgradeTotals = UPGRADE_DEFS.reduce((acc, def) => {
+        const level = getLevel(upgrades, def.id);
+        acc.perSec += level * def.perSec;
+        acc.click += level * def.click;
+        return acc;
+      }, { perSec: 0, click: 0 });
+      const compression = getLevel(research, "compression");
+      const distill = getLevel(research, "distill");
+      const feedback = getLevel(research, "feedback");
+      const logistics = getLevel(research, "logistics");
+      const catalyst = getLevel(research, "catalyst");
+      const analytics = getLevel(research, "analytics");
+      const echo = getLevel(legacy, "echo");
+      const insightLegacy = getLevel(legacy, "insight");
+      const shadow = getLevel(legacy, "shadow");
+      const atlas = getLevel(meta, "atlas");
+      const factionBonus = getFactionBonus(faction);
+      const adMult = now < adsBoostEndsAt ? AD_MULT : 1;
+      const anomalyMult = anomaly && anomaly.endsAt && now < anomaly.endsAt ? (anomaly.mult || 1) : 1;
+      const buffSignal = buff && buff.endsAt && now < buff.endsAt ? (buff.mult || 1) : 1;
+      const buffClick = buff && buff.endsAt && now < buff.endsAt ? (buff.click || 1) : 1;
+      const signalMult =
+        (1 + compression * 0.08) *
+        (1 + echo * 0.05) *
+        (1 + atlas * 0.07) *
+        (1 + (archiveBonus.signal || 0)) *
+        (1 + factionBonus.signal) *
+        (daily?.signal || 1) *
+        anomalyMult *
+        buffSignal *
+        adMult;
+      const clickMult = (1 + (archiveBonus.click || 0)) * (daily?.click || 1) * buffClick;
+      const insightMult =
+        (1 + distill * 0.1) *
+        (1 + insightLegacy * 0.06) *
+        (1 + (archiveBonus.insight || 0)) *
+        (1 + factionBonus.insight) *
+        (daily?.insight || 1);
+      const missionMult = (1 + analytics * 0.1) * (1 + shadow * 0.02) * (1 + factionBonus.mission) * (daily?.mission || 1);
+      const resonanceMult = 1 + feedback * 0.04;
+      const expeditionSpeed = Math.max(0.5, 1 - logistics * 0.08);
+      const relicChance = clamp(0.08 + catalyst * 0.06 + factionBonus.relic, 0, 0.6);
+      return {
+        perSec: upgradeTotals.perSec * signalMult,
+        clickPower: (1 + upgradeTotals.click) * clickMult,
+        insightMult,
+        missionMult,
+        resonanceMult,
+        expeditionSpeed,
+        relicChance,
+        signalMult,
+        adMult
+      };
+    }
+    onmessage = (e) => {
+      const payload = e.data;
+      const rates = calculate(payload);
+      postMessage({ type: "rates", rates, id: payload.id });
+    };
+  `;
 
   const UPGRADE_DEFS = [
     { id: "scanner", name: "Scanner Drones", desc: "Autonomous drones harvesting weak signal.", baseCost: 15, growth: 1.18, perSec: 0.4, click: 0.05 },
@@ -368,7 +470,10 @@
     needsFullRender: true,
     dirty: {},
     rafHandle: null,
-    nextRenderAt: 0
+    nextRenderAt: 0,
+    worker: null,
+    workerPending: false,
+    workerId: 0
   };
 
   let ui = {};
@@ -383,6 +488,7 @@
     applyActiveProfile();
     startLoops();
     startRenderLoop();
+    initWorker();
   }
 
   function cacheUi() {
@@ -737,6 +843,23 @@
     state.rafHandle = requestAnimationFrame(loop);
   }
 
+  function initWorker() {
+    try {
+      const blob = new Blob([WORKER_SOURCE], { type: "text/javascript" });
+      const url = URL.createObjectURL(blob);
+      const worker = new Worker(url);
+      worker.onmessage = (event) => {
+        if (event.data?.type !== "rates") return;
+        state.cachedRates = event.data.rates;
+        state.workerPending = false;
+      };
+      state.worker = worker;
+    } catch (err) {
+      console.warn("Worker init failed, falling back to main-thread rates.", err);
+      state.worker = null;
+    }
+  }
+
   function tick() {
     const game = getGame();
     if (!game) return;
@@ -758,6 +881,8 @@
     }
 
     updateExpedition(game, now, rates);
+
+    queueWorkerRates(game, now);
 
     if (now - state.lastSaveAt > SAVE_INTERVAL) saveState();
   }
@@ -1963,6 +2088,31 @@
       relicChance,
       signalMult,
       adMult
+    };
+  }
+
+  function queueWorkerRates(game, now) {
+    if (!state.worker || state.workerPending) return;
+    state.workerPending = true;
+    state.workerId += 1;
+    const payload = buildWorkerPayload(game, now, state.workerId);
+    state.worker.postMessage(payload);
+  }
+
+  function buildWorkerPayload(game, now, id) {
+    return {
+      id,
+      now,
+      upgrades: game.upgrades,
+      research: game.research,
+      legacy: game.legacy,
+      meta: game.meta,
+      archiveBonus: getArchiveBonuses(game),
+      daily: game.daily,
+      anomaly: game.anomaly,
+      buff: game.buff,
+      adsBoostEndsAt: game.ads.boostEndsAt,
+      faction: game.faction
     };
   }
 
