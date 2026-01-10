@@ -1,257 +1,136 @@
-﻿<!doctype html>
+<!doctype html>
 <html lang="en">
 <head>
   <meta charset="utf-8" />
-  <meta name="viewport" content="width=device-width,initial-scale=1" />
-  <title>Signal Desk</title>
-  <link rel="stylesheet" href="./styles.min.css?v=2" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Signal Frontier</title>
+  <link rel="stylesheet" href="./styles.css?v=3" />
 </head>
 <body>
   <div class="app">
     <header class="topbar">
-      <div class="brand">
-        <div class="brandBadge">Signal Desk</div>
-        <div class="brandSub">Focus mode: game lab with local profiles.</div>
+      <div>
+        <div class="brandBadge">Signal Frontier</div>
+        <div class="brandSub">Scan, settle, and build outposts across the void.</div>
       </div>
       <div class="tabs">
-        <button id="tab-game" class="tab active">Game</button>
-        <button id="tab-profile" class="tab">Profile</button>
+        <button class="tab active" data-tab="scan">Scan</button>
+        <button class="tab" data-tab="missions">Missions</button>
+        <button class="tab" data-tab="base">Base</button>
+        <button class="tab" data-tab="crew">Crew</button>
+        <button class="tab" data-tab="tech">Tech</button>
+        <button class="tab" data-tab="log">Log</button>
       </div>
     </header>
 
-    <section id="panel-game" class="panel">
+    <section class="panel" data-panel="scan">
       <div class="panelHeader">
         <div>
-          <div class="panelTitle">Signal Miner</div>
-          <div class="panelSub">Collect signal, unlock research, run expeditions, and shape your constellation.</div>
+          <div class="panelTitle">Cosmic Scan</div>
+          <div class="panelSub">Gather signal to reveal new bodies. Unlockable worlds appear as your arrays improve.</div>
         </div>
         <div class="panelActions">
-          <select id="buyMode" class="select small">
-            <option value="1">x1</option>
-            <option value="10">x10</option>
-            <option value="100">x100</option>
-            <option value="max">Max</option>
-          </select>
-          <button id="gameClick" class="btn primary">Collect Signal (Space)</button>
-          <button id="convertInsight" class="btn">Convert Insight (C)</button>
-          <button id="ascendBtn" class="btn">Ascend</button>
+          <button id="collectSignal" class="btn primary">Collect Signal</button>
         </div>
       </div>
-
-      <div class="subtabs">
-        <button class="subtab active" data-section="command">Command</button>
-        <button class="subtab" data-section="ops">Operations</button>
-        <button class="subtab" data-section="legacy">Legacy</button>
-        <button class="subtab" data-section="records">Records</button>
-      </div>
-
-      <div class="gameGrid">
-        <div class="card" data-section="command">
-          <div class="cardTitle">Core Stats</div>
-          <div class="statGrid">
-            <div class="statBox">
-              <span>Signal</span>
-              <strong id="statSignal">0</strong>
-            </div>
-            <div class="statBox">
-              <span>Per sec</span>
-              <strong id="statPerSec">0</strong>
-            </div>
-            <div class="statBox">
-              <span>Insight</span>
-              <strong id="statInsight">0</strong>
-            </div>
-            <div class="statBox">
-              <span>Resonance</span>
-              <strong id="statResonance">0</strong>
-            </div>
-            <div class="statBox">
-              <span>Click power</span>
-              <strong id="statClick">1</strong>
-            </div>
-            <div class="statBox">
-              <span>Forecast (60s)</span>
-              <strong id="statForecast">0</strong>
-            </div>
-          </div>
-          <div class="status" id="dailyStatus"></div>
-          <div class="status" id="anomalyStatus"></div>
-          <div class="status" id="buffStatus"></div>
-          <div class="status" id="adStatus"></div>
-          <div class="status" id="offlineStatus"></div>
-        </div>
-
-        <div class="card" data-section="command">
-          <div class="cardTitle">Mission Board</div>
-          <div class="cardSub">Cycle tasks scale with each ascent.</div>
-          <div id="missionStatus" class="status"></div>
-          <div id="missionList" class="list"></div>
-        </div>
-
-        <div class="card" data-section="command">
-          <div class="cardTitle">Director AI</div>
-          <div class="cardSub">Adaptive events surface choices and risks.</div>
-          <div id="aiStatus" class="status"></div>
-          <div id="aiEvent" class="aiEvent"></div>
-        </div>
-
-        <div class="card" data-section="command">
-          <div class="cardTitle">Faction Council</div>
-          <div class="cardSub">Align with a faction to shape rewards and directives.</div>
-          <div id="factionStatus" class="status"></div>
-          <div id="factionList" class="list"></div>
-        </div>
-
-        <div class="card" data-section="command">
-          <div class="cardTitle">Analytics</div>
-          <div class="cardSub">Breakdown of current per-sec and modifiers.</div>
-          <div class="row">
-            <button id="analyticsRefresh" class="btn">Refresh</button>
-          </div>
-          <div id="analyticsList" class="list"></div>
-        </div>
-
-        <div class="card" data-section="command">
-          <div class="cardTitle">Sponsor Relay</div>
-          <div class="cardSub">Optional boosts with cooldown timers.</div>
-          <div id="adRelayStatus" class="status"></div>
-          <div class="row">
-            <button id="adBoostBtn" class="btn primary">Watch Sponsor Clip</button>
-          </div>
-        </div>
-
-        <div class="card" data-section="ops">
-          <div class="cardTitle">Upgrades</div>
-          <div id="upgradeList" class="list"></div>
-        </div>
-
-        <div class="card" data-section="ops">
-          <div class="cardTitle">Research Lab</div>
-          <div class="cardSub">Spend insight to unlock permanent modifiers.</div>
-          <div id="researchList" class="list"></div>
-        </div>
-
-        <div class="card" data-section="ops">
-          <div class="cardTitle">Expeditions</div>
-          <div id="expeditionStatus" class="status"></div>
-          <div id="expeditionList" class="list"></div>
-        </div>
-
-        <div class="card" data-section="legacy">
-          <div class="cardTitle">Meta Progression</div>
-          <div class="cardSub">Transcend to earn starlight and unlock permanent systems.</div>
-          <div id="metaStatus" class="status"></div>
-          <div class="row">
-            <button id="transcendBtn" class="btn primary">Transcend</button>
-          </div>
-          <div id="metaList" class="list"></div>
-        </div>
-
-        <div class="card" data-section="legacy">
-          <div class="cardTitle">Automation</div>
-          <div class="cardSub">Spend resonance to unlock auto-buy helpers.</div>
-          <div id="autoStatus" class="status"></div>
-          <div id="autoList" class="list"></div>
-        </div>
-
-        <div class="card" data-section="legacy">
-          <div class="cardTitle">Legacy Vault</div>
-          <div class="cardSub">Ascend to earn resonance, then invest in permanent upgrades.</div>
-          <div id="legacyStatus" class="status"></div>
-          <div id="legacyList" class="list"></div>
-        </div>
-
-        <div class="card" data-section="legacy">
-          <div class="cardTitle">Constellation Map</div>
-          <canvas id="signalMap" width="480" height="220"></canvas>
-          <div class="row">
-            <button id="mapRegen" class="btn">Recalibrate Map</button>
-          </div>
-        </div>
-
-        <div class="card" data-section="legacy">
-          <div class="cardTitle">Constellation Archive</div>
-          <div class="cardSub">Relics discovered during expeditions boost passive output.</div>
-          <div id="archiveStatus" class="status"></div>
-          <div id="archiveList" class="list"></div>
-        </div>
-
-        <div class="card" data-section="records">
-          <div class="cardTitle">Story Archives</div>
-          <div class="cardSub">Recovered transmissions and faction reports.</div>
-          <div id="storyStatus" class="status"></div>
-          <div id="storyList" class="list"></div>
-        </div>
-
-        <div class="card" data-section="records">
-          <div class="cardTitle">Achievements</div>
-          <div id="achievementList" class="list"></div>
-        </div>
-
-        <div class="card" data-section="records">
-          <div class="cardTitle">Signal Log</div>
-          <div id="logList" class="list"></div>
-        </div>
-      </div>
-    </section>
-
-    <section id="panel-profile" class="panel hidden">
       <div class="gridTwo">
         <div class="card">
-          <div class="cardTitle">Accounts</div>
-          <div class="row">
-            <input id="accountName" class="input" placeholder="Account name" />
-            <button id="accountCreate" class="btn primary">Create</button>
-            <button id="accountRename" class="btn">Rename</button>
-            <button id="accountDelete" class="btn">Delete</button>
-          </div>
-          <div class="row">
-            <label class="chk">Active account:</label>
-            <select id="accountSelect" class="select"></select>
-          </div>
-          <div class="row">
-            <button id="exportProfiles" class="btn">Export Profiles</button>
-            <button id="importProfiles" class="btn">Import Profiles</button>
-          </div>
-          <textarea id="profileData" class="textarea" rows="3" placeholder="Profile JSON for import/export"></textarea>
-          <div id="accountSummary" class="status"></div>
+          <div class="cardTitle">Core Resources</div>
+          <div id="resourceStats" class="statGrid"></div>
+          <div id="satisfaction" class="status"></div>
         </div>
-
         <div class="card">
-          <div class="cardTitle">Preferences</div>
-          <div class="row">
-            <label class="chk">Default tab:</label>
-            <select id="prefDefaultTab" class="select">
-              <option value="game">Game</option>
-              <option value="profile">Profile</option>
-            </select>
-          </div>
-          <div class="row">
-            <label class="chk"><input id="prefCompact" type="checkbox" /> Compact layout</label>
-          </div>
-          <div class="row">
-            <label class="chk"><input id="prefAdsEnabled" type="checkbox" /> Sponsor clips enabled</label>
-          </div>
-          <div class="row">
-            <button id="resetGame" class="btn">Reset Game</button>
-          </div>
+          <div class="cardTitle">Bodies</div>
+          <div id="bodyList" class="list"></div>
         </div>
       </div>
     </section>
-  </div>
 
-  <div id="adModal" class="adModal hidden">
-    <div class="adCard">
-      <div class="adTitle">Sponsor Clip</div>
-      <div class="adBody">A quick sponsor clip unlocks a timed signal boost.</div>
-      <div id="adCountdown" class="adCountdown">Preparing relay...</div>
-      <div class="row">
-        <button id="adCancel" class="btn">Cancel</button>
+    <section class="panel hidden" data-panel="missions">
+      <div class="panelHeader">
+        <div>
+          <div class="panelTitle">Missions</div>
+          <div class="panelSub">Send crews to harvest resources and return cargo to your hub.</div>
+        </div>
       </div>
-    </div>
+      <div class="gridTwo">
+        <div class="card">
+          <div class="cardTitle">Active Mission</div>
+          <div id="missionStatus" class="status"></div>
+          <div class="row">
+            <select id="missionTarget" class="select"></select>
+            <button id="launchMission" class="btn primary">Launch</button>
+          </div>
+        </div>
+        <div class="card">
+          <div class="cardTitle">Cargo Forecast</div>
+          <div id="missionPreview" class="list"></div>
+        </div>
+      </div>
+    </section>
+
+    <section class="panel hidden" data-panel="base">
+      <div class="panelHeader">
+        <div>
+          <div class="panelTitle">Outpost Builder</div>
+          <div class="panelSub">Construct production, power, and morale buildings. Manage upkeep.</div>
+        </div>
+      </div>
+      <div class="gridTwo">
+        <div class="card">
+          <div class="cardTitle">Buildings</div>
+          <div id="buildingList" class="list"></div>
+        </div>
+        <div class="card">
+          <div class="cardTitle">Rates</div>
+          <div id="rateList" class="list"></div>
+        </div>
+      </div>
+    </section>
+
+    <section class="panel hidden" data-panel="crew">
+      <div class="panelHeader">
+        <div>
+          <div class="panelTitle">Crew & Roles</div>
+          <div class="panelSub">Assign workers, monitor needs, and keep morale high.</div>
+        </div>
+      </div>
+      <div class="gridTwo">
+        <div class="card">
+          <div class="cardTitle">Crew</div>
+          <div id="crewStatus" class="status"></div>
+          <div id="crewList" class="list"></div>
+        </div>
+        <div class="card">
+          <div class="cardTitle">Needs</div>
+          <div id="needStatus" class="status"></div>
+          <div id="needList" class="list"></div>
+        </div>
+      </div>
+    </section>
+
+    <section class="panel hidden" data-panel="tech">
+      <div class="panelHeader">
+        <div>
+          <div class="panelTitle">Tech & Milestones</div>
+          <div class="panelSub">Tech nodes reveal as you hit milestones. Invest research and signal.</div>
+        </div>
+      </div>
+      <div class="card">
+        <div class="cardTitle">Tech Tree</div>
+        <div id="techList" class="list"></div>
+      </div>
+    </section>
+
+    <section class="panel hidden" data-panel="log">
+      <div class="card">
+        <div class="cardTitle">Log</div>
+        <div id="logList" class="list"></div>
+      </div>
+    </section>
   </div>
 
   <div id="toast" class="toast"></div>
-  <script src="./app.bundle.js?v=2"></script>
+  <script src="./app.bundle.js?v=3"></script>
 </body>
 </html>
