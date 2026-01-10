@@ -1085,6 +1085,43 @@
     scheduleSave();
   }
 
+  function handleExportProfiles() {
+    if (!ui.profileData) return;
+    try {
+      const payload = JSON.stringify({ version: 2, activeId: state.activeId, profiles: state.profiles });
+      ui.profileData.value = payload;
+      ui.profileData.focus();
+      ui.profileData.select();
+      document.execCommand("copy");
+      toast("Profiles exported to textbox and clipboard.");
+    } catch (e) {
+      toast("Export failed.");
+    }
+  }
+
+  function handleImportProfiles() {
+    if (!ui.profileData) return;
+    const raw = ui.profileData.value.trim();
+    if (!raw) {
+      toast("Paste profile JSON first.");
+      return;
+    }
+    try {
+      const data = JSON.parse(raw);
+      if (!data || !Array.isArray(data.profiles)) throw new Error("Invalid data");
+      state.profiles = data.profiles;
+      state.activeId = data.activeId || (data.profiles[0] && data.profiles[0].id) || "";
+      state.profiles.forEach(normalizeProfile);
+      const found = state.profiles.find((p) => p.id === state.activeId);
+      state.active = found || state.profiles[0];
+      applyActiveProfile();
+      scheduleSave();
+      toast("Profiles imported.");
+    } catch (e) {
+      toast("Import failed.");
+    }
+  }
+
   function handleResetGame() {
     if (!state.active) return;
     const confirmed = window.confirm("Reset game progress for this account?");
@@ -1338,7 +1375,7 @@
     if (!mission) return;
 
     const template = getMissionTemplate(mission.templateId);
-    const progress = template.progress(game);
+    const progress = Math.min(template.progress(game), mission.goal);
     if (progress < mission.goal) {
       toast("Mission not complete yet.");
       return;
