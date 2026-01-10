@@ -1,0 +1,89 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  color: #e9f0ff;
+  background-color: #05080d;
+}
+
+body {
+  margin: 0;
+  min-height: 100vh;
+  background:
+    radial-gradient(800px 500px at 10% 0%, rgba(255, 156, 58, 0.12), transparent 55%),
+    radial-gradient(900px 600px at 90% 5%, rgba(45, 212, 191, 0.12), transparent 55%),
+    linear-gradient(180deg, #05080d 0%, #0a1020 100%);
+  font-family: 'Inter', system-ui, sans-serif;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+.panel {
+  @apply border border-[rgba(255,255,255,0.08)] bg-panel/80 rounded-2xl shadow-panel p-4;
+}
+
+.card {
+  @apply border border-[rgba(255,255,255,0.08)] bg-panel2/80 rounded-2xl p-3;
+}
+
+.btn {
+  @apply inline-flex items-center justify-center px-3 py-2 rounded-xl border border-[rgba(255,255,255,0.12)] bg-white/5 text-sm font-semibold text-text transition;
+}
+.btn:hover {
+  @apply border-[rgba(255,156,58,0.6)] text-accent;
+}
+.btn:disabled {
+  @apply opacity-50 cursor-not-allowed;
+}
+.btn-primary {
+  @apply bg-gradient-to-br from-[#ff9c3a] to-[#ffc478] text-[#1a1209] border-none;
+}
+
+.tag {
+  @apply text-[11px] px-2 py-0.5 rounded-full bg-white/10 border border-white/10;
+}
+
+.tab {
+  @apply px-3 py-2 rounded-xl border border-[rgba(255,255,255,0.08)] bg-white/5 text-sm font-semibold;
+}
+.tab.active {
+  @apply bg-gradient-to-br from-[#ff9c3a]/40 to-[#2dd4bf]/40 border-[rgba(255,156,58,0.7)];
+}
+
+.stat-box {
+  @apply border border-[rgba(255,255,255,0.08)] rounded-xl p-2 bg-black/20 flex flex-col gap-1;
+}
+.stat-box strong {
+  @apply text-lg text-text;
+}
+
+.list {
+  @apply flex flex-col gap-2 mt-2;
+}
+
+.row {
+  @apply flex flex-wrap gap-2 items-center;
+}
+
+.row-item {
+  @apply grid grid-cols-[1fr,auto] gap-3 border border-[rgba(255,255,255,0.08)] rounded-xl p-3 bg-white/5;
+}
+.row-details {
+  @apply flex flex-col gap-1;
+}
+.row-title {
+  @apply font-semibold text-text;
+}
+.row-meta {
+  @apply text-xs text-muted;
+}
+
+.modal-backdrop {
+  @apply fixed inset-0 bg-black/70 backdrop-blur-sm flex items-center justify-center z-30;
+}
+.modal {
+  @apply bg-panel2 p-5 rounded-2xl border border-[rgba(255,255,255,0.1)] shadow-panel max-w-xl w-[92%];
+}
