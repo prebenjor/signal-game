@@ -5,11 +5,13 @@
   const TICK_MS = 500;
   const STORAGE_KEY = "signalFrontierState";
   const TAB_ORDER = ["scan", "missions", "base", "crew", "tech", "settings", "log"];
+  const RECRUIT_COOLDOWN = 45000;
 
   const BODIES = [
-    { id: "debris", name: "Debris Field", type: "Asteroid Belt", unlock: 0, travel: 30, hazard: 0.05, resources: { metal: 40, fuel: 8, research: 4 } },
-    { id: "ice", name: "Ice Moon", type: "Frozen Moon", unlock: 500, travel: 60, hazard: 0.12, resources: { organics: 25, fuel: 12, research: 8 } },
-    { id: "lava", name: "Lava Rock", type: "Volcanic Planetoid", unlock: 1500, travel: 90, hazard: 0.2, resources: { metal: 70, rare: 4, research: 14 } }
+    { id: "debris", name: "Debris Field", type: "Asteroid Belt", unlock: 0, travel: 30, hazard: 0.05, resources: { metal: 40, fuel: 8, research: 6 } },
+    { id: "ice", name: "Ice Moon", type: "Frozen Moon", unlock: 500, travel: 60, hazard: 0.12, resources: { organics: 25, fuel: 14, research: 10 } },
+    { id: "lava", name: "Lava Rock", type: "Volcanic Planetoid", unlock: 1500, travel: 90, hazard: 0.2, resources: { metal: 70, rare: 4, research: 18 } },
+    { id: "cradle", name: "Cradle Station", type: "Derelict Orbital", unlock: 2600, travel: 120, hazard: 0.18, requireTech: "deep_scan", resources: { fuel: 20, research: 32, rare: 8 } }
   ];
 
   const BUILDINGS = [
@@ -24,7 +26,8 @@
   const TECH = [
     { id: "fuel_synth", name: "Fuel Synthesis", desc: "+1 fuel/tick", cost: { signal: 320, research: 12 }, unlock: 300 },
     { id: "hazard_gear", name: "Hazard Gear", desc: "-25% mission hazard", cost: { signal: 780, research: 30 }, unlock: 700 },
-    { id: "drone_log", name: "Logistics Drones", desc: "+20% mission cargo", cost: { signal: 1200, research: 60 }, unlock: 1200 }
+    { id: "drone_log", name: "Logistics Drones", desc: "+20% mission cargo", cost: { signal: 1200, research: 60 }, unlock: 1200 },
+    { id: "deep_scan", name: "Deep Scan Arrays", desc: "+1 research/tick and reveals deep targets", cost: { signal: 1500, research: 120 }, unlock: 1200 }
   ];
 
   const CREW_ROLES = [
@@ -32,6 +35,7 @@
     { id: "botanist", name: "Botanist", desc: "Boosts food and organics yields." },
     { id: "engineer", name: "Engineer", desc: "Boosts power and general maintenance." }
   ];
+  const ROLE_ICON = { miner: "⛏", botanist: "🌿", engineer: "⚙" };
 
   const SHORTCUTS = [
     { keys: "Space", action: "Collect signal at the hub" },
@@ -46,10 +50,10 @@
     return {
       resources: {
         signal: 0,
-        research: 0,
+        research: 2,
         metal: 0,
         organics: 0,
-        fuel: 0,
+        fuel: 12,
         power: 0,
         food: 0,
         habitat: 0,
@@ -63,7 +67,9 @@
       missions: { active: null },
       selectedBody: "debris",
       milestones: {},
-      log: []
+      log: [],
+      recruits: [],
+      lastRecruitRoll: 0
     };
   }
 
@@ -79,6 +85,7 @@
     cacheUi();
     bindUi();
     load();
+    rollRecruits(false);
     render();
     tickTimer = setInterval(tick, TICK_MS);
   }
@@ -109,6 +116,9 @@
     ui.exportBtn = $("#exportProfile");
     ui.importBtn = $("#importProfile");
     ui.profileOutput = $("#profileOutput");
+    ui.recruitList = $("#recruitList");
+    ui.recruitCooldown = $("#recruitCooldown");
+    ui.refreshRecruits = $("#refreshRecruits");
   }
 
   function bindUi() {
@@ -120,6 +130,7 @@
     if (ui.missionTarget) ui.missionTarget.addEventListener("change", (e) => (state.selectedBody = e.target.value));
     if (ui.exportBtn) ui.exportBtn.addEventListener("click", exportProfile);
     if (ui.importBtn) ui.importBtn.addEventListener("click", importProfile);
+    if (ui.refreshRecruits) ui.refreshRecruits.addEventListener("click", () => rollRecruits(true));
     window.addEventListener("keydown", handleKeydown);
   }
 
@@ -204,6 +215,8 @@
     if (data.selectedBody) fresh.selectedBody = data.selectedBody;
     if (data.milestones) fresh.milestones = { ...data.milestones };
     if (Array.isArray(data.log)) fresh.log = data.log.slice(-80);
+    if (Array.isArray(data.recruits)) fresh.recruits = data.recruits;
+    if (data.lastRecruitRoll) fresh.lastRecruitRoll = data.lastRecruitRoll;
     Object.assign(state, fresh);
   }
 
@@ -247,6 +260,7 @@
 
     // tech passive
     if (state.tech.fuel_synth) rates.fuel += 1 * state.tech.fuel_synth;
+    if (state.tech.deep_scan) rates.research += 1 * state.tech.deep_scan;
 
     // apply rates per tick
     Object.keys(rates).forEach((key) => {
@@ -300,7 +314,8 @@
       toast("Mission already active.");
       return;
     }
-    const fuelCost = Math.max(5, Math.floor(body.travel / 3));
+    let fuelCost = Math.max(5, Math.floor(body.travel / 3));
+    if (!state.milestones.firstLaunch) fuelCost = 0;
     if (state.resources.fuel < fuelCost) {
       toast("Not enough fuel.");
       return;
@@ -309,6 +324,7 @@
     const duration = body.travel * 1000;
     state.missions.active = { bodyId: body.id, endsAt: Date.now() + duration };
     log(`Launched mission to ${body.name}. ETA ${formatDuration(duration)}.`);
+    if (!state.milestones.firstLaunch) state.milestones.firstLaunch = true;
     render();
   }
 
@@ -398,7 +414,7 @@
       { title: "Food & upkeep", meta: `${formatNumber(r.food)} stored | Upkeep ${formatNumber(upkeepFood)} per tick` },
       { title: "Crew & habitat", meta: `${state.workers.total} crew | Habitat ${formatNumber(r.habitat)}` },
       { title: "Morale", meta: `${Math.round(state.workers.satisfaction * 100)}% satisfaction | Needs food + power` },
-      { title: "Research", meta: `Recovered from missions and milestones | ${formatNumber(r.research)} stored` },
+      { title: "Research", meta: `Recovered from missions, milestones, and deep scans | ${formatNumber(r.research)} stored` },
       { title: "Signal flow", meta: `${formatNumber(state.rates.signal)}/tick plus manual collection` },
       { title: "Mission ops", meta: mission ? `En route to ${body?.name || "target"} | ${formatDuration(remaining)}` : "No active mission" }
     ];
@@ -410,7 +426,7 @@
   function renderStarterGuide() {
     if (!ui.starterGuide) return;
     const steps = [
-      "1) Tap Collect Signal to unlock the Debris Field, then launch a mission to bring back metal, fuel, and early research.",
+      "1) Tap Collect Signal to unlock the Debris Field. Your first mission is fuel-free and brings back metal, fuel, and early research.",
       "2) Build a Reactor and Extractor to stabilize power and metal. Add Hydroponics to keep food positive.",
       "3) Research Fuel Synthesis once you have 320 signal and 12 research. Research comes from missions and milestones.",
       "4) Recruit a specialist crew when you have spare habitat and food to boost production roles."
@@ -495,7 +511,7 @@
       const count = w.assigned[role.id] || 0;
       return `<div class="rowItem">
         <div class="rowDetails">
-          <div class="rowTitle">${role.name} (${count})</div>
+          <div class="rowTitle">${ROLE_ICON[role.id] || ""} ${role.name} (${count})</div>
           <div class="rowMeta">${role.desc}</div>
         </div>
         <div class="row">
@@ -507,8 +523,71 @@
     }).join("");
     ui.needStatus.textContent = `Morale ${Math.round(state.workers.satisfaction * 100)}% | Upkeep food ${formatNumber(w.total * 0.2)} | Habitat ${formatNumber(state.resources.habitat)}`;
     ui.needList.innerHTML = `<div class="rowItem"><div class="rowDetails"><div class="rowTitle">How to grow crew</div><div class="rowMeta">Gain early volunteers after building 3 structures. Recruit specialists when you have spare habitat and food.</div></div></div>`;
+    renderRecruits();
     window.changeCrew = changeCrew;
     window.recruitCrew = recruitCrew;
+  }
+
+  function rollRecruits(force) {
+    const now = Date.now();
+    if (!force && now - state.lastRecruitRoll < RECRUIT_COOLDOWN && state.recruits.length) return;
+    if (force && now - state.lastRecruitRoll < RECRUIT_COOLDOWN) {
+      toast("Recruitment hub is still sourcing candidates.");
+      return;
+    }
+    const candidates = [];
+    for (let i = 0; i < 3; i++) {
+      const role = CREW_ROLES[i % CREW_ROLES.length];
+      const tier = 1 + (i % 2);
+      candidates.push({
+        id: `${Date.now()}-${i}`,
+        role: role.id,
+        roleLabel: role.name,
+        trait: tier === 2 ? "Specialist: +15% to that role" : "Apprentice: +5% to that role",
+        cost: { food: 4 * tier, metal: 15 * tier }
+      });
+    }
+    state.recruits = candidates;
+    state.lastRecruitRoll = now;
+    renderRecruits();
+    save();
+  }
+
+  function hireRecruit(id) {
+    const cand = (state.recruits || []).find((c) => c.id === id);
+    if (!cand) return;
+    if (state.resources.habitat <= state.workers.total) {
+      toast("Need spare habitat to house new crew.");
+      return;
+    }
+    if (!canAfford(cand.cost)) {
+      toast("Not enough resources to hire.");
+      return;
+    }
+    spend(cand.cost);
+    state.workers.total += 1;
+    state.workers.assigned[cand.role] = (state.workers.assigned[cand.role] || 0) + 1;
+    log(`Hired ${cand.roleLabel}.`);
+    state.recruits = state.recruits.filter((c) => c.id !== id);
+    render();
+    save();
+  }
+
+  function renderRecruits() {
+    if (!ui.recruitList || !ui.recruitCooldown) return;
+    const now = Date.now();
+    const readyIn = Math.max(0, state.lastRecruitRoll + RECRUIT_COOLDOWN - now);
+    ui.recruitCooldown.textContent = readyIn > 0 ? `New candidates in ${formatDuration(readyIn)}` : "Candidates refreshed";
+    ui.recruitList.innerHTML = (state.recruits || []).map((c) => {
+      return `<div class="rowItem">
+        <div class="rowDetails">
+          <div class="rowTitle">${ROLE_ICON[c.role] || ""} ${c.name} (${c.roleLabel})</div>
+          <div class="rowMeta">Bonus: ${c.trait} | Cost ${costText(c.cost)}</div>
+        </div>
+        <button class="btn" ${canAfford(c.cost) && state.resources.habitat > state.workers.total ? "" : "disabled"} onclick="window.hire && window.hire('${c.id}')">Hire</button>
+      </div>`;
+    }).join("");
+    window.hire = hireRecruit;
   }
 
   function renderTech() {
@@ -607,6 +686,10 @@
     }
     spend(def.cost);
     state.tech[id] = 1;
+    if (id === "deep_scan") {
+      state.rates.research += 1;
+      log("Deep scan arrays online; new targets detected.");
+    }
     log(`Tech unlocked: ${def.name}.`);
     render();
     save();
@@ -623,6 +706,7 @@
   }
 
   function unlocked(obj) {
+    if (obj.requireTech && !state.tech[obj.requireTech]) return false;
     return state.resources.signal >= (obj.unlock || 0);
   }
 
@@ -647,6 +731,12 @@
       state.resources.research += 20;
       state.milestones.firstResearch = true;
       log("Research packets recovered from deep space.");
+    }
+    if (state.resources.signal >= 50 && !state.milestones.bootCache) {
+      state.resources.research += 6;
+      state.resources.fuel += 6;
+      state.milestones.bootCache = true;
+      log("Recovered starter cache: research + fuel.");
     }
     if (Object.keys(state.buildings).length >= 3 && !state.milestones.crewBonus) {
       state.workers.total += 2;
