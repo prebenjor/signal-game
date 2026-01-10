@@ -4,11 +4,12 @@
 
   const TICK_MS = 500;
   const STORAGE_KEY = "signalFrontierState";
+  const TAB_ORDER = ["scan", "missions", "base", "crew", "tech", "settings", "log"];
 
   const BODIES = [
-    { id: "debris", name: "Debris Field", type: "Asteroid Belt", unlock: 0, travel: 30, hazard: 0.05, resources: { metal: 40, fuel: 8 } },
-    { id: "ice", name: "Ice Moon", type: "Frozen Moon", unlock: 500, travel: 60, hazard: 0.12, resources: { organics: 25, fuel: 12 } },
-    { id: "lava", name: "Lava Rock", type: "Volcanic Planetoid", unlock: 1500, travel: 90, hazard: 0.2, resources: { metal: 70, rare: 4 } }
+    { id: "debris", name: "Debris Field", type: "Asteroid Belt", unlock: 0, travel: 30, hazard: 0.05, resources: { metal: 40, fuel: 8, research: 4 } },
+    { id: "ice", name: "Ice Moon", type: "Frozen Moon", unlock: 500, travel: 60, hazard: 0.12, resources: { organics: 25, fuel: 12, research: 8 } },
+    { id: "lava", name: "Lava Rock", type: "Volcanic Planetoid", unlock: 1500, travel: 90, hazard: 0.2, resources: { metal: 70, rare: 4, research: 14 } }
   ];
 
   const BUILDINGS = [
@@ -21,33 +22,52 @@
   ];
 
   const TECH = [
-    { id: "fuel_synth", name: "Fuel Synthesis", desc: "+1 fuel/tick", cost: { signal: 600, research: 40 }, unlock: 500 },
-    { id: "hazard_gear", name: "Hazard Gear", desc: "-25% mission hazard", cost: { signal: 900, research: 60 }, unlock: 900 },
-    { id: "drone_log", name: "Logistics Drones", desc: "+20% mission cargo", cost: { signal: 1200, research: 80 }, unlock: 1200 }
+    { id: "fuel_synth", name: "Fuel Synthesis", desc: "+1 fuel/tick", cost: { signal: 320, research: 12 }, unlock: 300 },
+    { id: "hazard_gear", name: "Hazard Gear", desc: "-25% mission hazard", cost: { signal: 780, research: 30 }, unlock: 700 },
+    { id: "drone_log", name: "Logistics Drones", desc: "+20% mission cargo", cost: { signal: 1200, research: 60 }, unlock: 1200 }
   ];
 
-  const state = {
-    resources: {
-      signal: 0,
-      research: 0,
-      metal: 0,
-      organics: 0,
-      fuel: 0,
-      power: 0,
-      food: 0,
-      habitat: 0,
-      morale: 0,
-      rare: 0
-    },
-    rates: { signal: 0, research: 0, metal: 0, organics: 0, fuel: 0, power: 0, food: 0, morale: 0 },
-    workers: { total: 3, assigned: { miner: 1, botanist: 1, engineer: 1 }, satisfaction: 1 },
-    buildings: {},
-    tech: {},
-    missions: { active: null },
-    selectedBody: "debris",
-    milestones: {},
-    log: []
-  };
+  const CREW_ROLES = [
+    { id: "miner", name: "Miner", desc: "Boosts extractors and cargo mining." },
+    { id: "botanist", name: "Botanist", desc: "Boosts food and organics yields." },
+    { id: "engineer", name: "Engineer", desc: "Boosts power and general maintenance." }
+  ];
+
+  const SHORTCUTS = [
+    { keys: "Space", action: "Collect signal at the hub" },
+    { keys: "1-7", action: "Switch tabs (Scan, Missions, Base, Crew, Tech, Settings, Log)" },
+    { keys: "M", action: "Jump to Missions" },
+    { keys: "L / Enter", action: "Launch selected mission" },
+    { keys: "B", action: "Jump to Base builder" },
+    { keys: "Arrow Left/Right", action: "Cycle tabs" }
+  ];
+
+  function createDefaultState() {
+    return {
+      resources: {
+        signal: 0,
+        research: 0,
+        metal: 0,
+        organics: 0,
+        fuel: 0,
+        power: 0,
+        food: 0,
+        habitat: 0,
+        morale: 0,
+        rare: 0
+      },
+      rates: { signal: 0, research: 0, metal: 0, organics: 0, fuel: 0, power: 0, food: 0, morale: 0 },
+      workers: { total: 3, assigned: { miner: 1, botanist: 1, engineer: 1 }, satisfaction: 1 },
+      buildings: {},
+      tech: {},
+      missions: { active: null },
+      selectedBody: "debris",
+      milestones: {},
+      log: []
+    };
+  }
+
+  const state = createDefaultState();
 
   const ui = {};
   let toastTimer = null;
@@ -83,6 +103,12 @@
     ui.logList = $("#logList");
     ui.toast = $("#toast");
     ui.satisfaction = $("#satisfaction");
+    ui.hubStatus = $("#hubStatus");
+    ui.starterGuide = $("#starterGuide");
+    ui.controlsList = $("#controlsList");
+    ui.exportBtn = $("#exportProfile");
+    ui.importBtn = $("#importProfile");
+    ui.profileOutput = $("#profileOutput");
   }
 
   function bindUi() {
@@ -92,6 +118,9 @@
     if (ui.collectSignal) ui.collectSignal.addEventListener("click", collectSignal);
     if (ui.launchMission) ui.launchMission.addEventListener("click", startMission);
     if (ui.missionTarget) ui.missionTarget.addEventListener("change", (e) => (state.selectedBody = e.target.value));
+    if (ui.exportBtn) ui.exportBtn.addEventListener("click", exportProfile);
+    if (ui.importBtn) ui.importBtn.addEventListener("click", importProfile);
+    window.addEventListener("keydown", handleKeydown);
   }
 
   function setTab(tab) {
@@ -99,13 +128,87 @@
     ui.panels.forEach((panel) => panel.classList.toggle("hidden", panel.dataset.panel !== tab));
   }
 
+  function handleKeydown(e) {
+    if (isTyping(e)) return;
+    if (e.code === "Space") {
+      e.preventDefault();
+      collectSignal();
+      return;
+    }
+    if (e.code === "ArrowRight") {
+      cycleTab(1);
+      return;
+    }
+    if (e.code === "ArrowLeft") {
+      cycleTab(-1);
+      return;
+    }
+    if (e.code.startsWith("Digit")) {
+      const idx = Number(e.key);
+      if (idx >= 1 && idx <= TAB_ORDER.length) setTab(TAB_ORDER[idx - 1]);
+      return;
+    }
+    if (e.code === "KeyM") {
+      setTab("missions");
+      return;
+    }
+    if (e.code === "KeyB") {
+      setTab("base");
+      return;
+    }
+    if (e.code === "KeyL" || e.code === "Enter") {
+      if (currentTab() === "missions") startMission();
+      return;
+    }
+  }
+
+  function currentTab() {
+    const active = ui.tabs.find((t) => t.classList.contains("active"));
+    return active?.dataset.tab || TAB_ORDER[0];
+  }
+
+  function cycleTab(delta) {
+    const idx = TAB_ORDER.indexOf(currentTab());
+    const next = (idx + delta + TAB_ORDER.length) % TAB_ORDER.length;
+    setTab(TAB_ORDER[next]);
+  }
+
+  function isTyping(e) {
+    const el = e.target;
+    if (!el) return false;
+    const tag = el.tagName;
+    return tag === "INPUT" || tag === "TEXTAREA" || el.isContentEditable;
+  }
+
   function load() {
     try {
       const raw = localStorage.getItem(STORAGE_KEY);
       if (!raw) return;
       const data = JSON.parse(raw);
-      Object.assign(state, data);
+      applyState(data);
     } catch {}
+  }
+
+  function applyState(data) {
+    const fresh = createDefaultState();
+    if (data.resources) Object.assign(fresh.resources, data.resources);
+    if (data.rates) Object.assign(fresh.rates, data.rates);
+    if (data.workers) {
+      fresh.workers.total = data.workers.total ?? fresh.workers.total;
+      fresh.workers.satisfaction = data.workers.satisfaction ?? fresh.workers.satisfaction;
+      if (data.workers.assigned) Object.assign(fresh.workers.assigned, data.workers.assigned);
+    }
+    if (data.buildings) fresh.buildings = { ...data.buildings };
+    if (data.tech) fresh.tech = { ...data.tech };
+    if (data.missions) fresh.missions = { active: data.missions.active || null };
+    if (data.selectedBody) fresh.selectedBody = data.selectedBody;
+    if (data.milestones) fresh.milestones = { ...data.milestones };
+    if (Array.isArray(data.log)) fresh.log = data.log.slice(-80);
+    Object.assign(state, fresh);
+  }
+
+  function snapshot() {
+    return JSON.parse(JSON.stringify(state));
   }
 
   function save() {
@@ -180,7 +283,7 @@
   }
 
   function collectSignal() {
-    state.resources.signal += 5;
+    state.resources.signal += 1;
     log("Manual signal calibration.");
     render();
     save();
@@ -209,6 +312,35 @@
     render();
   }
 
+  function exportProfile() {
+    const json = JSON.stringify(snapshot());
+    if (ui.profileOutput) {
+      ui.profileOutput.value = json;
+      ui.profileOutput.focus();
+      ui.profileOutput.select();
+    }
+    if (navigator.clipboard) navigator.clipboard.writeText(json).catch(() => {});
+    toast("Profile exported to text.");
+  }
+
+  function importProfile() {
+    if (!ui.profileOutput) return;
+    const raw = ui.profileOutput.value.trim();
+    if (!raw) {
+      toast("Paste a profile JSON first.");
+      return;
+    }
+    try {
+      const data = JSON.parse(raw);
+      applyState(data);
+      render();
+      save();
+      toast("Profile imported.");
+    } catch (err) {
+      toast("Invalid profile JSON.");
+    }
+  }
+
   function calcMissionYield(body) {
     const base = body.resources;
     const hazardGear = state.tech.hazard_gear ? 0.25 : 0;
@@ -223,12 +355,15 @@
 
   function render() {
     renderResources();
+    renderHub();
+    renderStarterGuide();
     renderBodies();
     renderMissions();
     renderBuildings();
     renderRates();
     renderCrew();
     renderTech();
+    renderControls();
     renderLog();
   }
 
@@ -251,6 +386,40 @@
     ui.satisfaction.textContent = `Satisfaction ${Math.round(state.workers.satisfaction * 100)}%`;
   }
 
+  function renderHub() {
+    if (!ui.hubStatus) return;
+    const r = state.resources;
+    const upkeepFood = state.workers.total * 0.2;
+    const mission = state.missions.active;
+    const body = mission ? BODIES.find((b) => b.id === mission.bodyId) : null;
+    const remaining = mission ? Math.max(0, mission.endsAt - Date.now()) : 0;
+    const lines = [
+      { title: "Power balance", meta: `${formatNumber(state.rates.power)}/tick | Stored ${formatNumber(r.power)}` },
+      { title: "Food & upkeep", meta: `${formatNumber(r.food)} stored | Upkeep ${formatNumber(upkeepFood)} per tick` },
+      { title: "Crew & habitat", meta: `${state.workers.total} crew | Habitat ${formatNumber(r.habitat)}` },
+      { title: "Morale", meta: `${Math.round(state.workers.satisfaction * 100)}% satisfaction | Needs food + power` },
+      { title: "Research", meta: `Recovered from missions and milestones | ${formatNumber(r.research)} stored` },
+      { title: "Signal flow", meta: `${formatNumber(state.rates.signal)}/tick plus manual collection` },
+      { title: "Mission ops", meta: mission ? `En route to ${body?.name || "target"} | ${formatDuration(remaining)}` : "No active mission" }
+    ];
+    ui.hubStatus.innerHTML = lines
+      .map((l) => `<div class="rowItem"><div class="rowDetails"><div class="rowTitle">${l.title}</div><div class="rowMeta">${l.meta}</div></div></div>`)
+      .join("");
+  }
+
+  function renderStarterGuide() {
+    if (!ui.starterGuide) return;
+    const steps = [
+      "1) Tap Collect Signal to unlock the Debris Field, then launch a mission to bring back metal, fuel, and early research.",
+      "2) Build a Reactor and Extractor to stabilize power and metal. Add Hydroponics to keep food positive.",
+      "3) Research Fuel Synthesis once you have 320 signal and 12 research. Research comes from missions and milestones.",
+      "4) Recruit a specialist crew when you have spare habitat and food to boost production roles."
+    ];
+    ui.starterGuide.innerHTML = steps
+      .map((s) => `<div class="rowItem"><div class="rowDetails"><div class="rowTitle">${s}</div></div></div>`)
+      .join("");
+  }
+
   function renderBodies() {
     ui.bodyList.innerHTML = BODIES.map((b) => {
       const locked = !unlocked(b);
@@ -258,7 +427,7 @@
       return `<div class="rowItem">
         <div class="rowDetails">
           <div class="rowTitle">${b.name} ${locked ? "<span class='tag'>Locked</span>" : ""}</div>
-          <div class="rowMeta">${b.type} • Travel ${eta} • Hazard ${(b.hazard * 100).toFixed(0)}%</div>
+          <div class="rowMeta">${b.type} | Travel ${eta} | Hazard ${(b.hazard * 100).toFixed(0)}%</div>
         </div>
         <button class="btn" data-body="${b.id}" ${locked ? "disabled" : ""} onclick="window.selectBody && window.selectBody('${b.id}')">Select</button>
       </div>`;
@@ -284,7 +453,7 @@
     }
     const body = BODIES.find((b) => b.id === m.bodyId);
     const remaining = Math.max(0, m.endsAt - Date.now());
-    ui.missionStatus.textContent = `En route to ${body.name} • ${formatDuration(remaining)}`;
+    ui.missionStatus.textContent = `En route to ${body.name} | ${formatDuration(remaining)}`;
     ui.missionPreview.innerHTML = bodyPreview(m.bodyId);
   }
 
@@ -314,16 +483,32 @@
   function renderRates() {
     const rates = state.rates;
     ui.rateList.innerHTML = Object.entries(rates)
-      .map(([k, v]) => `<div class="rowItem"><div class="rowDetails"><div class="rowTitle">${k}</div><div class="rowMeta">${formatNumber(v)}/tick</div></div></div>`)
+      .map(([k, v]) => `<div class="rowItem"><div class="rowDetails"><div class="rowTitle">${k.charAt(0).toUpperCase() + k.slice(1)}</div><div class="rowMeta">${formatNumber(v)}/tick</div></div></div>`)
       .join("");
   }
 
   function renderCrew() {
     const w = state.workers;
-    ui.crewStatus.textContent = `Crew ${w.total} | Miner ${w.assigned.miner} • Botanist ${w.assigned.botanist} • Engineer ${w.assigned.engineer}`;
-    ui.crewList.innerHTML = "";
-    ui.needStatus.textContent = `Morale ${Math.round(state.workers.satisfaction * 100)}% | Upkeep food ${formatNumber(w.total * 0.2)}`;
-    ui.needList.innerHTML = "";
+    const unassigned = w.total - totalAssigned();
+    ui.crewStatus.textContent = `Crew ${w.total} | Unassigned ${unassigned}`;
+    ui.crewList.innerHTML = CREW_ROLES.map((role) => {
+      const count = w.assigned[role.id] || 0;
+      return `<div class="rowItem">
+        <div class="rowDetails">
+          <div class="rowTitle">${role.name} (${count})</div>
+          <div class="rowMeta">${role.desc}</div>
+        </div>
+        <div class="row">
+          <button class="btn" onclick="window.changeCrew && window.changeCrew('${role.id}', -1)" ${count <= 0 ? "disabled" : ""}>-</button>
+          <button class="btn" onclick="window.changeCrew && window.changeCrew('${role.id}', 1)" ${unassigned <= 0 ? "disabled" : ""}>+</button>
+          <button class="btn" onclick="window.recruitCrew && window.recruitCrew('${role.id}')">Recruit</button>
+        </div>
+      </div>`;
+    }).join("");
+    ui.needStatus.textContent = `Morale ${Math.round(state.workers.satisfaction * 100)}% | Upkeep food ${formatNumber(w.total * 0.2)} | Habitat ${formatNumber(state.resources.habitat)}`;
+    ui.needList.innerHTML = `<div class="rowItem"><div class="rowDetails"><div class="rowTitle">How to grow crew</div><div class="rowMeta">Gain early volunteers after building 3 structures. Recruit specialists when you have spare habitat and food.</div></div></div>`;
+    window.changeCrew = changeCrew;
+    window.recruitCrew = recruitCrew;
   }
 
   function renderTech() {
@@ -343,11 +528,58 @@
     window.buyTech = (id) => buyTech(id);
   }
 
+  function renderControls() {
+    if (!ui.controlsList) return;
+    ui.controlsList.innerHTML = SHORTCUTS.map((s) => {
+      return `<div class="rowItem"><div class="rowDetails"><div class="rowTitle">${s.keys}</div><div class="rowMeta">${s.action}</div></div></div>`;
+    }).join("");
+  }
+
   function renderLog() {
     const entries = state.log.slice(-12).reverse();
     ui.logList.innerHTML = entries
       .map((e) => `<div class="rowItem"><div class="rowDetails"><div class="rowTitle">${e.text}</div><div class="rowMeta">${new Date(e.time).toLocaleTimeString()}</div></div></div>`)
       .join("");
+  }
+
+  function changeCrew(roleId, delta) {
+    const w = state.workers;
+    const current = w.assigned[roleId] || 0;
+    const target = current + delta;
+    if (target < 0) return;
+    const afterTotal = totalAssigned() + delta;
+    if (afterTotal > w.total) {
+      toast("No unassigned crew available.");
+      return;
+    }
+    w.assigned[roleId] = target;
+    log(`Adjusted ${roleId} crew to ${target}.`);
+    render();
+    save();
+  }
+
+  function recruitCrew(roleId) {
+    const w = state.workers;
+    const r = state.resources;
+    if (r.habitat <= w.total) {
+      toast("Build habitat first.");
+      return;
+    }
+    const foodCost = 5;
+    if (r.food < foodCost) {
+      toast("Need more food to sustain crew.");
+      return;
+    }
+    r.food -= foodCost;
+    w.total += 1;
+    w.assigned[roleId] = (w.assigned[roleId] || 0) + 1;
+    log(`Recruited a ${roleId}.`);
+    render();
+    save();
+  }
+
+  function totalAssigned() {
+    return Object.values(state.workers.assigned).reduce((a, b) => a + (b || 0), 0);
   }
 
   function build(id) {
@@ -445,6 +677,7 @@
   function formatNumber(val) {
     if (!Number.isFinite(val)) return "0";
     const abs = Math.abs(val);
+    if (abs < 10) return val.toFixed(1);
     if (abs < 1000) return val.toFixed(0);
     const units = ["K", "M", "B", "T"]; let u = -1; let n = abs;
     while (n >= 1000 && u < units.length - 1) { n /= 1000; u++; }
@@ -462,3 +695,4 @@
     return Math.min(max, Math.max(min, v));
   }
 })();
+

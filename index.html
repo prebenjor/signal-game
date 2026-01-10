@@ -19,6 +19,7 @@
         <button class="tab" data-tab="base">Base</button>
         <button class="tab" data-tab="crew">Crew</button>
         <button class="tab" data-tab="tech">Tech</button>
+        <button class="tab" data-tab="settings">Settings</button>
         <button class="tab" data-tab="log">Log</button>
       </div>
     </header>
@@ -42,6 +43,16 @@
         <div class="card">
           <div class="cardTitle">Bodies</div>
           <div id="bodyList" class="list"></div>
+        </div>
+      </div>
+      <div class="gridTwo">
+        <div class="card">
+          <div class="cardTitle">Hub Status</div>
+          <div id="hubStatus" class="list"></div>
+        </div>
+        <div class="card">
+          <div class="cardTitle">Starter Briefing</div>
+          <div id="starterGuide" class="list"></div>
         </div>
       </div>
     </section>
@@ -119,6 +130,31 @@
       <div class="card">
         <div class="cardTitle">Tech Tree</div>
         <div id="techList" class="list"></div>
+      </div>
+    </section>
+
+    <section class="panel hidden" data-panel="settings">
+      <div class="panelHeader">
+        <div>
+          <div class="panelTitle">Settings & Profiles</div>
+          <div class="panelSub">Keyboard shortcuts, quick reference, and save/export tools.</div>
+        </div>
+      </div>
+      <div class="gridTwo">
+        <div class="card">
+          <div class="cardTitle">Controls</div>
+          <div id="controlsList" class="list"></div>
+        </div>
+        <div class="card">
+          <div class="cardTitle">Profiles</div>
+          <div class="row">
+            <button id="exportProfile" class="btn">Export</button>
+            <button id="importProfile" class="btn">Import</button>
+          </div>
+          <div class="row">
+            <textarea id="profileOutput" class="textarea" placeholder="Profile JSON will appear here. Paste to import."></textarea>
+          </div>
+        </div>
       </div>
     </section>
 
