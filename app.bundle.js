@@ -11,7 +11,9 @@
     { id: "debris", name: "Debris Field", type: "Asteroid Belt", unlock: 0, travel: 30, hazard: 0.05, resources: { metal: 40, fuel: 8, research: 6 } },
     { id: "ice", name: "Ice Moon", type: "Frozen Moon", unlock: 500, travel: 60, hazard: 0.12, resources: { organics: 25, fuel: 14, research: 10 } },
     { id: "lava", name: "Lava Rock", type: "Volcanic Planetoid", unlock: 1500, travel: 90, hazard: 0.2, resources: { metal: 70, rare: 4, research: 18 } },
-    { id: "cradle", name: "Cradle Station", type: "Derelict Orbital", unlock: 2600, travel: 120, hazard: 0.18, requireTech: "deep_scan", resources: { fuel: 20, research: 32, rare: 8 } }
+    { id: "cradle", name: "Cradle Station", type: "Derelict Orbital", unlock: 2600, travel: 120, hazard: 0.18, requireTech: "deep_scan", resources: { fuel: 20, research: 32, rare: 8 } },
+    { id: "ruins", name: "Fallen Relay", type: "Ancient Relay", unlock: 4000, travel: 140, hazard: 0.22, requireTech: "shielding", resources: { metal: 110, research: 48, rare: 12 } },
+    { id: "rift", name: "Rift Beacon", type: "Unknown Signal", unlock: 6500, travel: 180, hazard: 0.3, requireTech: "rift_mapping", resources: { fuel: 40, research: 80, rare: 20 } }
   ];
 
   const BUILDINGS = [
@@ -27,7 +29,9 @@
     { id: "fuel_synth", name: "Fuel Synthesis", desc: "+1 fuel/tick", cost: { signal: 320, research: 12 }, unlock: 300 },
     { id: "hazard_gear", name: "Hazard Gear", desc: "-25% mission hazard", cost: { signal: 780, research: 30 }, unlock: 700 },
     { id: "drone_log", name: "Logistics Drones", desc: "+20% mission cargo", cost: { signal: 1200, research: 60 }, unlock: 1200 },
-    { id: "deep_scan", name: "Deep Scan Arrays", desc: "+1 research/tick and reveals deep targets", cost: { signal: 1500, research: 120 }, unlock: 1200 }
+    { id: "deep_scan", name: "Deep Scan Arrays", desc: "+1 research/tick and reveals deep targets", cost: { signal: 1500, research: 120 }, unlock: 1200 },
+    { id: "shielding", name: "Thermal Shielding", desc: "-40% hazard on hot zones; unlocks fallen relay", cost: { signal: 2100, research: 180 }, unlock: 2000 },
+    { id: "rift_mapping", name: "Rift Mapping", desc: "Unlocks anomalous missions and +20% rare cargo", cost: { signal: 3600, research: 260, rare: 8 }, unlock: 3500 }
   ];
 
   const CREW_ROLES = [
@@ -35,7 +39,7 @@
     { id: "botanist", name: "Botanist", desc: "Boosts food and organics yields." },
     { id: "engineer", name: "Engineer", desc: "Boosts power and general maintenance." }
   ];
-  const ROLE_ICON = { miner: "⛏", botanist: "🌿", engineer: "⚙" };
+  const ROLE_ICON = { miner: "[MIN]", botanist: "[BOT]", engineer: "[ENG]" };
 
   const SHORTCUTS = [
     { keys: "Space", action: "Collect signal at the hub" },
@@ -61,7 +65,7 @@
         rare: 0
       },
       rates: { signal: 0, research: 0, metal: 0, organics: 0, fuel: 0, power: 0, food: 0, morale: 0 },
-      workers: { total: 3, assigned: { miner: 1, botanist: 1, engineer: 1 }, satisfaction: 1 },
+      workers: { total: 3, assigned: { miner: 1, botanist: 1, engineer: 1 }, bonus: { miner: 0, botanist: 0, engineer: 0 }, satisfaction: 1 },
       buildings: {},
       tech: {},
       missions: { active: null },
@@ -96,6 +100,7 @@
     ui.resourceStats = $("#resourceStats");
     ui.bodyList = $("#bodyList");
     ui.collectSignal = $("#collectSignal");
+    ui.pulseScan = $("#pulseScan");
     ui.missionStatus = $("#missionStatus");
     ui.missionTarget = $("#missionTarget");
     ui.launchMission = $("#launchMission");
@@ -126,6 +131,7 @@
       tab.addEventListener("click", () => setTab(tab.dataset.tab));
     });
     if (ui.collectSignal) ui.collectSignal.addEventListener("click", collectSignal);
+    if (ui.pulseScan) ui.pulseScan.addEventListener("click", pulseScan);
     if (ui.launchMission) ui.launchMission.addEventListener("click", startMission);
     if (ui.missionTarget) ui.missionTarget.addEventListener("change", (e) => (state.selectedBody = e.target.value));
     if (ui.exportBtn) ui.exportBtn.addEventListener("click", exportProfile);
@@ -141,7 +147,7 @@
 
   function handleKeydown(e) {
     if (isTyping(e)) return;
-    if (e.code === "Space") {
+    if (e.code === "Space" || e.key === " ") {
       e.preventDefault();
       collectSignal();
       return;
@@ -208,6 +214,7 @@
       fresh.workers.total = data.workers.total ?? fresh.workers.total;
       fresh.workers.satisfaction = data.workers.satisfaction ?? fresh.workers.satisfaction;
       if (data.workers.assigned) Object.assign(fresh.workers.assigned, data.workers.assigned);
+      if (data.workers.bonus) Object.assign(fresh.workers.bonus, data.workers.bonus);
     }
     if (data.buildings) fresh.buildings = { ...data.buildings };
     if (data.tech) fresh.tech = { ...data.tech };
@@ -303,6 +310,22 @@
     save();
   }
 
+  function pulseScan() {
+    const cost = 25;
+    if (state.resources.signal < cost) {
+      toast("Not enough signal for a pulse scan.");
+      return;
+    }
+    state.resources.signal -= cost;
+    const rewardPool = ["metal", "fuel", "research"];
+    const type = rewardPool[Math.floor(Math.random() * rewardPool.length)];
+    const amount = type === "research" ? 6 : 20;
+    state.resources[type] += amount;
+    log(`Pulse scan recovered ${formatNumber(amount)} ${type}.`);
+    render();
+    save();
+  }
+
   function startMission() {
     const target = state.selectedBody;
     const body = BODIES.find((b) => b.id === target && unlocked(b));
@@ -360,13 +383,15 @@
   function calcMissionYield(body) {
     const base = body.resources;
     const hazardGear = state.tech.hazard_gear ? 0.25 : 0;
+    const shield = state.tech.shielding ? 0.15 : 0;
     const drone = state.tech.drone_log ? 0.2 : 0;
-    const hazardFail = Math.random() < Math.max(0, body.hazard - hazardGear);
+    const hazardFail = Math.random() < Math.max(0, body.hazard - hazardGear - shield);
     if (hazardFail) {
       log(`Hazard on ${body.name} reduced cargo.`);
       return multiplyResources(base, 0.4);
     }
-    return multiplyResources(base, 1 + drone);
+    const rareBonus = state.tech.rift_mapping ? 0.2 : 0;
+    return multiplyResources(base, 1 + drone + rareBonus);
   }
 
   function render() {
@@ -535,22 +560,28 @@
       toast("Recruitment hub is still sourcing candidates.");
       return;
     }
-    const candidates = [];
-    for (let i = 0; i < 3; i++) {
-      const role = CREW_ROLES[i % CREW_ROLES.length];
-      const tier = 1 + (i % 2);
-      candidates.push({
-        id: `${Date.now()}-${i}`,
-        role: role.id,
-        roleLabel: role.name,
-        trait: tier === 2 ? "Specialist: +15% to that role" : "Apprentice: +5% to that role",
-        cost: { food: 4 * tier, metal: 15 * tier }
-      });
-    }
+    const candidates = Array.from({ length: 3 }, (_, i) => makeCandidate(i));
     state.recruits = candidates;
     state.lastRecruitRoll = now;
     renderRecruits();
     save();
+  }
+
+  function makeCandidate(seed) {
+    const role = CREW_ROLES[Math.floor(Math.random() * CREW_ROLES.length)];
+    const tier = 1 + (seed % 3);
+    const bonus = tier === 1 ? 0.05 : tier === 2 ? 0.12 : 0.2;
+    const names = ["Nyx", "Orion", "Vega", "Rin", "Tala", "Kade", "Mira", "Ash"];
+    const name = names[Math.floor(Math.random() * names.length)];
+    return {
+      id: `${Date.now()}-${seed}-${Math.random().toString(16).slice(2, 6)}`,
+      name,
+      role: role.id,
+      roleLabel: role.name,
+      trait: `+${Math.round(bonus * 100)}% to ${role.name} output`,
+      bonus,
+      cost: { food: 4 * tier, metal: 12 * tier }
+    };
   }
 
   function hireRecruit(id) {
@@ -567,6 +598,7 @@
     spend(cand.cost);
     state.workers.total += 1;
     state.workers.assigned[cand.role] = (state.workers.assigned[cand.role] || 0) + 1;
+    state.workers.bonus[cand.role] = (state.workers.bonus[cand.role] || 0) + (cand.bonus || 0);
     log(`Hired ${cand.roleLabel}.`);
     state.recruits = state.recruits.filter((c) => c.id !== id);
     render();
@@ -717,9 +749,10 @@
   }
 
   function workerMultFor(buildingId) {
-    if (buildingId === "extractor") return 1 + (state.workers.assigned.miner || 0) * 0.1;
-    if (buildingId === "hydro") return 1 + (state.workers.assigned.botanist || 0) * 0.1;
-    return 1 + (state.workers.assigned.engineer || 0) * 0.05;
+    const b = state.workers.bonus || {};
+    if (buildingId === "extractor") return 1 + (state.workers.assigned.miner || 0) * 0.1 + (b.miner || 0);
+    if (buildingId === "hydro") return 1 + (state.workers.assigned.botanist || 0) * 0.1 + (b.botanist || 0);
+    return 1 + (state.workers.assigned.engineer || 0) * 0.05 + (b.engineer || 0);
   }
 
   function moraleMult() {
