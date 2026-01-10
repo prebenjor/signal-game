@@ -200,6 +200,12 @@ body {
   font-family: "Space Grotesk", system-ui, sans-serif;
 }
 
+.select.small {
+  min-width: 90px;
+  max-width: 100px;
+  padding: 6px 10px;
+}
+
 .input:focus,
 .textarea:focus,
 .select:focus {
@@ -267,6 +273,8 @@ body {
 .factionRow,
 .metaRow,
 .storyRow,
+.autoRow,
+.analyticsRow,
 .legacyRow,
 .archiveRow,
 .aiOption,

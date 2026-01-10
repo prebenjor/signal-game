@@ -26,6 +26,12 @@
           <div class="panelSub">Collect signal, unlock research, run expeditions, and shape your constellation.</div>
         </div>
         <div class="panelActions">
+          <select id="buyMode" class="select small">
+            <option value="1">x1</option>
+            <option value="10">x10</option>
+            <option value="100">x100</option>
+            <option value="max">Max</option>
+          </select>
           <button id="gameClick" class="btn primary">Collect Signal (Space)</button>
           <button id="convertInsight" class="btn">Convert Insight (C)</button>
           <button id="ascendBtn" class="btn">Ascend</button>
@@ -97,6 +103,15 @@
         </div>
 
         <div class="card" data-section="command">
+          <div class="cardTitle">Analytics</div>
+          <div class="cardSub">Breakdown of current per-sec and modifiers.</div>
+          <div class="row">
+            <button id="analyticsRefresh" class="btn">Refresh</button>
+          </div>
+          <div id="analyticsList" class="list"></div>
+        </div>
+
+        <div class="card" data-section="command">
           <div class="cardTitle">Sponsor Relay</div>
           <div class="cardSub">Optional boosts with cooldown timers.</div>
           <div id="adRelayStatus" class="status"></div>
@@ -130,6 +145,13 @@
             <button id="transcendBtn" class="btn primary">Transcend</button>
           </div>
           <div id="metaList" class="list"></div>
+        </div>
+
+        <div class="card" data-section="legacy">
+          <div class="cardTitle">Automation</div>
+          <div class="cardSub">Spend resonance to unlock auto-buy helpers.</div>
+          <div id="autoStatus" class="status"></div>
+          <div id="autoList" class="list"></div>
         </div>
 
         <div class="card" data-section="legacy">
@@ -187,6 +209,11 @@
             <label class="chk">Active account:</label>
             <select id="accountSelect" class="select"></select>
           </div>
+          <div class="row">
+            <button id="exportProfiles" class="btn">Export Profiles</button>
+            <button id="importProfiles" class="btn">Import Profiles</button>
+          </div>
+          <textarea id="profileData" class="textarea" rows="3" placeholder="Profile JSON for import/export"></textarea>
           <div id="accountSummary" class="status"></div>
         </div>
 

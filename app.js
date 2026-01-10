@@ -505,6 +505,7 @@
       gameClick: $("#gameClick"),
       convertInsight: $("#convertInsight"),
       ascendBtn: $("#ascendBtn"),
+      buyMode: $("#buyMode"),
       statSignal: $("#statSignal"),
       statPerSec: $("#statPerSec"),
       statInsight: $("#statInsight"),
@@ -528,11 +529,15 @@
       aiEvent: $("#aiEvent"),
       factionStatus: $("#factionStatus"),
       factionList: $("#factionList"),
+      analyticsRefresh: $("#analyticsRefresh"),
+      analyticsList: $("#analyticsList"),
       adRelayStatus: $("#adRelayStatus"),
       adBoostBtn: $("#adBoostBtn"),
       metaStatus: $("#metaStatus"),
       metaList: $("#metaList"),
       transcendBtn: $("#transcendBtn"),
+      autoStatus: $("#autoStatus"),
+      autoList: $("#autoList"),
       legacyStatus: $("#legacyStatus"),
       legacyList: $("#legacyList"),
       archiveStatus: $("#archiveStatus"),
@@ -547,6 +552,9 @@
       accountDelete: $("#accountDelete"),
       accountSelect: $("#accountSelect"),
       accountSummary: $("#accountSummary"),
+      exportProfiles: $("#exportProfiles"),
+      importProfiles: $("#importProfiles"),
+      profileData: $("#profileData"),
       prefDefaultTab: $("#prefDefaultTab"),
       prefCompact: $("#prefCompact"),
       prefAdsEnabled: $("#prefAdsEnabled"),
@@ -569,6 +577,7 @@
     if (ui.gameClick) ui.gameClick.addEventListener("click", handleCollect);
     if (ui.convertInsight) ui.convertInsight.addEventListener("click", handleConvertInsight);
     if (ui.ascendBtn) ui.ascendBtn.addEventListener("click", attemptAscend);
+    if (ui.buyMode) ui.buyMode.addEventListener("change", handleBuyMode);
     if (ui.mapRegen) ui.mapRegen.addEventListener("click", handleMapRegen);
     if (ui.adBoostBtn) ui.adBoostBtn.addEventListener("click", handleAdBoost);
     if (ui.adCancel) ui.adCancel.addEventListener("click", closeAdModal);
@@ -630,10 +639,20 @@
     }
 
     if (ui.transcendBtn) ui.transcendBtn.addEventListener("click", attemptTranscend);
+    if (ui.autoList) {
+      ui.autoList.addEventListener("click", (event) => {
+        const btn = event.target.closest("button[data-auto]");
+        if (btn) buyAutomation(btn.dataset.auto);
+      });
+    }
+
+    if (ui.analyticsRefresh) ui.analyticsRefresh.addEventListener("click", markSections.bind(null, ["analytics"]));
 
     if (ui.accountCreate) ui.accountCreate.addEventListener("click", handleAccountCreate);
     if (ui.accountRename) ui.accountRename.addEventListener("click", handleAccountRename);
     if (ui.accountDelete) ui.accountDelete.addEventListener("click", handleAccountDelete);
+    if (ui.exportProfiles) ui.exportProfiles.addEventListener("click", handleExportProfiles);
+    if (ui.importProfiles) ui.importProfiles.addEventListener("click", handleImportProfiles);
     if (ui.accountSelect) {
       ui.accountSelect.addEventListener("change", (event) => {
         setActiveProfile(event.target.value);
@@ -790,6 +809,7 @@
     if (ui.prefDefaultTab) ui.prefDefaultTab.value = prefs.defaultTab || "game";
     if (ui.prefCompact) ui.prefCompact.checked = !!prefs.compact;
     if (ui.prefAdsEnabled) ui.prefAdsEnabled.checked = prefs.adsEnabled !== false;
+    if (ui.buyMode) ui.buyMode.value = prefs.buyMode || "1";
     document.body.classList.toggle("compact", !!prefs.compact);
     setMainTab(prefs.defaultTab || "game", false);
     setSubtab(prefs.gameSection || "command", false);
@@ -880,6 +900,7 @@
       gainSignal(game, rates.perSec * delta);
     }
 
+    autoBuy(game, rates);
     updateExpedition(game, now, rates);
 
     queueWorkerRates(game, now);
@@ -912,6 +933,8 @@
     if (heavyDue || d.missions) renderMissions(game, rates);
     if (heavyDue || d.archive) renderArchive(game);
     if (heavyDue || d.story) renderStory(game);
+    if (heavyDue || d.auto) renderAutomation(game);
+    if (heavyDue || d.analytics) renderAnalytics(game, rates);
     if (heavyDue || d.achievements) renderAchievements(game);
     if (heavyDue || d.log) renderLog(game);
     checkStoryUnlocks(game, rates);
@@ -933,10 +956,12 @@
       meta: true,
       faction: true,
       legacy: true,
+      auto: true,
       expeditions: true,
       missions: true,
       archive: true,
       story: true,
+      analytics: true,
       achievements: true,
       log: true
     };
@@ -1077,18 +1102,22 @@
     const def = UPGRADE_DEFS.find((item) => item.id === id);
     if (!def) return;
 
-    const level = getLevel(game.upgrades, id);
-    const cost = getUpgradeCost(def, level);
-
-    if (!spendSignal(game, cost)) {
+    const mode = state.active?.prefs?.buyMode || "1";
+    const currentLevel = getLevel(game.upgrades, def.id);
+    const buys = resolveBuyCount(mode, (lvl) => getUpgradeCost(def, lvl), game.signal, Infinity, currentLevel);
+    if (buys <= 0) {
       toast("Not enough signal.");
       return;
     }
-
-    game.upgrades[id] = level + 1;
-    game.cycle.upgrades += 1;
-    game.stats.totalUpgrades += 1;
-    logEvent(game, `Upgrade purchased: ${def.name}.`);
+    for (let i = 0; i < buys; i += 1) {
+      const level = getLevel(game.upgrades, def.id);
+      const cost = getUpgradeCost(def, level);
+      if (!spendSignal(game, cost)) break;
+      game.upgrades[def.id] = level + 1;
+      game.cycle.upgrades += 1;
+      game.stats.totalUpgrades += 1;
+    }
+    logEvent(game, `Purchased ${buys}x ${def.name}.`);
     markSections(["upgrades", "log", "missions", "stats"]);
     scheduleSave();
   }
@@ -1121,15 +1150,21 @@
       return;
     }
 
-    const cost = getResearchCost(def, level);
-    if (game.insight < cost) {
+    const mode = state.active?.prefs?.buyMode || "1";
+    const buys = resolveBuyCount(mode, (lvl) => getResearchCost(def, lvl), game.insight, def.max - level, level);
+    if (buys <= 0) {
       toast("Not enough insight.");
       return;
     }
-
-    game.insight -= cost;
-    game.research[id] = level + 1;
-    logEvent(game, `Research upgraded: ${def.name}.`);
+    for (let i = 0; i < buys; i += 1) {
+      const lvl = getLevel(game.research, def.id);
+      if (lvl >= def.max) break;
+      const cost = getResearchCost(def, lvl);
+      if (game.insight < cost) break;
+      game.insight -= cost;
+      game.research[id] = lvl + 1;
+    }
+    logEvent(game, `Research upgraded: ${def.name} +${buys}.`);
     markSections(["research", "log", "stats"]);
     scheduleSave();
   }
@@ -1146,16 +1181,41 @@
       return;
     }
 
-    const cost = getMetaCost(def, level);
-    if (game.starlight < cost) {
+    const mode = state.active?.prefs?.buyMode || "1";
+    const buys = resolveBuyCount(mode, (lvl) => getMetaCost(def, lvl), game.starlight, def.max - level, level);
+    if (buys <= 0) {
       toast("Not enough starlight.");
       return;
     }
-
-    game.starlight -= cost;
-    game.meta[id] = level + 1;
-    logEvent(game, `Meta upgraded: ${def.name}.`);
+    for (let i = 0; i < buys; i += 1) {
+      const lvl = getLevel(game.meta, def.id);
+      if (lvl >= def.max) break;
+      const cost = getMetaCost(def, lvl);
+      if (game.starlight < cost) break;
+      game.starlight -= cost;
+      game.meta[id] = lvl + 1;
+    }
+    logEvent(game, `Meta upgraded: ${def.name} +${buys}.`);
     markSections(["meta", "log"]);
+    scheduleSave();
+  }
+
+  function buyAutomation(type) {
+    const game = getGame();
+    if (!game) return;
+    const costs = { upgrades: 20, research: 30 };
+    const cost = costs[type];
+    if (!cost) return;
+    if (game.auto?.[type]) return;
+    if (game.resonance < cost) {
+      toast("Not enough resonance for automation.");
+      return;
+    }
+    game.resonance -= cost;
+    if (!game.auto) game.auto = {};
+    game.auto[type] = true;
+    logEvent(game, `Automation unlocked: ${type}.`);
+    markSections(["auto", "legacy", "log"]);
     scheduleSave();
   }
 
@@ -1170,16 +1230,21 @@
       toast("Legacy already maxed.");
       return;
     }
-
-    const cost = getLegacyCost(def, level);
-    if (game.resonance < cost) {
+    const mode = state.active?.prefs?.buyMode || "1";
+    const buys = resolveBuyCount(mode, (lvl) => getLegacyCost(def, lvl), game.resonance, def.max - level, level);
+    if (buys <= 0) {
       toast("Not enough resonance.");
       return;
     }
-
-    game.resonance -= cost;
-    game.legacy[id] = level + 1;
-    logEvent(game, `Legacy upgraded: ${def.name}.`);
+    for (let i = 0; i < buys; i += 1) {
+      const lvl = getLevel(game.legacy, def.id);
+      if (lvl >= def.max) break;
+      const cost = getLegacyCost(def, lvl);
+      if (game.resonance < cost) break;
+      game.resonance -= cost;
+      game.legacy[id] = lvl + 1;
+    }
+    logEvent(game, `Legacy upgraded: ${def.name} +${buys}.`);
     markSections(["legacy", "log"]);
     scheduleSave();
   }
@@ -1273,7 +1338,7 @@
     if (!mission) return;
 
     const template = getMissionTemplate(mission.templateId);
-    const progress = template.progress(game);
+    const progress = Math.min(template.progress(game), mission.goal);
     if (progress < mission.goal) {
       toast("Mission not complete yet.");
       return;
@@ -1415,7 +1480,8 @@
       defaultTab: "game",
       compact: false,
       adsEnabled: true,
-      gameSection: "command"
+      gameSection: "command",
+      buyMode: "1"
     };
   }
 
@@ -1453,6 +1519,7 @@
       story: { unlocked: [] },
       offline: { lastGain: 0, lastSeconds: 0, lastAt: 0 },
       lastActiveAt: now,
+      auto: { upgrades: false, research: false },
       achievements: {},
       log: [],
       stats: {
@@ -1478,6 +1545,7 @@
     if (!game.faction || typeof game.faction !== "object") game.faction = { id: "", rep: 0, selectedAt: 0 };
     if (typeof game.faction.rep !== "number") game.faction.rep = 0;
     if (typeof game.faction.selectedAt !== "number") game.faction.selectedAt = 0;
+    if (!game.auto || typeof game.auto !== "object") game.auto = { upgrades: false, research: false };
     if (!Array.isArray(game.story.unlocked)) game.story.unlocked = [];
     return game;
   }
@@ -1565,13 +1633,14 @@
       const level = getLevel(game.upgrades, def.id);
       const cost = getUpgradeCost(def, level);
       const disabled = game.signal < cost;
+      const title = `Next: +${formatNumber(def.perSec)} /s, +${formatNumber(def.click)} click | Cost ${formatNumber(cost)}`;
       return `
         <div class="upgradeRow">
           <div class="rowDetails">
             <div class="rowTitle">${def.name} <span class="tag">Lv ${level}</span></div>
             <div class="rowMeta">${def.desc} (+${formatNumber(def.perSec)} /s)</div>
           </div>
-          <button class="btn" data-upgrade="${def.id}" ${disabled ? "disabled" : ""}>Buy ${formatNumber(cost)}</button>
+          <button class="btn" data-upgrade="${def.id}" title="${title}" ${disabled ? "disabled" : ""}>Buy ${formatNumber(cost)}</button>
         </div>
       `;
     }).join("");
@@ -1584,13 +1653,14 @@
       const level = getLevel(game.research, def.id);
       const cost = getResearchCost(def, level);
       const disabled = level >= def.max || game.insight < cost;
+      const title = `Next effect: ${def.desc} | Cost ${formatNumber(cost)}`;
       return `
         <div class="researchRow">
           <div class="rowDetails">
             <div class="rowTitle">${def.name} <span class="tag">Lv ${level}/${def.max}</span></div>
             <div class="rowMeta">${def.desc}</div>
           </div>
-          <button class="btn" data-research="${def.id}" ${disabled ? "disabled" : ""}>Spend ${formatNumber(cost)}</button>
+          <button class="btn" data-research="${def.id}" title="${title}" ${disabled ? "disabled" : ""}>Spend ${formatNumber(cost)}</button>
         </div>
       `;
     }).join("");
@@ -1609,13 +1679,14 @@
       const level = getLevel(game.meta, def.id);
       const cost = getMetaCost(def, level);
       const disabled = level >= def.max || game.starlight < cost;
+      const title = `Cost ${formatNumber(cost)} | Next: ${def.desc}`;
       return `
         <div class="metaRow">
           <div class="rowDetails">
             <div class="rowTitle">${def.name} <span class="tag">Lv ${level}/${def.max}</span></div>
             <div class="rowMeta">${def.desc}</div>
           </div>
-          <button class="btn" data-meta="${def.id}" ${disabled ? "disabled" : ""}>Invest ${formatNumber(cost)}</button>
+          <button class="btn" data-meta="${def.id}" title="${title}" ${disabled ? "disabled" : ""}>Invest ${formatNumber(cost)}</button>
         </div>
       `;
     }).join("");
@@ -1679,6 +1750,78 @@
     setHtml(ui.storyList, html || "<div class=\"status\">No transmissions recovered yet.</div>");
   }
 
+  function handleBuyMode(event) {
+    if (!state.active) return;
+    const mode = event.target.value;
+    state.active.prefs.buyMode = mode;
+    scheduleSave();
+  }
+
+  function renderAutomation(game) {
+    if (!ui.autoList || !ui.autoStatus) return;
+    setText(ui.autoStatus, `Resonance ${formatNumber(game.resonance)} | Auto upgrades: ${game.auto.upgrades ? "On" : "Off"} | Auto research: ${game.auto.research ? "On" : "Off"}`);
+    const rows = [
+      {
+        id: "upgrades",
+        name: "Auto Upgrades",
+        desc: "Automatically buy cheapest upgrade when affordable.",
+        cost: 20,
+        owned: game.auto.upgrades
+      },
+      {
+        id: "research",
+        name: "Auto Research",
+        desc: "Automatically buy cheapest research when affordable.",
+        cost: 30,
+        owned: game.auto.research
+      }
+    ];
+
+    const html = rows
+      .map((row) => {
+        const disabled = game.resonance < row.cost || row.owned;
+        const label = row.owned ? "Unlocked" : `Unlock (${formatNumber(row.cost)} res)`;
+        return `
+        <div class="autoRow">
+          <div class="rowDetails">
+            <div class="rowTitle">${row.name}</div>
+            <div class="rowMeta">${row.desc}</div>
+          </div>
+          <button class="btn" data-auto="${row.id}" ${disabled ? "disabled" : ""}>${label}</button>
+        </div>`;
+      })
+      .join("");
+
+    setHtml(ui.autoList, html);
+  }
+
+  function renderAnalytics(game, rates) {
+    if (!ui.analyticsList) return;
+    const parts = [];
+    parts.push({ label: "Per Sec", value: rates.perSec });
+    parts.push({ label: "Click Power", value: rates.clickPower });
+    parts.push({ label: "Signal Mult", value: rates.signalMult });
+    parts.push({ label: "Mission Mult", value: rates.missionMult });
+    parts.push({ label: "Insight Mult", value: rates.insightMult });
+    parts.push({ label: "Resonance Mult", value: rates.resonanceMult });
+    parts.push({ label: "Expedition Speed", value: rates.expeditionSpeed });
+    parts.push({ label: "Relic Chance", value: rates.relicChance });
+
+    const html = parts
+      .map(
+        (row) => `
+      <div class="analyticsRow">
+        <div class="rowDetails">
+          <div class="rowTitle">${row.label}</div>
+          <div class="rowMeta">${formatNumber(row.value)}</div>
+        </div>
+      </div>`
+      )
+      .join("");
+
+    setHtml(ui.analyticsList, html || "<div class=\"status\">No data.</div>");
+  }
+
   function renderLegacy(game, rates) {
     const threshold = getAscendThreshold(game);
     const gain = getAscendGain(game, rates);
@@ -1688,13 +1831,14 @@
       const level = getLevel(game.legacy, def.id);
       const cost = getLegacyCost(def, level);
       const disabled = level >= def.max || game.resonance < cost;
+      const title = `Cost ${formatNumber(cost)} | Next: ${def.desc}`;
       return `
         <div class="legacyRow">
           <div class="rowDetails">
             <div class="rowTitle">${def.name} <span class="tag">Lv ${level}/${def.max}</span></div>
             <div class="rowMeta">${def.desc}</div>
           </div>
-          <button class="btn" data-legacy="${def.id}" ${disabled ? "disabled" : ""}>Invest ${formatNumber(cost)}</button>
+          <button class="btn" data-legacy="${def.id}" title="${title}" ${disabled ? "disabled" : ""}>Invest ${formatNumber(cost)}</button>
         </div>
       `;
     }).join("");
@@ -1733,9 +1877,11 @@
     setText(ui.missionStatus, `Tier ${game.missions.tier} | Rewards x${rates.missionMult.toFixed(2)}.`);
 
     const html = game.missions.list
+      .filter((mission) => !mission.claimed)
       .map((mission) => {
         const template = getMissionTemplate(mission.templateId);
         const progress = template.progress(game);
+        const clamped = Math.min(progress, mission.goal);
         const done = progress >= mission.goal;
         const reward = Math.floor(mission.reward * rates.missionMult);
         const label = template.label.replace("{goal}", formatNumber(mission.goal));
@@ -1746,7 +1892,7 @@
           <div class="missionRow ${mission.claimed ? "done" : ""}">
             <div class="rowDetails">
               <div class="rowTitle">${label}</div>
-              <div class="rowMeta">Progress ${formatNumber(progress)} / ${formatNumber(mission.goal)} | Reward ${formatNumber(reward)} ${mission.rewardType}</div>
+              <div class="rowMeta">Progress ${formatNumber(clamped)} / ${formatNumber(mission.goal)} | Reward ${formatNumber(reward)} ${mission.rewardType}</div>
             </div>
             <button class="${btnClass}" data-mission="${mission.id}" ${disabled ? "disabled" : ""}>${statusLabel}</button>
           </div>
@@ -1853,6 +1999,7 @@
     if (!state.active || !ui.accountSummary) return;
     const text = `Active ${state.active.name} | Ascensions ${game.stats.lifetimeAscensions} | Transcends ${game.stats.transcends} | Total signal ${formatNumber(game.stats.totalEarned)} | Per sec ${formatNumber(rates.perSec)}`;
     setText(ui.accountSummary, text);
+    if (ui.buyMode && state.active.prefs?.buyMode) ui.buyMode.value = state.active.prefs.buyMode;
   }
 
   function renderAdRelay(game, now) {
@@ -1894,6 +2041,40 @@
         markSections(["story", "log"]);
       }
     });
+  }
+
+  function autoBuy(game, rates) {
+    if (game.auto?.upgrades) {
+      let bought = true;
+      while (bought) {
+        bought = false;
+        let cheapest = null;
+        UPGRADE_DEFS.forEach((def) => {
+          const level = getLevel(game.upgrades, def.id);
+          const cost = getUpgradeCost(def, level);
+          if (game.signal >= cost && (!cheapest || cost < cheapest.cost)) {
+            cheapest = { def, cost };
+          }
+        });
+        if (cheapest) {
+          spendSignal(game, cheapest.cost);
+          game.upgrades[cheapest.def.id] = getLevel(game.upgrades, cheapest.def.id) + 1;
+          bought = true;
+          markSections(["upgrades"]);
+        }
+      }
+    }
+    if (game.auto?.research) {
+      RESEARCH_DEFS.forEach((def) => {
+        const level = getLevel(game.research, def.id);
+        const cost = getResearchCost(def, level);
+        if (level < def.max && game.insight >= cost) {
+          game.insight -= cost;
+          game.research[def.id] = level + 1;
+          markSections(["research"]);
+        }
+      });
+    }
   }
 
   function applyOfflineProgress(game) {
@@ -2089,6 +2270,25 @@
       signalMult,
       adMult
     };
+  }
+
+  function resolveBuyCount(mode, getCost, currency, maxLevels = Infinity, startLevel = 0) {
+    if (mode === "max") {
+      let count = 0;
+      let level = startLevel;
+      let remaining = currency;
+      while (count < maxLevels) {
+        const cost = getCost(level);
+        if (remaining < cost) break;
+        remaining -= cost;
+        count += 1;
+        level += 1;
+      }
+      return count;
+    }
+    const num = parseInt(mode, 10);
+    if (!Number.isFinite(num) || num <= 1) return Math.min(1, maxLevels);
+    return Math.min(num, maxLevels);
   }
 
   function queueWorkerRates(game, now) {
