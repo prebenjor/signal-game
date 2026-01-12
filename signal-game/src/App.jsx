@@ -1,5 +1,5 @@
 
-import { useEffect, useMemo, useReducer, useState } from "react";
+import { useEffect, useMemo, useReducer, useRef, useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import "./App.css";
 import MissionsView from "./views/Missions";
@@ -9,6 +9,7 @@ import TechView from "./views/Tech";
 
 const STORAGE_KEY = "signalFrontierReact";
 const TICK_MS = 500;
+const SAVE_MS = 5000;
 const TAB_ORDER = ["hub", "missions", "bases", "crew", "tech", "log", "profile"];
 const EVENT_COOLDOWN_MS = [45000, 90000];
 const COST_EXP = { hub: 1.12, base: 1.14 };
@@ -158,6 +159,7 @@ export default function App() {
   const [compact, setCompact] = useState(false);
   const [loaded, setLoaded] = useState(false);
   const [lastSaved, setLastSaved] = useState(null);
+  const stateRef = useRef(state);
   const currentBase = useMemo(() => state.bases[state.selectedBody] || defaultBaseState(), [state.bases, state.selectedBody]);
 
   useEffect(() => {
@@ -177,20 +179,37 @@ export default function App() {
     }
   }, []);
 
-  useEffect(() => {
-    if (!loaded) return;
-    const payload = JSON.stringify(state);
-    localStorage.setItem(STORAGE_KEY, payload);
-    document.cookie = `signalFrontier=${encodeURIComponent(btoa(payload))};path=/;max-age=31536000`;
-    setLastSaved(Date.now());
-  }, [state, loaded]);
+  useEffect(() => { stateRef.current = state; }, [state]);
+
+  const persistState = () => {
+    try {
+      const payload = JSON.stringify(stateRef.current);
+      localStorage.setItem(STORAGE_KEY, payload);
+      document.cookie = `signalFrontier=${encodeURIComponent(btoa(payload))};path=/;max-age=31536000`;
+      setLastSaved(Date.now());
+    } catch (e) {
+      console.warn("Save failed", e);
+    }
+  };
 
   const manualSave = () => {
-    const payload = JSON.stringify(state);
-    localStorage.setItem(STORAGE_KEY, payload);
-    document.cookie = `signalFrontier=${encodeURIComponent(btoa(payload))};path=/;max-age=31536000`;
-    setLastSaved(Date.now());
+    persistState();
   };
+
+  useEffect(() => {
+    if (!loaded) return;
+    persistState();
+    const id = setInterval(persistState, SAVE_MS);
+    const onVis = () => { if (document.visibilityState === "hidden") persistState(); };
+    const onBeforeUnload = () => persistState();
+    window.addEventListener("visibilitychange", onVis);
+    window.addEventListener("beforeunload", onBeforeUnload);
+    return () => {
+      clearInterval(id);
+      window.removeEventListener("visibilitychange", onVis);
+      window.removeEventListener("beforeunload", onBeforeUnload);
+    };
+  }, [loaded]);
 
   useEffect(() => { const id = setInterval(() => setTick((t) => t + 1), TICK_MS); return () => clearInterval(id); }, []);
   useEffect(() => { applyProduction(); resolveMissions(); processEvents(); }, [tick]);
