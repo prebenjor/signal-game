@@ -8,6 +8,7 @@ import CrewView from "./views/Crew";
 import TechView from "./views/Tech";
 
 const STORAGE_KEY = "signalFrontierReact";
+const LEGACY_KEY = "signalFrontierState";
 const TICK_MS = 500;
 const SAVE_MS = 5000;
 const TAB_ORDER = ["hub", "missions", "bases", "crew", "tech", "log", "profile"];
@@ -154,30 +155,13 @@ function reducer(state, action) {
   }
 }
 export default function App() {
-  const [state, dispatch] = useReducer(reducer, initialState);
+  const initState = useMemo(() => loadSavedState(), []);
+  const [state, dispatch] = useReducer(reducer, initState);
   const [tick, setTick] = useState(0);
   const [compact, setCompact] = useState(false);
-  const [loaded, setLoaded] = useState(false);
   const [lastSaved, setLastSaved] = useState(null);
   const stateRef = useRef(state);
   const currentBase = useMemo(() => state.bases[state.selectedBody] || defaultBaseState(), [state.bases, state.selectedBody]);
-
-  useEffect(() => {
-    try {
-      const raw = localStorage.getItem(STORAGE_KEY);
-      const cookie = document.cookie.split("; ").find((c) => c.startsWith("signalFrontier="));
-      const cookieData = cookie ? decodeURIComponent(cookie.split("=")[1]) : null;
-      const data = raw || (cookieData ? atob(cookieData) : null);
-      if (data) {
-        const parsed = JSON.parse(data);
-        dispatch({ type: "LOAD", payload: { ...initialState, ...parsed } });
-      }
-    } catch (e) {
-      console.warn("Failed to load state, starting fresh", e);
-    } finally {
-      setLoaded(true);
-    }
-  }, []);
 
   useEffect(() => { stateRef.current = state; }, [state]);
 
@@ -197,8 +181,7 @@ export default function App() {
   };
 
   useEffect(() => {
-    if (!loaded) return;
-    persistState();
+    persistState(); // initial save to normalize keys
     const id = setInterval(persistState, SAVE_MS);
     const onVis = () => { if (document.visibilityState === "hidden") persistState(); };
     const onBeforeUnload = () => persistState();
@@ -209,7 +192,7 @@ export default function App() {
       window.removeEventListener("visibilitychange", onVis);
       window.removeEventListener("beforeunload", onBeforeUnload);
     };
-  }, [loaded]);
+  }, []);
 
   useEffect(() => { const id = setInterval(() => setTick((t) => t + 1), TICK_MS); return () => clearInterval(id); }, []);
   useEffect(() => { applyProduction(); resolveMissions(); processEvents(); }, [tick]);
@@ -918,6 +901,21 @@ function focusBoost(focus, resourceKey) {
 }
 
 function missionModeById(id) { return MISSION_MODES.find((m) => m.id === id) || MISSION_MODES[0]; }
+function loadSavedState() {
+  try {
+    const raw = localStorage.getItem(STORAGE_KEY) || localStorage.getItem(LEGACY_KEY);
+    const cookie = document.cookie.split("; ").find((c) => c.startsWith("signalFrontier="));
+    const cookieData = cookie ? decodeURIComponent(cookie.split("=")[1]) : null;
+    const data = raw || (cookieData ? atob(cookieData) : null);
+    if (data) {
+      const parsed = JSON.parse(data);
+      return { ...initialState, ...parsed };
+    }
+  } catch (e) {
+    console.warn("Failed to load state, starting fresh", e);
+  }
+  return initialState;
+}
 function scaledCost(baseCost, level, exp) {
   const out = {};
   Object.entries(baseCost || {}).forEach(([k, v]) => {
