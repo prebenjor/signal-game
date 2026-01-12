@@ -2,6 +2,10 @@
 import { useEffect, useMemo, useReducer, useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import "./App.css";
+import MissionsView from "./views/Missions";
+import BasesView from "./views/Bases";
+import CrewView from "./views/Crew";
+import TechView from "./views/Tech";
 
 const STORAGE_KEY = "signalFrontierReact";
 const TICK_MS = 500;
@@ -153,17 +157,24 @@ export default function App() {
   const [tick, setTick] = useState(0);
   const [compact, setCompact] = useState(false);
   const [loaded, setLoaded] = useState(false);
+  const [lastSaved, setLastSaved] = useState(null);
   const currentBase = useMemo(() => state.bases[state.selectedBody] || defaultBaseState(), [state.bases, state.selectedBody]);
 
   useEffect(() => {
-    const raw = localStorage.getItem(STORAGE_KEY);
-    const cookie = document.cookie.split("; ").find((c) => c.startsWith("signalFrontier="));
-    const cookieData = cookie ? decodeURIComponent(cookie.split("=")[1]) : null;
-    if (raw || cookieData) {
+    try {
+      const raw = localStorage.getItem(STORAGE_KEY);
+      const cookie = document.cookie.split("; ").find((c) => c.startsWith("signalFrontier="));
+      const cookieData = cookie ? decodeURIComponent(cookie.split("=")[1]) : null;
       const data = raw || (cookieData ? atob(cookieData) : null);
-      try { dispatch({ type: "LOAD", payload: { ...initialState, ...JSON.parse(data) } }); } catch (e) { console.warn("Failed to load state", e); }
+      if (data) {
+        const parsed = JSON.parse(data);
+        dispatch({ type: "LOAD", payload: { ...initialState, ...parsed } });
+      }
+    } catch (e) {
+      console.warn("Failed to load state, starting fresh", e);
+    } finally {
+      setLoaded(true);
     }
-    setLoaded(true);
   }, []);
 
   useEffect(() => {
@@ -171,7 +182,15 @@ export default function App() {
     const payload = JSON.stringify(state);
     localStorage.setItem(STORAGE_KEY, payload);
     document.cookie = `signalFrontier=${encodeURIComponent(btoa(payload))};path=/;max-age=31536000`;
+    setLastSaved(Date.now());
   }, [state, loaded]);
+
+  const manualSave = () => {
+    const payload = JSON.stringify(state);
+    localStorage.setItem(STORAGE_KEY, payload);
+    document.cookie = `signalFrontier=${encodeURIComponent(btoa(payload))};path=/;max-age=31536000`;
+    setLastSaved(Date.now());
+  };
 
   useEffect(() => { const id = setInterval(() => setTick((t) => t + 1), TICK_MS); return () => clearInterval(id); }, []);
   useEffect(() => { applyProduction(); resolveMissions(); processEvents(); }, [tick]);
@@ -281,7 +300,7 @@ function resolveMissions() {
     active.forEach((m) => {
       if (now < m.endsAt) { remaining.push(m); return; }
       const body = BODIES.find((b) => b.id === m.bodyId); if (!body) return;
-      let cargo = missionYield(body, m.mode, m.specialist);
+      let cargo = missionYield(state, body, m.mode, m.specialist);
       if (m.objective) {
         const choice = window.confirm(`Side Objective: ${m.objective.desc}.\nTake the risk for ${m.objective.rewardText}?`);
         if (choice) {
@@ -362,20 +381,6 @@ function startMission(bodyId, fuelBoost = 0, modeId = "balanced", specialist = "
     log(payload.enabled ? `Auto-launch enabled for ${BODIES.find((b) => b.id === payload.bodyId)?.name || "target"}.` : "Auto-launch disabled.");
   }
 
-  function missionYield(body, modeId, specialist = "none") {
-    const base = body.resources || {}; const drone = state.tech.drone_log ? 0.2 : 0; const rareBonus = state.tech.rift_mapping ? 0.2 : 0; const mult = 1 + drone + rareBonus;
-    const mode = missionModeById(modeId);
-    const cargo = {};
-    Object.entries(base).forEach(([k, v]) => {
-      const modeBoost = mode?.reward?.[k] ?? mode?.reward?.all ?? 1;
-      let specBoost = 1;
-      if (specialist === "miner" && (k === "metal" || k === "rare")) specBoost = 1.15;
-      if (specialist === "botanist" && (k === "organics" || k === "fuel")) specBoost = 1.15;
-      if (specialist === "engineer" && (k === "research")) specBoost = 1.1;
-      cargo[k] = Math.floor(v * mult * modeBoost * specBoost);
-    });
-    return cargo;
-  }
 
 function isUnlocked(body) {
     if (body.requireTech && !state.tech[body.requireTech]) return false;
@@ -618,18 +623,68 @@ function biomeBuildingById(id) { return Object.values(BIOME_BUILDINGS).flat().fi
               />
             )}
             {state.tab === 'missions' && (
-              <MissionsView state={state} startMission={startMission} setAutoLaunch={setAutoLaunch} setSelected={(id) => dispatch({ type: 'SET_SELECTED_BODY', id })} format={format} />
+              <MissionsView
+                state={state}
+                startMission={startMission}
+                setAutoLaunch={setAutoLaunch}
+                setSelected={(id) => dispatch({ type: 'SET_SELECTED_BODY', id })}
+                format={format}
+                missionModeById={missionModeById}
+                missionYield={missionYield}
+                formatDuration={formatDuration}
+                bodies={BODIES}
+                missionModes={MISSION_MODES}
+                isUnlockedUI={isUnlockedUI}
+              />
             )}
             {state.tab === 'bases' && (
-              <BasesView state={state} setSelected={(id) => dispatch({ type: 'SET_SELECTED_BODY', id })} buildBase={buildBase} setBaseFocus={setBaseFocus} refreshEvents={refreshEvents} resolveEvent={resolveEvent} runBaseOp={runBaseOp} crewBonusText={crewBonusText} format={format} bodyEvents={bodyEvents} />
+              <BasesView
+                state={state}
+                bodies={BODIES}
+                biomeBuildings={BIOME_BUILDINGS}
+                baseOps={BASE_OPS}
+                setSelected={(id) => dispatch({ type: 'SET_SELECTED_BODY', id })}
+                buildBase={buildBase}
+                setBaseFocus={setBaseFocus}
+                refreshEvents={refreshEvents}
+                resolveEvent={resolveEvent}
+                runBaseOp={runBaseOp}
+                crewBonusText={crewBonusText}
+                format={format}
+                bodyEvents={bodyEvents}
+                formatDuration={formatDuration}
+                isUnlockedUI={isUnlockedUI}
+                scaledCost={scaledCost}
+                withLogisticsCost={withLogisticsCost}
+                costText={costText}
+                canAffordUI={canAffordUI}
+                costExpBase={COST_EXP.base}
+              />
             )}
             {state.tab === 'crew' && (
-              <CrewView state={state} hire={hire} rollRecruits={() => rollRecruits(true)} changeCrew={changeCrew} format={format} />
+              <CrewView
+                state={state}
+                hire={hire}
+                rollRecruits={() => rollRecruits(true)}
+                changeCrew={changeCrew}
+                format={format}
+                costText={costText}
+              />
             )}
-            {state.tab === 'tech' && <TechView state={state} buyTech={buyTech} format={format} />}
+            {state.tab === 'tech' && (
+              <TechView
+                state={state}
+                buyTech={buyTech}
+                format={format}
+                techDefs={TECH}
+                hasPrereqs={hasPrereqs}
+                canAffordUI={canAffordUI}
+                costText={costText}
+              />
+            )}
             {state.tab === 'log' && <LogView log={state.log} />}
             {state.tab === 'profile' && (
-              <ProfileView state={state} ascend={ascend} exportProfile={exportProfile} importProfile={importProfile} compact={compact} setCompact={setCompact} />
+              <ProfileView state={state} ascend={ascend} exportProfile={exportProfile} importProfile={importProfile} compact={compact} setCompact={setCompact} manualSave={manualSave} lastSaved={lastSaved} />
             )}
           </main>
         </div>
@@ -658,7 +713,7 @@ function ResourceBar({ resources, rates, format }) {
   );
 }
 
-function ProfileView({ state, ascend, exportProfile, importProfile, compact, setCompact }) {
+function ProfileView({ state, ascend, exportProfile, importProfile, compact, setCompact, manualSave, lastSaved }) {
   return (
     <section className="panel space-y-3">
       <div className="text-lg font-semibold">Profile</div>
@@ -675,8 +730,9 @@ function ProfileView({ state, ascend, exportProfile, importProfile, compact, set
           <div className="flex flex-wrap gap-2">
             <button className="btn" onClick={exportProfile}>Export</button>
             <button className="btn" onClick={importProfile}>Import</button>
+            <button className="btn" onClick={manualSave}>Save now</button>
           </div>
-          <div className="text-xs text-muted">Export copies a base64 string; import pastes it here.</div>
+          <div className="text-xs text-muted">Export copies a base64 string; import pastes it here. Last saved: {lastSaved ? new Date(lastSaved).toLocaleTimeString() : "never"}</div>
         </div>
         <div className="card space-y-2">
           <div className="font-semibold">Layout</div>
@@ -796,302 +852,6 @@ function HubView({ state, onCollect, onPulse, runLabPulse, buildHub, buyHubUpgra
     </section>
   );
 }
-function MissionsView({ state, startMission, setAutoLaunch, setSelected, format }) {
-  return (
-    <section className="panel space-y-3">
-      <div>
-        <div className="text-lg font-semibold">Missions</div>
-        <div className="text-muted text-sm">Biome-specific hazards and loot. Boost fuel to cut travel time. Debris Field is your early fuel/research drip.</div>
-      </div>
-      <div className="grid md:grid-cols-2 gap-3">
-        <div className="card">
-          <div className="font-semibold mb-1">Targets</div>
-          <div className="list">
-            {BODIES.map((b) => {
-              const locked = !isUnlockedUI(state, b);
-              return (
-                <div key={b.id} className="row-item">
-                  <div className="row-details">
-                    <div className="row-title">
-                      {b.name} {!locked && state.selectedBody === b.id && <span className="tag">Selected</span>} {locked && <span className="tag">Locked</span>}
-                    </div>
-                    <div className="row-meta">{b.type.toUpperCase()} - Travel {formatDuration(b.travel * 1000)} - Hazard {(b.hazard * 100).toFixed(0)}%</div>
-                  </div>
-                  <button className="btn" disabled={locked} onClick={() => setSelected(b.id)}>Target</button>
-                </div>
-              );
-            })}
-          </div>
-        </div>
-
-        <div className="card">
-          <div className="font-semibold mb-1">Launch</div>
-          <MissionLaunch state={state} startMission={startMission} setAutoLaunch={setAutoLaunch} format={format} />
-        </div>
-      </div>
-    </section>
-  );
-}
-
-function MissionLaunch({ state, startMission, setAutoLaunch, format }) {
-  const [fuelBoost, setFuelBoost] = useState(0);
-  const [modeId, setModeId] = useState("balanced");
-  const [specialist, setSpecialist] = useState("none");
-  const body = BODIES.find((b) => b.id === state.selectedBody) || BODIES[0];
-  const slots = 1 + (state.hubUpgrades.launch_bay || 0);
-  const active = state.missions.active || [];
-  const mode = missionModeById(modeId);
-  const hazard = Math.max(0, body.hazard - (state.tech.hazard_gear ? 0.25 : 0) - (state.tech.shielding ? 0.2 : 0) + (mode?.hazard || 0) + (specialist === "engineer" ? -0.1 : 0));
-  const forecast = missionYield(body, modeId, specialist);
-  const failChance = Math.min(80, Math.max(5, Math.round(((hazard || 0) * 60 + 5))));
-  const auto = state.autoLaunch || {};
-  return (
-    <div className="space-y-3">
-      <div className="text-sm text-muted">Slots {active.length}/{slots}</div>
-      <div className="row-item">
-        <div className="row-details">
-          <div className="row-title">Mission Stance</div>
-          <div className="row-meta">{mode?.desc}</div>
-        </div>
-        <select className="select bg-slate-800 text-white" value={modeId} onChange={(e) => setModeId(e.target.value)}>
-          {MISSION_MODES.map((m) => <option key={m.id} value={m.id}>{m.name}</option>)}
-        </select>
-      </div>
-      <div className="row">
-        <input type="range" min="0" max="10" value={fuelBoost} onChange={(e) => setFuelBoost(Number(e.target.value))} />
-        <span className="text-sm text-muted">Fuel boost: {fuelBoost}</span>
-      </div>
-      <div className="row-item">
-        <div className="row-details">
-          <div className="row-title">Cargo Forecast</div>
-          <div className="row-meta">{Object.entries(forecast).map(([k, v]) => `${format(v)} ${k}`).join(" - ")}</div>
-          <div className="row-meta">Hazard {Math.round(hazard * 100)}% · Fail risk ~{failChance}% · Travel {formatDuration(Math.max(15000, body.travel * 1000 - fuelBoost * 3000 + (mode?.durationMs || 0)))} · Mode {mode?.name}</div>
-        </div>
-        <button className="btn btn-primary" onClick={() => startMission(body.id, fuelBoost, modeId, specialist)}>Launch</button>
-      </div>
-      <div className="row-item">
-        <div className="row-details">
-          <div className="row-title">Assign Specialist</div>
-          <div className="row-meta">Miner: +metal/rare · Botanist: +organics/fuel · Engineer: -hazard, +research</div>
-        </div>
-        <select className="select bg-slate-800 text-white" value={specialist} onChange={(e) => setSpecialist(e.target.value)}>
-          <option value="none">None</option>
-          <option value="miner">Miner</option>
-          <option value="botanist">Botanist</option>
-          <option value="engineer">Engineer</option>
-        </select>
-      </div>
-      <div className="row-item">
-        <div className="row-details">
-          <div className="row-title">Auto-launch</div>
-          <div className="row-meta">Launch this target automatically when slots are free.</div>
-        </div>
-        <div className="flex gap-2 items-center">
-          <input type="checkbox" checked={auto.enabled && auto.bodyId === body.id} onChange={(e) => {
-            if (e.target.checked) setAutoLaunch({ enabled: true, bodyId: body.id, mode: modeId, specialist });
-            else setAutoLaunch({ enabled: false, bodyId: null, mode: "balanced", specialist: "none" });
-          }} />
-          <span className="text-sm text-muted">{auto.enabled && auto.bodyId === body.id ? "Enabled" : "Disabled"}</span>
-        </div>
-      </div>
-      <div className="list">
-        {active.map((m, i) => {
-          const b = BODIES.find((x) => x.id === m.bodyId);
-          const remaining = Math.max(0, m.endsAt - Date.now());
-          return (
-            <div key={i} className="row-item">
-              <div className="row-details">
-                <div className="row-title">En route to {b?.name || "target"} <span className="tag">{missionModeById(m.mode)?.name || "Balanced"}</span></div>
-                <div className="row-meta">{formatDuration(remaining)} remaining</div>
-                {m.objective && <div className="row-meta text-xs text-muted">Side objective: {m.objective.desc}</div>}
-                {m.specialist && m.specialist !== "none" && <div className="row-meta text-xs text-muted">Specialist: {m.specialist}</div>}
-              </div>
-            </div>
-          );
-        })}
-        {!active.length && <div className="text-muted text-sm">No active missions.</div>}
-      </div>
-    </div>
-  );
-}
-function BasesView({ state, setSelected, buildBase, setBaseFocus, refreshEvents, resolveEvent, runBaseOp, crewBonusText, format, bodyEvents }) {
-  const body = BODIES.find((b) => b.id === state.selectedBody) || BODIES[0];
-  const buildings = BIOME_BUILDINGS[body.type] || [];
-  const base = state.bases[body.id] || { buildings: {}, events: bodyEvents(body), focus: "balanced" };
-  const ops = BASE_OPS[body.type] || [];
-  const opsCd = Math.max(0, (base.opsReadyAt || 0) - Date.now());
-  return (
-    <section className="panel space-y-3">
-      <div>
-        <div className="text-lg font-semibold">Bases</div>
-        <div className="text-muted text-sm">Manage structures, events, and base-specific ops. Mission targeting lives in Missions.</div>
-      </div>
-      <div className="grid md:grid-cols-2 gap-3">
-        <div className="card space-y-3">
-          <div className="font-semibold">Select Site</div>
-          <div className="row-item">
-            <div className="row-details">
-              <div className="row-title">{body.name}</div>
-              <div className="row-meta">{body.type.toUpperCase()} · Travel {formatDuration(body.travel * 1000)} · Hazard {(body.hazard * 100).toFixed(0)}%</div>
-            </div>
-            <select className="select bg-slate-800 text-white" value={body.id} onChange={(e) => setSelected(e.target.value)}>
-              {BODIES.map((b) => <option key={b.id} value={b.id} disabled={!isUnlockedUI(state, b)}>{b.name} {isUnlockedUI(state, b) ? "" : "(locked)"}</option>)}
-            </select>
-          </div>
-          <div className="text-sm text-muted">Switching focus here does not launch missions; use Missions tab to send expeditions.</div>
-        </div>
-        <div className="card space-y-2">
-          <div className="font-semibold">Build on {body.name}</div>
-          <div className="list">
-            {buildings.map((b) => {
-              const lvl = base.buildings[b.id] || 0;
-              const cost = withLogisticsCost(scaledCost(b.cost, lvl, COST_EXP.base), body);
-              return (
-                <div key={b.id} className="row-item">
-                  <div className="row-details">
-                    <div className="row-title">{b.name} <span className="tag">Lv {lvl}</span></div>
-                    <div className="row-meta">{b.desc}</div>
-                    <div className="row-meta text-xs text-muted">Logistics: +{Math.max(2, Math.floor((body.travel || 0) / 25))} fuel</div>
-                    <div className="row-meta text-xs text-muted">Crew bonus: {crewBonusText(b.id)}</div>
-                    <div className="row-meta text-xs text-muted">Next cost: {costText(cost, format)}</div>
-                  </div>
-                  <button className="btn" disabled={!canAffordUI(state.resources, cost)} onClick={() => buildBase(b.id)}>Build ({costText(cost, format)})</button>
-                </div>
-              );
-            })}
-          </div>
-          <div className="font-semibold mt-2">Local Events</div>
-          <div className="list">
-            {(base.events || []).map((e, i) => (
-              <div key={e.id || i} className="row-item">
-                <div className="row-details">
-                  <div className="row-title">{e.name || e}</div>
-                  <div className="row-meta">{e.desc || "Local situation requires attention."}</div>
-                  {e.cost && <div className="row-meta text-xs">Cost {costText(e.cost, format)} {e.requiresRole ? `· Needs ${e.requiresRole}` : ""}</div>}
-                </div>
-                {e.id ? <button className="btn" onClick={() => resolveEvent(body.id, e.id)}>Resolve</button> : null}
-              </div>
-            ))}
-            <button className="btn mt-2" onClick={refreshEvents}>Refresh Events</button>
-          </div>
-          <div className="font-semibold mt-2">Outpost Focus</div>
-          <div className="flex flex-wrap gap-2">
-            {["balanced","production","sustain","morale"].map((f) => (
-              <button key={f} className={`btn ${base.focus === f ? "btn-primary" : ""}`} onClick={() => setBaseFocus(f)}>{f[0].toUpperCase() + f.slice(1)}</button>
-            ))}
-          </div>
-          <div className="font-semibold mt-2">Outpost Ops</div>
-          <div className="list">
-            {ops.map((op) => (
-              <div key={op.id} className="row-item">
-                <div className="row-details">
-                  <div className="row-title">{op.name}</div>
-                  <div className="row-meta">{op.desc}</div>
-                  <div className="row-meta text-xs text-muted">Cost {costText(op.cost, format)} · Cooldown {Math.round(op.cooldown / 1000)}s</div>
-                </div>
-                <button className="btn" disabled={opsCd > 0 || !canAffordUI(state.resources, op.cost)} onClick={() => runBaseOp(body.id, op.id)}>{opsCd > 0 ? `Ready in ${formatDuration(opsCd)}` : "Run"}</button>
-              </div>
-            ))}
-            {!ops.length && <div className="text-muted text-sm">No base ops for this biome yet.</div>}
-          </div>
-        </div>
-      </div>
-    </section>
-  );
-}
-
-function CrewView({ state, hire, rollRecruits, changeCrew, format }) {
-  const unassigned = state.workers.total - Object.values(state.workers.assigned).reduce((a, b) => a + b, 0);
-  return (
-    <section className="panel space-y-3">
-      <div className="text-lg font-semibold">Crew & Recruits</div>
-      <div className="text-sm text-muted">Roles give +10% per assignment (miners/botanists) or +5% (engineers) to linked buildings. Morale scales all output; keep food/habitat/power stable.</div>
-      <div className="grid md:grid-cols-2 gap-3">
-        <div className="card">
-          <div className="row-title mb-1">Assignments</div>
-          <div className="list">
-            {["miner","botanist","engineer"].map((r) => (
-              <div key={r} className="row-item">
-                <div className="row-details">
-                  <div className="row-title">{r.toUpperCase()} ({state.workers.assigned[r] || 0})</div>
-                  <div className="row-meta">Bonus {Math.round((state.workers.bonus[r] || 0) * 100)}%</div>
-                </div>
-                <div className="row">
-                  <button className="btn" onClick={() => changeCrew(r, -1)}>-</button>
-                  <button className="btn" disabled={unassigned <= 0} onClick={() => changeCrew(r, 1)}>+</button>
-                </div>
-              </div>
-            ))}
-          </div>
-          <div className="text-sm text-muted mt-2">Unassigned: {unassigned}</div>
-        </div>
-        <div className="card">
-          <div className="row row-between mb-1">
-            <div className="row-title">Recruitment Hub</div>
-            <button className="btn" onClick={rollRecruits}>Refresh</button>
-          </div>
-          <div className="list">
-            {state.recruits.map((c) => (
-              <div key={c.id} className="row-item">
-                <div className="row-details">
-                  <div className="row-title">{c.name} - {c.role}</div>
-                  <div className="row-meta">{c.trait}</div>
-                  <div className="row-meta">Cost {costText(c.cost, format)}</div>
-                </div>
-                <button className="btn" onClick={() => hire(c.id)}>Hire</button>
-              </div>
-            ))}
-            {!state.recruits.length && <div className="text-muted text-sm">No candidates. Refresh to roll new crew.</div>}
-          </div>
-        </div>
-      </div>
-    </section>
-  );
-}
-function TechView({ state, buyTech, format }) {
-  const tiers = Array.from(new Set(TECH.map((t) => t.tier))).sort((a, b) => a - b);
-  return (
-    <section className="panel space-y-3">
-      <div className="text-lg font-semibold">Tech & Milestones</div>
-      <div className="text-muted text-sm">Branching tree; unlocks require prior techs.</div>
-      <div className="space-y-4">
-        {tiers.map((tier) => (
-          <div key={tier} className="card space-y-2">
-            <div className="font-semibold">Tier {tier}</div>
-            <div className="list">
-              {TECH.filter((t) => t.tier === tier).map((t) => {
-                const unlockVisible = state.resources.signal >= t.unlock;
-                if (!unlockVisible) return (
-                  <div key={t.id} className="row-item opacity-50">
-                    <div className="row-details">
-                      <div className="row-title">{t.name}</div>
-                      <div className="row-meta">Requires {t.unlock} signal to reveal.</div>
-                    </div>
-                  </div>
-                );
-                const owned = state.tech[t.id];
-                const prereqsMet = hasPrereqs(state, t);
-                const prereqText = t.requires?.length ? `Requires: ${t.requires.map((r) => TECH.find((x) => x.id === r)?.name || r).join(", ")}` : "Root";
-                const disabled = owned || !prereqsMet || !canAffordUI(state.resources, t.cost);
-                return (
-                  <div key={t.id} className="row-item">
-                    <div className="row-details">
-                      <div className="row-title">{t.name} {owned ? <span className="tag">Owned</span> : null}</div>
-                      <div className="row-meta">{t.desc}</div>
-                      <div className="row-meta text-xs text-muted">{prereqText}</div>
-                    </div>
-                    <button className="btn" disabled={disabled} onClick={() => buyTech(t.id)}>{owned ? "Done" : `Research (${costText(t.cost, format)})`}</button>
-                  </div>
-                );
-              })}
-            </div>
-          </div>
-        ))}
-      </div>
-    </section>
-  );
-}
-
 function LogView({ log }) {
   return (
     <section className="panel space-y-2">
@@ -1197,6 +957,23 @@ function createEvent(body) {
   const list = pool[body.type] || pool.asteroid;
   const pick = list[Math.floor(Math.random() * list.length)];
   return { id: `${body.id}-${Date.now()}-${Math.random().toString(16).slice(2, 6)}`, bodyId: body.id, ...pick, status: "active" };
+}
+function missionYield(state, body, modeId, specialist = "none") {
+  const base = body.resources || {};
+  const drone = state.tech?.drone_log ? 0.2 : 0;
+  const rareBonus = state.tech?.rift_mapping ? 0.2 : 0;
+  const mult = 1 + drone + rareBonus;
+  const mode = missionModeById(modeId);
+  const cargo = {};
+  Object.entries(base).forEach(([k, v]) => {
+    const modeBoost = mode?.reward?.[k] ?? mode?.reward?.all ?? 1;
+    let specBoost = 1;
+    if (specialist === "miner" && (k === "metal" || k === "rare")) specBoost = 1.15;
+    if (specialist === "botanist" && (k === "organics" || k === "fuel")) specBoost = 1.15;
+    if (specialist === "engineer" && (k === "research")) specBoost = 1.1;
+    cargo[k] = Math.floor(v * mult * modeBoost * specBoost);
+  });
+  return cargo;
 }
 function makeObjective(body) {
   const tables = {
