@@ -20,6 +20,7 @@ export default function BasesView({
   costText,
   canAffordUI,
   costExpBase,
+  requirementsMet,
 }) {
   const body = bodies.find((b) => b.id === state.selectedBody) || bodies[0];
   const buildings = biomeBuildings[body.type] || [];
@@ -60,6 +61,8 @@ export default function BasesView({
               const lvl = base.buildings[b.id] || 0;
               const cost = withLogisticsCost(scaledCost(b.cost, lvl, costExpBase), body);
               const logistics = Math.max(2, Math.floor((body.travel || 0) / 25));
+              const reqMet = requirementsMet(base, b);
+              const reqText = b.requires ? `Req: ${b.requires.map((r) => `${r.id} Lv ${r.level || 1}`).join(", ")}` : "";
               return (
                 <div key={b.id} className="row-item">
                   <div className="row-details">
@@ -70,9 +73,10 @@ export default function BasesView({
                     <div className="row-meta text-xs text-muted">Logistics: +{logistics} fuel</div>
                     <div className="row-meta text-xs text-muted">Crew bonus: {crewBonusText(b.id)}</div>
                     <div className="row-meta text-xs text-muted">Next cost: {costText(cost, format)}</div>
+                    {reqText && <div className="row-meta text-xs text-muted">{reqText}</div>}
                   </div>
-                  <button className="btn" disabled={!canAffordUI(state.resources, cost)} onClick={() => buildBase(b.id)}>
-                    Build ({costText(cost, format)})
+                  <button className="btn" disabled={!reqMet || !canAffordUI(state.resources, cost)} onClick={() => buildBase(b.id)}>
+                    {reqMet ? `Build (${costText(cost, format)})` : "Locked"}
                   </button>
                 </div>
               );

@@ -22,7 +22,7 @@ const STORAGE_KEY = "signalFrontierReact";
 const LEGACY_KEY = "signalFrontierState";
 const TICK_MS = 500;
 const SAVE_MS = 5000;
-const MAX_EVENTS = 4;
+const MAX_EVENTS_PER_BASE = 4;
 const TAB_ORDER = ["hub", "missions", "bases", "crew", "tech", "log", "profile"];
 const EVENT_COOLDOWN_MS = [45000, 90000];
 const COST_EXP = { hub: 1.12, base: 1.14 };
@@ -56,17 +56,25 @@ const BIOME_BUILDINGS = {
     { id: "fuel_cracker", name: "Fuel Cracker", desc: "+2 fuel/tick", cost: { metal: 90 }, prod: { fuel: 2 }, cons: { power: 1 } },
     { id: "ore_rig", name: "Ore Rig", desc: "+4 metal/tick", cost: { metal: 120 }, prod: { metal: 4 }, cons: { power: 1 } },
     { id: "solar_sail", name: "Solar Sail", desc: "+2 power/tick", cost: { metal: 70 }, prod: { power: 2 }, cons: {} },
+    { id: "core_tap", name: "Core Tap", desc: "+6 metal/tick, +1 rare/tick", cost: { metal: 260, fuel: 50 }, prod: { metal: 6, rare: 1 }, cons: { power: 2 }, requires: [{ id: "ore_rig", level: 2 }] },
+    { id: "orbital_foundry", name: "Orbital Foundry", desc: "+3 rare/tick, +10% mission cargo from this base (applied in cargo calc)", cost: { metal: 320, rare: 12 }, prod: { rare: 3 }, cons: { power: 2 }, requires: [{ id: "core_tap", level: 1 }], cargoMult: 1.1 },
   ],
   ice: [
     { id: "thermal_pump", name: "Thermal Pump", desc: "+3 fuel/tick", cost: { metal: 110, fuel: 16 }, prod: { fuel: 3 }, cons: { power: 1 } },
     { id: "algae_farm", name: "Algae Farm", desc: "+3 food/tick", cost: { metal: 90, organics: 40 }, prod: { food: 3 }, cons: { power: 1 } },
+    { id: "cryo_distillery", name: "Cryo Distillery", desc: "Converts organics to fuel (+3 fuel/tick, -1 organics/tick)", cost: { metal: 200, organics: 80 }, prod: { fuel: 3 }, cons: { organics: 1, power: 1 }, requires: [{ id: "thermal_pump", level: 2 }] },
+    { id: "glacier_observatory", name: "Glacier Observatory", desc: "+3 research/tick", cost: { metal: 260, fuel: 40 }, prod: { research: 3 }, cons: { power: 2 }, requires: [{ id: "cryo_distillery", level: 1 }] },
   ],
   warm: [
-    { id: "shield_dome", name: "Shield Dome", desc: "-20% hazard on missions from this base", cost: { metal: 140, fuel: 20 }, prod: {}, cons: { power: 1 } },
+    { id: "shield_dome", name: "Shield Dome", desc: "-20% hazard on missions from this base", cost: { metal: 140, fuel: 20 }, prod: {}, cons: { power: 1 }, hazardMult: 0.8 },
     { id: "vapor_trap", name: "Vapor Trap", desc: "+2 organics/tick", cost: { metal: 90, fuel: 12 }, prod: { organics: 2 }, cons: {} },
+    { id: "plasma_furnace", name: "Plasma Furnace", desc: "+6 power/tick, +4 metal/tick", cost: { metal: 240, fuel: 60 }, prod: { power: 6, metal: 4 }, cons: { fuel: 2 } },
+    { id: "shield_spire", name: "Shield Spire", desc: "Greatly reduces hazard; boosts morale", cost: { metal: 280, fuel: 80 }, prod: { morale: 0.08 }, cons: { power: 2 }, requires: [{ id: "shield_dome", level: 1 }], hazardMult: 0.7 },
   ],
   unknown: [
     { id: "anomaly_lab", name: "Anomaly Lab", desc: "+1 rare/tick", cost: { metal: 160, rare: 8 }, prod: { rare: 1 }, cons: { power: 1 } },
+    { id: "phase_relay", name: "Phase Relay", desc: "+4 signal/tick, -travel time for missions", cost: { metal: 240, rare: 10, fuel: 40 }, prod: { signal: 4 }, cons: { power: 2 }, travelMult: 0.85 },
+    { id: "anomaly_vault", name: "Anomaly Vault", desc: "+4 rare/tick, +4 research/tick", cost: { metal: 320, rare: 16 }, prod: { rare: 4, research: 4 }, cons: { power: 2 }, requires: [{ id: "anomaly_lab", level: 2 }] },
   ],
 };
 
@@ -367,7 +375,7 @@ export default function App() {
       const base = bases[body.id] || defaultBaseState();
       if (!base.nextEventAt) base.nextEventAt = now + randomBetween(...EVENT_COOLDOWN_MS);
       if (now >= base.nextEventAt) {
-        if ((base.events || []).length < MAX_EVENTS) {
+        if ((base.events || []).length < MAX_EVENTS_PER_BASE) {
           base.events = [...(base.events || []), createEvent(body)];
           log(`Event at ${body.name}: ${base.events[base.events.length - 1].name}`);
         }
@@ -391,10 +399,12 @@ export default function App() {
     if (state.resources.fuel < fuelCost) { log("Not enough fuel."); return; }
     bumpResources({ fuel: -fuelCost });
     const mode = missionModeById(modeId);
-    const hazard = body.hazard - (state.tech.hazard_gear ? 0.25 : 0) - (state.tech.shielding ? 0.2 : 0) + (mode?.hazard || 0) + (specialist === "engineer" ? -0.1 : 0);
-    const duration = Math.max(15000, ((body.travel * 1000) - fuelBoost * 3000 + (mode?.durationMs || 0)) * (state.tech.auto_pilots ? 0.9 : 1));
+    const bonuses = baseBonuses(body.id);
+    const hazardBase = body.hazard - (state.tech.hazard_gear ? 0.25 : 0) - (state.tech.shielding ? 0.2 : 0) + (mode?.hazard || 0) + (specialist === "engineer" ? -0.1 : 0);
+    const hazard = Math.max(0, hazardBase * (bonuses.hazard || 1));
+    const duration = Math.max(15000, ((body.travel * 1000 * (bonuses.travel || 1)) - fuelBoost * 3000 + (mode?.durationMs || 0)) * (state.tech.auto_pilots ? 0.9 : 1));
     const objective = Math.random() < 0.3 ? makeObjective(body) : null;
-    const mission = { bodyId: body.id, endsAt: Date.now() + duration, hazard: Math.max(0, hazard), mode: modeId, specialist, objective };
+    const mission = { bodyId: body.id, endsAt: Date.now() + duration, hazard, mode: modeId, specialist, objective };
     dispatch({ type: "UPDATE", patch: { missions: { active: [...(state.missions.active || []), mission] } } });
     if (!silent) log(`Launched ${mode?.name || "mission"} to ${body.name}. ETA ${formatDuration(duration)}.`);
     dispatch({ type: "UPDATE", patch: { milestones: { ...state.milestones, firstLaunch: true } } });
@@ -437,10 +447,11 @@ function isUnlocked(body) {
   function buildBase(id) {
     const def = biomeBuildingById(id); if (!def) return;
     const level = (state.bases[state.selectedBody]?.buildings?.[id] || 0);
+    const base = state.bases[state.selectedBody] || defaultBaseState();
+    if (!requirementsMet(base, def)) { log("Requirements not met for this structure."); return; }
     const cost = withLogisticsCost(scaledCost(def.cost, level, COST_EXP.base), selectedBody());
     if (!canAfford(cost)) { log("Not enough resources (includes logistics fuel)."); return; }
     spend(cost);
-    const base = state.bases[state.selectedBody] || defaultBaseState();
     const newBase = { ...base, buildings: { ...base.buildings, [id]: (base.buildings[id] || 0) + 1 } };
     dispatch({ type: "UPDATE", patch: { bases: { ...state.bases, [state.selectedBody]: newBase } } });
     log(`Built ${def.name} on ${selectedBody().name} (logistics fuel included).`);
@@ -672,6 +683,7 @@ function biomeBuildingById(id) { return Object.values(BIOME_BUILDINGS).flat().fi
                 bodies={BODIES}
                 missionModes={MISSION_MODES}
                 isUnlockedUI={isUnlockedUI}
+                baseBonuses={baseBonuses}
               />
             )}
             {state.tab === 'bases' && (
@@ -696,6 +708,7 @@ function biomeBuildingById(id) { return Object.values(BIOME_BUILDINGS).flat().fi
                 costText={costText}
                 canAffordUI={canAffordUI}
                 costExpBase={COST_EXP.base}
+                requirementsMet={requirementsMet}
               />
             )}
             {state.tab === 'crew' && (
@@ -958,6 +971,10 @@ function scaledCost(baseCost, level, exp) {
   });
   return out;
 }
+function requirementsMet(base, building) {
+  if (!building.requires) return true;
+  return building.requires.every((req) => (base.buildings?.[req.id] || 0) >= (req.level || 1));
+}
 function scaleCons(cons = {}, lvl = 1) { const out = {}; Object.entries(cons || {}).forEach(([k, v]) => out[k] = v * lvl); return out; }
 function aggregateEventMods(base) {
   const mult = {};
@@ -983,6 +1000,20 @@ function computeMorale(resources, rates, state, currentBase, eventMods, powerGat
   return clamp(baseMorale + (rates.morale || 0), 0.35, 1.25);
 }
 function randomBetween(min, max) { return min + Math.random() * (max - min); }
+function baseBonuses(bodyId) {
+  const body = BODIES.find((b) => b.id === bodyId);
+  const defs = body ? BIOME_BUILDINGS[body.type] || [] : [];
+  const base = state.bases[bodyId] || {};
+  let cargo = 1, travel = 1, hazard = 1;
+  Object.entries(base.buildings || {}).forEach(([id, lvl]) => {
+    const def = defs.find((d) => d.id === id);
+    if (!def) return;
+    if (def.cargoMult) cargo *= Math.pow(def.cargoMult, lvl || 0);
+    if (def.travelMult) travel *= Math.pow(def.travelMult, lvl || 0);
+    if (def.hazardMult) hazard *= Math.pow(def.hazardMult, lvl || 0);
+  });
+  return { cargo, travel, hazard };
+}
 function withLogisticsCost(cost, body) {
   const logisticsFuel = Math.max(2, Math.floor((body?.travel || 0) / 25));
   return { ...cost, fuel: (cost.fuel || 0) + logisticsFuel };
@@ -1015,6 +1046,7 @@ function missionYield(state, body, modeId, specialist = "none") {
   const drone = state.tech?.drone_log ? 0.2 : 0;
   const rareBonus = state.tech?.rift_mapping ? 0.2 : 0;
   const mult = 1 + drone + rareBonus;
+  const bonuses = baseBonuses(body.id);
   const mode = missionModeById(modeId);
   const cargo = {};
   Object.entries(base).forEach(([k, v]) => {
@@ -1023,7 +1055,7 @@ function missionYield(state, body, modeId, specialist = "none") {
     if (specialist === "miner" && (k === "metal" || k === "rare")) specBoost = 1.15;
     if (specialist === "botanist" && (k === "organics" || k === "fuel")) specBoost = 1.15;
     if (specialist === "engineer" && (k === "research")) specBoost = 1.1;
-    cargo[k] = Math.floor(v * mult * modeBoost * specBoost);
+    cargo[k] = Math.floor(v * mult * modeBoost * specBoost * (bonuses.cargo || 1));
   });
   return cargo;
 }

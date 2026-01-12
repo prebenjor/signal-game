@@ -1,7 +1,7 @@
 // Missions view: handles target selection, launch config, specialists, auto-launch, and showing active missions.
 import { useState } from "react";
 
-export default function MissionsView({ state, startMission, setAutoLaunch, setSelected, format, missionModeById, missionYield, formatDuration, bodies, missionModes, isUnlockedUI }) {
+export default function MissionsView({ state, startMission, setAutoLaunch, setSelected, format, missionModeById, missionYield, formatDuration, bodies, missionModes, isUnlockedUI, baseBonuses }) {
   return (
     <section className="panel space-y-3">
       <div>
@@ -41,6 +41,7 @@ export default function MissionsView({ state, startMission, setAutoLaunch, setSe
             formatDuration={formatDuration}
             bodies={bodies}
             missionModes={missionModes}
+            baseBonuses={baseBonuses}
           />
         </div>
       </div>
@@ -48,18 +49,21 @@ export default function MissionsView({ state, startMission, setAutoLaunch, setSe
   );
 }
 
-function MissionLaunch({ state, startMission, setAutoLaunch, format, missionModeById, missionYield, formatDuration, bodies, missionModes }) {
+function MissionLaunch({ state, startMission, setAutoLaunch, format, missionModeById, missionYield, formatDuration, bodies, missionModes, baseBonuses }) {
   const [fuelBoost, setFuelBoost] = useState(0);
   const [modeId, setModeId] = useState("balanced");
   const [specialist, setSpecialist] = useState("none");
   const body = bodies.find((b) => b.id === state.selectedBody) || bodies[0];
+  const bonuses = baseBonuses(body.id);
   const slots = 1 + (state.hubUpgrades.launch_bay || 0);
   const active = state.missions.active || [];
   const mode = missionModeById(modeId);
-  const hazard = Math.max(0, body.hazard - (state.tech.hazard_gear ? 0.25 : 0) - (state.tech.shielding ? 0.2 : 0) + (mode?.hazard || 0) + (specialist === "engineer" ? -0.1 : 0));
+  const hazardBase = body.hazard - (state.tech.hazard_gear ? 0.25 : 0) - (state.tech.shielding ? 0.2 : 0) + (mode?.hazard || 0) + (specialist === "engineer" ? -0.1 : 0);
+  const hazard = Math.max(0, hazardBase * (bonuses.hazard || 1));
   const forecast = missionYield(state, body, modeId, specialist);
   const failChance = Math.min(80, Math.max(5, Math.round(((hazard || 0) * 60 + 5))));
   const auto = state.autoLaunch || {};
+  const travelMs = Math.max(15000, (body.travel * 1000 * (bonuses.travel || 1)) - fuelBoost * 3000 + (mode?.durationMs || 0));
   return (
     <div className="space-y-3">
       <div className="text-sm text-muted">Slots {active.length}/{slots}</div>
@@ -80,7 +84,7 @@ function MissionLaunch({ state, startMission, setAutoLaunch, format, missionMode
         <div className="row-details">
           <div className="row-title">Cargo Forecast</div>
           <div className="row-meta">{Object.entries(forecast).map(([k, v]) => `${format(v)} ${k}`).join(" - ")}</div>
-          <div className="row-meta">Hazard {Math.round(hazard * 100)}% | Fail risk ~{failChance}% | Travel {formatDuration(Math.max(15000, body.travel * 1000 - fuelBoost * 3000 + (mode?.durationMs || 0)))} | Mode {mode?.name}</div>
+          <div className="row-meta">Hazard {Math.round(hazard * 100)}% | Fail risk ~{failChance}% | Travel {formatDuration(travelMs)} | Mode {mode?.name}</div>
         </div>
         <button className="btn btn-primary" onClick={() => startMission(body.id, fuelBoost, modeId, specialist)}>Launch</button>
       </div>
