@@ -22,6 +22,7 @@ const STORAGE_KEY = "signalFrontierReact";
 const LEGACY_KEY = "signalFrontierState";
 const TICK_MS = 500;
 const SAVE_MS = 5000;
+const MAX_EVENTS = 4;
 const TAB_ORDER = ["hub", "missions", "bases", "crew", "tech", "log", "profile"];
 const EVENT_COOLDOWN_MS = [45000, 90000];
 const COST_EXP = { hub: 1.12, base: 1.14 };
@@ -366,10 +367,12 @@ export default function App() {
       const base = bases[body.id] || defaultBaseState();
       if (!base.nextEventAt) base.nextEventAt = now + randomBetween(...EVENT_COOLDOWN_MS);
       if (now >= base.nextEventAt) {
-        base.events = [...(base.events || []), createEvent(body)];
+        if ((base.events || []).length < MAX_EVENTS) {
+          base.events = [...(base.events || []), createEvent(body)];
+          log(`Event at ${body.name}: ${base.events[base.events.length - 1].name}`);
+        }
         base.nextEventAt = now + randomBetween(...EVENT_COOLDOWN_MS);
         bases[body.id] = base; changed = true;
-        log(`Event at ${body.name}: ${base.events[base.events.length - 1].name}`);
       } else if (!bases[body.id]) {
         bases[body.id] = base; changed = true;
       }
