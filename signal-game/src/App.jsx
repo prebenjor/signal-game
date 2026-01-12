@@ -604,9 +604,15 @@ function biomeBuildingById(id) { return Object.values(BIOME_BUILDINGS).flat().fi
         </header>
 
         <div className="flex flex-col md:flex-row gap-4">
-          <nav className="md:w-48 flex md:flex-col gap-2">
+          <nav className="md:w-48 w-full flex md:flex-col flex-wrap gap-2 overflow-x-auto pb-1">
             {['hub','missions','bases','crew','tech','log','profile'].map((tab) => (
-              <button key={tab} className={`tab w-full text-left ${state.tab === tab ? 'active' : ''}`} onClick={() => dispatch({ type: 'SET_TAB', tab })}>{tab[0].toUpperCase() + tab.slice(1)}</button>
+              <button
+                key={tab}
+                className={`tab w-full md:w-full text-left whitespace-nowrap ${state.tab === tab ? 'active' : ''}`}
+                onClick={() => dispatch({ type: 'SET_TAB', tab })}
+              >
+                {tab[0].toUpperCase() + tab.slice(1)}
+              </button>
             ))}
           </nav>
           <main className="flex-1 flex flex-col gap-3">

@@ -47,7 +47,7 @@ body {
 }
 
 .tab {
-  @apply px-3 py-2 rounded-xl border border-[rgba(255,255,255,0.08)] bg-white/5 text-sm font-semibold;
+  @apply px-3 py-2 rounded-xl border border-[rgba(255,255,255,0.08)] bg-white/5 text-sm font-semibold whitespace-nowrap;
 }
 .tab.active {
   @apply bg-gradient-to-br from-[#ff9c3a]/40 to-[#2dd4bf]/40 border-[rgba(255,156,58,0.7)];
