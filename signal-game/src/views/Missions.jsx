@@ -1,3 +1,4 @@
+// Missions view: handles target selection, launch config, specialists, auto-launch, and showing active missions.
 import { useState } from "react";
 
 export default function MissionsView({ state, startMission, setAutoLaunch, setSelected, format, missionModeById, missionYield, formatDuration, bodies, missionModes, isUnlockedUI }) {

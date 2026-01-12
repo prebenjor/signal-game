@@ -1,4 +1,15 @@
 
+/**
+ * Core app shell and game loop.
+ * - State lives in a single reducer; see initialState and reducer cases.
+ * - Auto-saves via persistState() to localStorage + cookie (key: signalFrontierReact), with export/import in Profile tab.
+ * - Tick loop applies production, resolves missions/events, and keeps UI in sync.
+ * - Tabs render via view components in src/views/ (Missions, Bases, Crew, Tech); pass helpers as props to keep logic centralized here.
+ * Extend flow:
+ *   * Add new resources/rates in initialState and bump compute loops in applyProduction().
+ *   * Add new buildings/tech/targets by extending constants (HUB_BUILDINGS, TECH, BODIES, BIOME_BUILDINGS) and any unlock rules.
+ *   * Use log() for player feedback; use bumpResources/spend to modify economy.
+ */
 import { useEffect, useMemo, useReducer, useRef, useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import "./App.css";

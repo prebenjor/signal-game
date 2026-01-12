@@ -1,3 +1,4 @@
+// Crew view: manage assignments and recruit candidates. Hiring spends resources via App helpers.
 export default function CrewView({ state, hire, rollRecruits, changeCrew, format, costText }) {
   const unassigned = state.workers.total - Object.values(state.workers.assigned).reduce((a, b) => a + b, 0);
   return (

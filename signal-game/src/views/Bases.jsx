@@ -1,3 +1,4 @@
+// Bases view: per-biome build queues, events, ops, and focus controls. Uses helpers from App to reuse logic.
 export default function BasesView({
   state,
   bodies,

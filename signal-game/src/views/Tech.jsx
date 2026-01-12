@@ -1,3 +1,4 @@
+// Tech view: branching techs with prereqs; uses helpers from App for afford/prereq checks.
 export default function TechView({ state, buyTech, format, techDefs, hasPrereqs, canAffordUI, costText }) {
   const tiers = Array.from(new Set(techDefs.map((t) => t.tier))).sort((a, b) => a - b);
   return (
