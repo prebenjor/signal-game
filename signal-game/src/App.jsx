@@ -176,6 +176,7 @@ export default function App() {
 
   useEffect(() => { stateRef.current = state; }, [state]);
 
+  // Persist current in-memory state to storage (localStorage + cookie).
   const persistState = () => {
     try {
       const payload = JSON.stringify(stateRef.current);
@@ -187,6 +188,7 @@ export default function App() {
     }
   };
 
+  // Manual save trigger used by Profile tab.
   const manualSave = () => {
     persistState();
   };
@@ -222,6 +224,7 @@ export default function App() {
 
   function cycleTab(delta) { const idx = TAB_ORDER.indexOf(state.tab); const next = (idx + delta + TAB_ORDER.length) % TAB_ORDER.length; dispatch({ type: "SET_TAB", tab: TAB_ORDER[next] }); }
 
+  // Primary click action; scales later via upgrades/bonuses.
   function collectSignal() { bumpResources({ signal: 1 }); log("Manual signal calibration."); }
 
   function pulseScan() {
@@ -238,12 +241,14 @@ export default function App() {
     log(`Pulse scan recovered ${amount} ${type} (cost ${cost}).`);
   }
 
+  // Apply resource delta; used across economy adjustments.
   function bumpResources(delta) {
     dispatch({ type: "UPDATE", patch: { resources: Object.keys(delta).reduce((acc, key) => { acc[key] = Math.max(0, (state.resources[key] || 0) + delta[key]); return acc; }, { ...state.resources }) } });
   }
 
   function log(text) { dispatch({ type: "LOG", text }); }
 
+  // Per-tick production: aggregates hub/base output, morale, focus, hazards, and power gating.
   function applyProduction() {
     const r = { ...state.resources };
     const contributions = [];
@@ -306,7 +311,8 @@ export default function App() {
     return `${pct.toFixed(0)}%`;
   };
 
-function resolveMissions() {
+  // Settle completed missions; applies cargo, objectives, failure risk, and logs.
+  function resolveMissions() {
     const active = state.missions.active || [];
     if (!active.length) return;
     const now = Date.now(); const remaining = [];
@@ -350,6 +356,7 @@ function resolveMissions() {
     }
   }
 
+  // Rolls base events and keeps per-body event timers moving.
   function processEvents() {
     const now = Date.now();
     const bases = { ...state.bases };
@@ -370,7 +377,8 @@ function resolveMissions() {
     if (changed) dispatch({ type: "UPDATE", patch: { bases } });
   }
 
-function startMission(bodyId, fuelBoost = 0, modeId = "balanced", specialist = "none", silent = false) {
+  // Launch mission with stance/specialist; charges fuel logistics and schedules resolution.
+  function startMission(bodyId, fuelBoost = 0, modeId = "balanced", specialist = "none", silent = false) {
     const body = BODIES.find((b) => b.id === bodyId && isUnlocked(b));
     if (!body) { log("Target locked."); return; }
     const slots = 1 + (state.hubUpgrades.launch_bay || 0) + (state.tech.auto_pilots ? 1 : 0);
@@ -403,6 +411,7 @@ function isUnlocked(body) {
 
   function bodyEvents(body) { return [createEvent(body)]; }
 
+  // Build/level hub structures; scales cost by COST_EXP.hub.
   function buildHub(id) {
     const def = HUB_BUILDINGS.find((b) => b.id === id); if (!def) return;
     const level = state.hubBuildings[id] || 0;
@@ -421,6 +430,7 @@ function isUnlocked(body) {
     log(`Upgraded ${def.name}.`);
   }
 
+  // Build/level biome structures on the focused base; includes logistics fuel cost.
   function buildBase(id) {
     const def = biomeBuildingById(id); if (!def) return;
     const level = (state.bases[state.selectedBody]?.buildings?.[id] || 0);
@@ -451,8 +461,10 @@ function isUnlocked(body) {
 
   function canAfford(cost) { return Object.entries(cost).every(([k, v]) => (state.resources[k] || 0) >= v); }
 
+  // Spend helper; clamps to zero and updates state in one place.
   function spend(cost) { const r = { ...state.resources }; Object.entries(cost).forEach(([k, v]) => { r[k] = Math.max(0, r[k] - v); }); dispatch({ type: "UPDATE", patch: { resources: r } }); }
 
+  // Research tech; enforces prereqs and reveals gated targets.
   function buyTech(id) {
     const def = TECH.find((t) => t.id === id); if (!def || state.tech[id]) return;
     if (!hasPrereqs(state, def)) { log("Complete prerequisite tech first."); return; }
@@ -473,6 +485,7 @@ function isUnlocked(body) {
     log("Research pulse completed. New data archived.");
   }
 
+  // Prestige/reset with boost based on total value.
   function ascend() {
     const totalValue = (state.resources.signal || 0) + (state.resources.metal || 0) + (state.resources.research || 0) * 5 + (state.resources.rare || 0) * 20;
     const points = Math.max(1, Math.floor(totalValue / 5000));
@@ -483,6 +496,7 @@ function isUnlocked(body) {
     log(`Ascended for ${points} prestige. Global production boost now ${Math.round((prestige.boost - 1) * 100)}%.`);
   }
 
+  // Export obfuscated profile blob for cross-browser transfer.
   function exportProfile() {
     try {
       const raw = JSON.stringify(state);
@@ -506,6 +520,7 @@ function isUnlocked(body) {
     }
   }
 
+  // Import profile blob (base64+xor) and overwrite current state.
   function importProfile() {
     const data = window.prompt("Paste exported profile string");
     if (!data) return;
