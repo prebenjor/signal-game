@@ -588,16 +588,16 @@ function isUnlocked(body) {
 function biomeBuildingById(id) { return Object.values(BIOME_BUILDINGS).flat().find((b) => b.id === id); }
   return (
     <div className="min-h-screen pb-16">
-      <div className="max-w-6xl xl:max-w-7xl w-[96vw] mx-auto px-4 pt-6 flex flex-col gap-4">
+      <div className="w-full max-w-screen-2xl mx-auto px-3 sm:px-5 lg:px-8 pt-6 flex flex-col gap-4">
         <header className="panel flex flex-col gap-3">
-          <div className="flex items-center justify-between gap-3">
+          <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-3">
             <div>
               <div className="inline-flex px-3 py-1 rounded-full bg-white/10 border border-white/10 text-xs tracking-[0.1em] font-semibold">Signal Frontier</div>
               <div className="text-muted text-sm mt-1">Scan, settle, and build outposts across the void.</div>
             </div>
-            <div className="flex gap-2">
-              <button className="btn btn-primary" onClick={collectSignal}>Collect Signal (Space)</button>
-              <button className="btn" disabled={state.resources.signal < Math.min(180, 60 + (state.pulseCount || 0) * 15) || state.pulseReadyAt > Date.now()} onClick={pulseScan}>Pulse Scan</button>
+            <div className="flex flex-wrap gap-2">
+              <button className="btn btn-primary w-full sm:w-auto" onClick={collectSignal}>Collect Signal (Space)</button>
+              <button className="btn w-full sm:w-auto" disabled={state.resources.signal < Math.min(180, 60 + (state.pulseCount || 0) * 15) || state.pulseReadyAt > Date.now()} onClick={pulseScan}>Pulse Scan</button>
             </div>
           </div>
           <ResourceBar resources={state.resources} rates={state.rates} format={format} />
