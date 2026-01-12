@@ -399,7 +399,7 @@ export default function App() {
     if (state.resources.fuel < fuelCost) { log("Not enough fuel."); return; }
     bumpResources({ fuel: -fuelCost });
     const mode = missionModeById(modeId);
-    const bonuses = baseBonuses(body.id);
+    const bonuses = baseBonuses(state, body.id);
     const hazardBase = body.hazard - (state.tech.hazard_gear ? 0.25 : 0) - (state.tech.shielding ? 0.2 : 0) + (mode?.hazard || 0) + (specialist === "engineer" ? -0.1 : 0);
     const hazard = Math.max(0, hazardBase * (bonuses.hazard || 1));
     const duration = Math.max(15000, ((body.travel * 1000 * (bonuses.travel || 1)) - fuelBoost * 3000 + (mode?.durationMs || 0)) * (state.tech.auto_pilots ? 0.9 : 1));
@@ -683,7 +683,7 @@ function biomeBuildingById(id) { return Object.values(BIOME_BUILDINGS).flat().fi
                 bodies={BODIES}
                 missionModes={MISSION_MODES}
                 isUnlockedUI={isUnlockedUI}
-                baseBonuses={baseBonuses}
+                baseBonuses={(id) => baseBonuses(state, id)}
               />
             )}
             {state.tab === 'bases' && (
@@ -1000,10 +1000,10 @@ function computeMorale(resources, rates, state, currentBase, eventMods, powerGat
   return clamp(baseMorale + (rates.morale || 0), 0.35, 1.25);
 }
 function randomBetween(min, max) { return min + Math.random() * (max - min); }
-function baseBonuses(bodyId) {
+function baseBonuses(stateObj, bodyId) {
   const body = BODIES.find((b) => b.id === bodyId);
   const defs = body ? BIOME_BUILDINGS[body.type] || [] : [];
-  const base = state.bases[bodyId] || {};
+  const base = stateObj?.bases?.[bodyId] || {};
   let cargo = 1, travel = 1, hazard = 1;
   Object.entries(base.buildings || {}).forEach(([id, lvl]) => {
     const def = defs.find((d) => d.id === id);
@@ -1046,7 +1046,7 @@ function missionYield(state, body, modeId, specialist = "none") {
   const drone = state.tech?.drone_log ? 0.2 : 0;
   const rareBonus = state.tech?.rift_mapping ? 0.2 : 0;
   const mult = 1 + drone + rareBonus;
-  const bonuses = baseBonuses(body.id);
+  const bonuses = baseBonuses(state, body.id);
   const mode = missionModeById(modeId);
   const cargo = {};
   Object.entries(base).forEach(([k, v]) => {
