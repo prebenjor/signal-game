@@ -5,56 +5,81 @@ import "./App.css";
 
 const STORAGE_KEY = "signalFrontierReact";
 const TICK_MS = 500;
-const TAB_ORDER = ["hub", "missions", "bases", "crew", "tech", "log"];
+const TAB_ORDER = ["hub", "missions", "bases", "crew", "tech", "log", "profile"];
+const EVENT_COOLDOWN_MS = [45000, 90000];
+const COST_EXP = { hub: 1.12, base: 1.14 };
 
 const BODIES = [
-  { id: "debris", name: "Debris Field", type: "asteroid", travel: 30, hazard: 0.05, unlock: 0, resources: { metal: 40, fuel: 10, research: 8 } },
-  { id: "ice", name: "Ice Moon", type: "ice", travel: 60, hazard: 0.12, unlock: 400, resources: { organics: 30, fuel: 16, research: 12 } },
-  { id: "lava", name: "Lava Rock", type: "warm", travel: 90, hazard: 0.2, unlock: 1200, resources: { metal: 80, rare: 6, research: 20 } },
-  { id: "cradle", name: "Cradle Station", type: "asteroid", travel: 120, hazard: 0.18, unlock: 2400, requireTech: "deep_scan", resources: { fuel: 30, research: 36, rare: 10 } },
-  { id: "ruins", name: "Fallen Relay", type: "warm", travel: 140, hazard: 0.22, unlock: 3800, requireTech: "shielding", resources: { metal: 120, research: 48, rare: 14 } },
-  { id: "rift", name: "Rift Beacon", type: "unknown", travel: 180, hazard: 0.3, unlock: 6200, requireTech: "rift_mapping", resources: { fuel: 50, research: 80, rare: 24 } },
+  { id: "debris", name: "Debris Field", type: "asteroid", travel: 30, hazard: 0.05, unlock: 0, resources: { metal: 18, fuel: 4, research: 3 } },
+  { id: "ice", name: "Ice Moon", type: "ice", travel: 60, hazard: 0.12, unlock: 400, resources: { organics: 25, fuel: 10, research: 5 } },
+  { id: "lava", name: "Lava Rock", type: "warm", travel: 90, hazard: 0.2, unlock: 1200, resources: { metal: 50, rare: 3, research: 10 } },
+  { id: "cradle", name: "Cradle Station", type: "asteroid", travel: 120, hazard: 0.18, unlock: 2400, requireTech: "deep_scan", resources: { fuel: 26, research: 22, rare: 8 } },
+  { id: "ruins", name: "Fallen Relay", type: "warm", travel: 140, hazard: 0.22, unlock: 3800, requireTech: "shielding", resources: { metal: 160, research: 80, rare: 18 } },
+  { id: "rift", name: "Rift Beacon", type: "unknown", travel: 180, hazard: 0.3, unlock: 6200, requireTech: "rift_mapping", resources: { fuel: 90, research: 140, rare: 30 } },
+  { id: "spire", name: "Veil Spire", type: "unknown", travel: 210, hazard: 0.35, unlock: 8200, requireTech: "rift_mapping", requireMissions: 5, resources: { research: 200, rare: 40, fuel: 120 } },
 ];
 
 const HUB_UPGRADES = [
-  { id: "launch_bay", name: "Launch Bay", desc: "+1 concurrent mission slot", cost: { metal: 80, fuel: 20 } },
-  { id: "fuel_farm", name: "Fuel Farm", desc: "+2 fuel/tick", cost: { metal: 120, organics: 30 } },
-  { id: "scan_array", name: "Scan Array", desc: "+3 signal/tick", cost: { metal: 140, fuel: 10 } },
-  { id: "drone_bay", name: "Drone Bay", desc: "+10% mission cargo", cost: { metal: 160, rare: 6 } },
+  { id: "launch_bay", name: "Launch Bay", desc: "+1 concurrent mission slot", cost: { metal: 140, fuel: 40 } },
+  { id: "fuel_farm", name: "Fuel Farm", desc: "+2 fuel/tick", cost: { metal: 180, organics: 60 } },
+  { id: "scan_array", name: "Scan Array", desc: "+3 signal/tick", cost: { metal: 220, fuel: 20 } },
+  { id: "drone_bay", name: "Drone Bay", desc: "+10% mission cargo", cost: { metal: 260, rare: 10 } },
 ];
 
 const HUB_BUILDINGS = [
-  { id: "reactor", name: "Reactor", desc: "+4 power/tick, -1 fuel", cost: { metal: 100, fuel: 25 }, prod: { power: 4 }, cons: { fuel: 1 } },
-  { id: "hab", name: "Hab Module", desc: "+4 habitat", cost: { metal: 80, organics: 20 }, prod: { habitat: 4 }, cons: {} },
-  { id: "rec", name: "Rec Dome", desc: "Boosts morale", cost: { metal: 60, organics: 40 }, prod: { morale: 0.03 }, cons: { power: 1 } },
-  { id: "array", name: "Comms Array", desc: "+4 signal/tick", cost: { metal: 120, fuel: 10 }, prod: { signal: 4 }, cons: { power: 1 } },
+  { id: "refinery", name: "Fuel Refinery", desc: "+2 fuel/tick", cost: { metal: 90, organics: 16 }, prod: { fuel: 2 }, cons: { power: 1 } },
+  { id: "reactor", name: "Reactor", desc: "+4 power/tick, -1 fuel", cost: { metal: 140, fuel: 35 }, prod: { power: 4 }, cons: { fuel: 1 } },
+  { id: "hab", name: "Hab Module", desc: "+4 habitat", cost: { metal: 120, organics: 40 }, prod: { habitat: 4 }, cons: {} },
+  { id: "rec", name: "Rec Dome", desc: "Boosts morale", cost: { metal: 90, organics: 60 }, prod: { morale: 0.03 }, cons: { power: 1 } },
+  { id: "array", name: "Comms Array", desc: "+4 signal/tick", cost: { metal: 180, fuel: 16 }, prod: { signal: 4 }, cons: { power: 1 } },
 ];
 const BIOME_BUILDINGS = {
   asteroid: [
-    { id: "ore_rig", name: "Ore Rig", desc: "+4 metal/tick", cost: { metal: 80 }, prod: { metal: 4 }, cons: { power: 1 } },
-    { id: "solar_sail", name: "Solar Sail", desc: "+2 power/tick", cost: { metal: 40 }, prod: { power: 2 }, cons: {} },
+    { id: "fuel_cracker", name: "Fuel Cracker", desc: "+2 fuel/tick", cost: { metal: 90 }, prod: { fuel: 2 }, cons: { power: 1 } },
+    { id: "ore_rig", name: "Ore Rig", desc: "+4 metal/tick", cost: { metal: 120 }, prod: { metal: 4 }, cons: { power: 1 } },
+    { id: "solar_sail", name: "Solar Sail", desc: "+2 power/tick", cost: { metal: 70 }, prod: { power: 2 }, cons: {} },
   ],
   ice: [
-    { id: "thermal_pump", name: "Thermal Pump", desc: "+3 fuel/tick", cost: { metal: 70, fuel: 10 }, prod: { fuel: 3 }, cons: { power: 1 } },
-    { id: "algae_farm", name: "Algae Farm", desc: "+3 food/tick", cost: { metal: 50, organics: 25 }, prod: { food: 3 }, cons: { power: 1 } },
+    { id: "thermal_pump", name: "Thermal Pump", desc: "+3 fuel/tick", cost: { metal: 110, fuel: 16 }, prod: { fuel: 3 }, cons: { power: 1 } },
+    { id: "algae_farm", name: "Algae Farm", desc: "+3 food/tick", cost: { metal: 90, organics: 40 }, prod: { food: 3 }, cons: { power: 1 } },
   ],
   warm: [
-    { id: "shield_dome", name: "Shield Dome", desc: "-20% hazard on missions from this base", cost: { metal: 90, fuel: 12 }, prod: {}, cons: { power: 1 } },
-    { id: "vapor_trap", name: "Vapor Trap", desc: "+2 organics/tick", cost: { metal: 60, fuel: 8 }, prod: { organics: 2 }, cons: {} },
+    { id: "shield_dome", name: "Shield Dome", desc: "-20% hazard on missions from this base", cost: { metal: 140, fuel: 20 }, prod: {}, cons: { power: 1 } },
+    { id: "vapor_trap", name: "Vapor Trap", desc: "+2 organics/tick", cost: { metal: 90, fuel: 12 }, prod: { organics: 2 }, cons: {} },
   ],
   unknown: [
-    { id: "anomaly_lab", name: "Anomaly Lab", desc: "+1 rare/tick", cost: { metal: 110, rare: 4 }, prod: { rare: 1 }, cons: { power: 1 } },
+    { id: "anomaly_lab", name: "Anomaly Lab", desc: "+1 rare/tick", cost: { metal: 160, rare: 8 }, prod: { rare: 1 }, cons: { power: 1 } },
   ],
 };
 
 const TECH = [
-  { id: "fuel_synth", name: "Fuel Synthesis", desc: "+1 fuel/tick", cost: { signal: 320, research: 12 }, unlock: 300 },
-  { id: "hazard_gear", name: "Hazard Gear", desc: "-25% mission hazard", cost: { signal: 780, research: 30 }, unlock: 700 },
-  { id: "drone_log", name: "Logistics Drones", desc: "+20% mission cargo", cost: { signal: 1200, research: 60 }, unlock: 1200 },
-  { id: "deep_scan", name: "Deep Scan Arrays", desc: "+1 research/tick and reveals deep targets", cost: { signal: 1500, research: 120 }, unlock: 1200 },
-  { id: "shielding", name: "Thermal Shielding", desc: "-40% hazard on hot zones; unlocks fallen relay", cost: { signal: 2100, research: 180 }, unlock: 2000 },
-  { id: "rift_mapping", name: "Rift Mapping", desc: "Unlocks anomalous missions and +20% rare cargo", cost: { signal: 3600, research: 260, rare: 8 }, unlock: 3500 },
+  { id: "fuel_synth", tier: 1, name: "Fuel Synthesis", desc: "+1 fuel/tick", cost: { signal: 320, research: 12 }, unlock: 300, requires: [] },
+  { id: "hazard_gear", tier: 2, name: "Hazard Gear", desc: "-25% mission hazard", cost: { signal: 1200, research: 60 }, unlock: 900, requires: ["fuel_synth"] },
+  { id: "drone_log", tier: 2, name: "Logistics Drones", desc: "+20% mission cargo", cost: { signal: 1600, research: 90 }, unlock: 1400, requires: ["fuel_synth"] },
+  { id: "deep_scan", tier: 2, name: "Deep Scan Arrays", desc: "+1 research/tick and reveals deep targets", cost: { signal: 2000, research: 160 }, unlock: 1600, requires: ["fuel_synth"] },
+  { id: "shielding", tier: 3, name: "Thermal Shielding", desc: "-40% hazard on hot zones; unlocks fallen relay", cost: { signal: 2800, research: 260 }, unlock: 2400, requires: ["deep_scan"] },
+  { id: "rift_mapping", tier: 4, name: "Rift Mapping", desc: "Unlocks anomalous missions and +20% rare cargo", cost: { signal: 4800, research: 360, rare: 12 }, unlock: 4200, requires: ["shielding","drone_log"] },
+  { id: "auto_pilots", tier: 3, name: "Autonomous Pilots", desc: "+1 mission slot, -10% travel time", cost: { signal: 5600, research: 520, fuel: 80 }, unlock: 5200, requires: ["drone_log"] },
+  { id: "bio_domes", tier: 3, name: "Bio-Domes", desc: "+2 food/tick and +2 habitat passive", cost: { signal: 6000, research: 540, organics: 120 }, unlock: 5200, requires: ["fuel_synth"] },
 ];
+
+const BASE_OPS = {
+  asteroid: [
+    { id: "stabilize_grid", name: "Stabilize Grid", desc: "Patch power relays; reduce power gating risk for a while.", cost: { metal: 25 }, reward: { power: 4 }, cooldown: 20000 },
+    { id: "deep_bore", name: "Deep Bore", desc: "Drill deeper veins; yields metal + fuel.", cost: { fuel: 8 }, reward: { metal: 35, fuel: 8 }, cooldown: 25000 },
+  ],
+  ice: [
+    { id: "heat_melt", name: "Heat Melt", desc: "Melt and refreeze; yields organics + fuel.", cost: { power: 2, fuel: 6 }, reward: { organics: 24, fuel: 10 }, cooldown: 25000 },
+    { id: "glacier_scan", name: "Glacier Scan", desc: "Scan crevasses; small research burst.", cost: { fuel: 4, signal: 60 }, reward: { research: 10 }, cooldown: 20000 },
+  ],
+  warm: [
+    { id: "shield_tune", name: "Shield Tune", desc: "Tune domes; reduce hazard and improve morale.", cost: { fuel: 10, metal: 20 }, reward: { morale: 0.05 }, cooldown: 22000 },
+    { id: "slag_skim", name: "Slag Skim", desc: "Skim molten flows; yields metal and rare traces.", cost: { power: 2 }, reward: { metal: 40, rare: 2 }, cooldown: 28000 },
+  ],
+  unknown: [
+    { id: "anomaly_probe", name: "Anomaly Probe", desc: "Probe strange signals; yields research/rare.", cost: { fuel: 12, signal: 120 }, reward: { research: 18, rare: 3 }, cooldown: 30000 },
+  ],
+};
 
 const STARTER_TOUR = [
   { title: "Signal & Scans", body: "Collect Signal (Space) to reveal nearby targets. Pulse Scans convert signal into random loot.", anchor: "hub" },
@@ -63,6 +88,17 @@ const STARTER_TOUR = [
   { title: "Bases", body: "Each biome unlocks unique structures and events. Build per-body upgrades on-site.", anchor: "bases" },
   { title: "Crew & Recruits", body: "Hire specialists with role bonuses. Assign crew to boost production.", anchor: "crew" },
 ];
+
+const MISSION_MODES = [
+  { id: "balanced", name: "Balanced", desc: "Standard risk and rewards.", hazard: 0, durationMs: 0, reward: {} },
+  { id: "survey", name: "Survey", desc: "+60% research, slower travel, lower cargo", hazard: 0.04, durationMs: 8000, reward: { research: 1.6, all: 0.9 } },
+  { id: "salvage", name: "Salvage", desc: "+30% metal/organics cargo, small hazard bump", hazard: 0.06, durationMs: 0, reward: { metal: 1.3, organics: 1.3 } },
+  { id: "secure", name: "Secure", desc: "-35% hazard, longer flight, -10% cargo", hazard: -0.35, durationMs: 6000, reward: { all: 0.9 } },
+  { id: "relay", name: "Relay", desc: "+25% fuel & signal cargo, modest hazard", hazard: 0.08, durationMs: -2000, reward: { fuel: 1.25, signal: 1.25 } },
+];
+function defaultBaseState() {
+  return { buildings: {}, events: [], focus: "balanced", nextEventAt: Date.now() + randomBetween(...EVENT_COOLDOWN_MS), opsReadyAt: 0 };
+}
 
 const initialState = {
   tab: "hub",
@@ -74,6 +110,7 @@ const initialState = {
   bases: {},
   tech: {},
   missions: { active: [] },
+  autoLaunch: { enabled: false, bodyId: null, mode: "balanced", specialist: "none" },
   selectedBody: "debris",
   recruits: [],
   lastRecruitRoll: 0,
@@ -81,6 +118,10 @@ const initialState = {
   milestones: {},
   tourStep: 0,
   tourSeen: false,
+  labReadyAt: 0,
+  pulseCount: 0,
+  pulseReadyAt: 0,
+  prestige: { points: 0, runs: 0, boost: 1 },
 };
 
 function clamp(v, min, max) {
@@ -110,19 +151,30 @@ function reducer(state, action) {
 export default function App() {
   const [state, dispatch] = useReducer(reducer, initialState);
   const [tick, setTick] = useState(0);
-  const currentBase = useMemo(() => state.bases[state.selectedBody] || { buildings: {}, events: [] }, [state.bases, state.selectedBody]);
+  const [compact, setCompact] = useState(false);
+  const [loaded, setLoaded] = useState(false);
+  const currentBase = useMemo(() => state.bases[state.selectedBody] || defaultBaseState(), [state.bases, state.selectedBody]);
 
   useEffect(() => {
     const raw = localStorage.getItem(STORAGE_KEY);
-    if (raw) {
-      try { dispatch({ type: "LOAD", payload: { ...initialState, ...JSON.parse(raw) } }); } catch (e) { console.warn("Failed to load state", e); }
+    const cookie = document.cookie.split("; ").find((c) => c.startsWith("signalFrontier="));
+    const cookieData = cookie ? decodeURIComponent(cookie.split("=")[1]) : null;
+    if (raw || cookieData) {
+      const data = raw || (cookieData ? atob(cookieData) : null);
+      try { dispatch({ type: "LOAD", payload: { ...initialState, ...JSON.parse(data) } }); } catch (e) { console.warn("Failed to load state", e); }
     }
+    setLoaded(true);
   }, []);
 
-  useEffect(() => { localStorage.setItem(STORAGE_KEY, JSON.stringify(state)); }, [state]);
+  useEffect(() => {
+    if (!loaded) return;
+    const payload = JSON.stringify(state);
+    localStorage.setItem(STORAGE_KEY, payload);
+    document.cookie = `signalFrontier=${encodeURIComponent(btoa(payload))};path=/;max-age=31536000`;
+  }, [state, loaded]);
 
   useEffect(() => { const id = setInterval(() => setTick((t) => t + 1), TICK_MS); return () => clearInterval(id); }, []);
-  useEffect(() => { applyProduction(); resolveMissions(); }, [tick]);
+  useEffect(() => { applyProduction(); resolveMissions(); processEvents(); }, [tick]);
 
   useEffect(() => {
     const onKey = (e) => {
@@ -141,14 +193,17 @@ export default function App() {
   function collectSignal() { bumpResources({ signal: 1 }); log("Manual signal calibration."); }
 
   function pulseScan() {
-    const cost = 25;
+    const cost = Math.min(180, 60 + (state.pulseCount || 0) * 15);
+    const cdMs = 8000;
+    if (Date.now() < (state.pulseReadyAt || 0)) { log("Pulse scanner cooling down."); return; }
     if (state.resources.signal < cost) { log("Not enough signal for pulse scan."); return; }
     bumpResources({ signal: -cost });
     const rewardPool = ["metal","fuel","research"];
     const type = rewardPool[Math.floor(Math.random() * rewardPool.length)];
-    const amount = type === "research" ? 8 : 24;
+    const amount = type === "research" ? 5 : type === "fuel" ? 12 : 18;
     bumpResources({ [type]: amount });
-    log(`Pulse scan recovered ${amount} ${type}.`);
+    dispatch({ type: "UPDATE", patch: { pulseReadyAt: Date.now() + cdMs, pulseCount: (state.pulseCount || 0) + 1 } });
+    log(`Pulse scan recovered ${amount} ${type} (cost ${cost}).`);
   }
 
   function bumpResources(delta) {
@@ -159,90 +214,183 @@ export default function App() {
 
   function applyProduction() {
     const r = { ...state.resources };
-    const rates = { signal: 0, research: 0, metal: 0, organics: 0, fuel: 0, power: 0, food: 0, morale: 0 };
+    const contributions = [];
+    const eventMods = aggregateEventMods(currentBase);
+
+    const addContribution = (prod, cons, requiresPower) => contributions.push({ prod, cons, requiresPower });
 
     Object.entries(state.hubBuildings).forEach(([id, lvl]) => {
       const def = HUB_BUILDINGS.find((b) => b.id === id); if (!def) return; const mult = workerMult(def.id);
-      for (const [k,v] of Object.entries(def.prod || {})) rates[k] += v * lvl * mult;
-      for (const [k,v] of Object.entries(def.cons || {})) rates[k] -= v * lvl;
+      const prod = {}; Object.entries(def.prod || {}).forEach(([k, v]) => prod[k] = v * lvl * mult);
+      addContribution(prod, scaleCons(def.cons, lvl), !!def.cons?.power);
     });
-    if (state.hubUpgrades.fuel_farm) rates.fuel += 2 * state.hubUpgrades.fuel_farm;
-    if (state.hubUpgrades.scan_array) rates.signal += 3 * state.hubUpgrades.scan_array;
-    if (state.tech.fuel_synth) rates.fuel += 1 * state.tech.fuel_synth;
-    if (state.tech.deep_scan) rates.research += 1 * state.tech.deep_scan;
+    if (state.hubUpgrades.fuel_farm) addContribution({ fuel: 2 * state.hubUpgrades.fuel_farm }, {}, false);
+    if (state.hubUpgrades.scan_array) addContribution({ signal: 3 * state.hubUpgrades.scan_array }, {}, false);
+    if (state.tech.fuel_synth) addContribution({ fuel: 1 * state.tech.fuel_synth }, {}, false);
+    if (state.tech.deep_scan) addContribution({ research: 1 * state.tech.deep_scan }, {}, false);
+    if (state.tech.bio_domes) addContribution({ food: 2 * state.tech.bio_domes, habitat: 2 * state.tech.bio_domes }, {}, false);
 
+    const focus = currentBase.focus || "balanced";
     Object.entries(currentBase.buildings || {}).forEach(([id, lvl]) => {
       const def = biomeBuildingById(id); if (!def) return;
-      for (const [k,v] of Object.entries(def.prod || {})) rates[k] += v * lvl * workerMult(id);
-      for (const [k,v] of Object.entries(def.cons || {})) rates[k] -= v * lvl;
+      const prod = {}; Object.entries(def.prod || {}).forEach(([k, v]) => prod[k] = v * lvl * workerMult(id) * focusBoost(focus, k) * (eventMods.mult[k] || 1));
+      addContribution(prod, scaleCons(def.cons, lvl), !!def.cons?.power);
     });
 
-    Object.keys(rates).forEach((k) => { r[k] = Math.max(0, r[k] + rates[k]); });
+    const sumRates = (powerGate) => {
+      const rates = { signal: 0, research: 0, metal: 0, organics: 0, fuel: 0, power: 0, food: 0, morale: 0, habitat: 0, rare: 0 };
+      contributions.forEach(({ prod, cons, requiresPower }) => {
+        const scale = powerGate && requiresPower ? 0 : 1;
+        Object.entries(prod).forEach(([k, v]) => rates[k] = (rates[k] || 0) + v * scale);
+        Object.entries(cons || {}).forEach(([k, v]) => rates[k] = (rates[k] || 0) - v);
+      });
+      return rates;
+    };
+
+    const prodBoost = 1 + ((state.prestige?.boost || 1) - 1);
+    const projected = sumRates(false);
+    const projectedPower = (state.resources.power || 0) + projected.power;
+    const powerGate = projectedPower <= 0;
+    const rates = sumRates(powerGate);
+
+    Object.keys(rates).forEach((k) => { r[k] = Math.max(0, r[k] + rates[k] * (k === "power" ? 1 : prodBoost)); });
     const foodUpkeep = state.workers.total * 0.2; r.food = Math.max(0, r.food - foodUpkeep);
 
-    const foodOk = r.food >= state.workers.total * 0.5; const powerOk = r.power >= 0;
-    const satisfaction = clamp((foodOk ? 1 : 0.6) * (powerOk ? 1 : 0.8) + (rates.morale || 0), 0.4, 1.2);
-
-    dispatch({ type: "UPDATE", patch: { resources: r, rates, workers: { ...state.workers, satisfaction } } });
+    const morale = computeMorale(r, rates, state, currentBase, eventMods, powerGate);
+    dispatch({ type: "UPDATE", patch: { resources: r, rates, workers: { ...state.workers, satisfaction: morale } } });
   }
 
   function workerMult(buildingId) {
     const bonus = state.workers.bonus || {};
-    if (buildingId === "extractor" || buildingId === "ore_rig") return 1 + (state.workers.assigned.miner || 0) * 0.1 + (bonus.miner || 0);
-    if (buildingId === "hydro" || buildingId === "algae_farm") return 1 + (state.workers.assigned.botanist || 0) * 0.1 + (bonus.botanist || 0);
-    return 1 + (state.workers.assigned.engineer || 0) * 0.05 + (bonus.engineer || 0);
+    const moraleBoost = 0.6 + (state.workers.satisfaction || 1) * 0.6;
+    if (["ore_rig","fuel_cracker"].includes(buildingId)) return (1 + (state.workers.assigned.miner || 0) * 0.1 + (bonus.miner || 0)) * moraleBoost;
+    if (["algae_farm"].includes(buildingId)) return (1 + (state.workers.assigned.botanist || 0) * 0.1 + (bonus.botanist || 0)) * moraleBoost;
+    return (1 + (state.workers.assigned.engineer || 0) * 0.05 + (bonus.engineer || 0)) * moraleBoost;
   }
 
-  function resolveMissions() {
+  const crewBonusText = (buildingId) => {
+    const mult = workerMult(buildingId);
+    const pct = Math.max(0, (mult - 1) * 100);
+    return `${pct.toFixed(0)}%`;
+  };
+
+function resolveMissions() {
     const active = state.missions.active || [];
     if (!active.length) return;
     const now = Date.now(); const remaining = [];
     active.forEach((m) => {
       if (now < m.endsAt) { remaining.push(m); return; }
       const body = BODIES.find((b) => b.id === m.bodyId); if (!body) return;
-      const cargo = missionYield(body); bumpResources(cargo); log(`Mission from ${body.name} returned with cargo.`);
+      let cargo = missionYield(body, m.mode, m.specialist);
+      if (m.objective) {
+        const choice = window.confirm(`Side Objective: ${m.objective.desc}.\nTake the risk for ${m.objective.rewardText}?`);
+        if (choice) {
+          cargo = combineCargo(cargo, m.objective.reward);
+          if (Math.random() < m.objective.failRisk) {
+            cargo = reduceCargo(cargo, 0.5);
+            log("Side objective mishap reduced cargo.");
+          } else {
+            log("Side objective succeeded. Bonus cargo added.");
+          }
+        }
+      }
+      const risk = Math.min(0.8, Math.max(0.05, (m.hazard || 0) * 0.6 + 0.05));
+      const partial = Math.min(0.95, risk + 0.25);
+      const roll = Math.random();
+      if (roll < risk) {
+        const salvage = reduceCargo(cargo, 0.2); bumpResources(salvage); log(`Mission to ${body.name} failed. Salvaged ${Object.keys(salvage).length ? "scrap" : "nothing"}.`);
+      } else if (roll < partial) {
+        const haul = reduceCargo(cargo, 0.65); bumpResources(haul); log(`Mission to ${body.name} returned partially due to hazard.`);
+      } else {
+        bumpResources(cargo); log(`Mission from ${body.name} returned with cargo.`);
+      }
     });
-    dispatch({ type: "UPDATE", patch: { missions: { active: remaining } } });
+    const missionsDone = (state.milestones.missionsDone || 0) + (active.length - remaining.length);
+    dispatch({ type: "UPDATE", patch: { missions: { active: remaining }, milestones: { ...state.milestones, missionsDone } } });
+
+    // Auto-launch if enabled and slots free
+    const slots = 1 + (state.hubUpgrades.launch_bay || 0) + (state.tech.auto_pilots ? 1 : 0);
+    if (state.autoLaunch?.enabled && (remaining.length < slots)) {
+      const target = state.autoLaunch.bodyId || state.selectedBody;
+      const modeId = state.autoLaunch.mode || "balanced";
+      const specialist = state.autoLaunch.specialist || "none";
+      startMission(target, 0, modeId, specialist, true);
+    }
   }
 
-  function startMission(bodyId, fuelBoost = 0) {
+  function processEvents() {
+    const now = Date.now();
+    const bases = { ...state.bases };
+    let changed = false;
+    BODIES.forEach((body) => {
+      if (!isUnlocked(body)) return;
+      const base = bases[body.id] || defaultBaseState();
+      if (!base.nextEventAt) base.nextEventAt = now + randomBetween(...EVENT_COOLDOWN_MS);
+      if (now >= base.nextEventAt) {
+        base.events = [...(base.events || []), createEvent(body)];
+        base.nextEventAt = now + randomBetween(...EVENT_COOLDOWN_MS);
+        bases[body.id] = base; changed = true;
+        log(`Event at ${body.name}: ${base.events[base.events.length - 1].name}`);
+      } else if (!bases[body.id]) {
+        bases[body.id] = base; changed = true;
+      }
+    });
+    if (changed) dispatch({ type: "UPDATE", patch: { bases } });
+  }
+
+function startMission(bodyId, fuelBoost = 0, modeId = "balanced", specialist = "none", silent = false) {
     const body = BODIES.find((b) => b.id === bodyId && isUnlocked(b));
     if (!body) { log("Target locked."); return; }
-    const slots = 1 + (state.hubUpgrades.launch_bay || 0);
+    const slots = 1 + (state.hubUpgrades.launch_bay || 0) + (state.tech.auto_pilots ? 1 : 0);
     if ((state.missions.active || []).length >= slots) { log("All mission slots busy."); return; }
     let fuelCost = Math.max(5, Math.floor(body.travel / 3)) + fuelBoost;
     if (!state.milestones?.firstLaunch) fuelCost = 0;
     if (state.resources.fuel < fuelCost) { log("Not enough fuel."); return; }
     bumpResources({ fuel: -fuelCost });
-    const hazard = body.hazard - (state.tech.hazard_gear ? 0.25 : 0) - (state.tech.shielding ? 0.2 : 0);
-    const duration = Math.max(15000, (body.travel * 1000) - fuelBoost * 3000);
-    const mission = { bodyId: body.id, endsAt: Date.now() + duration, hazard: Math.max(0, hazard) };
+    const mode = missionModeById(modeId);
+    const hazard = body.hazard - (state.tech.hazard_gear ? 0.25 : 0) - (state.tech.shielding ? 0.2 : 0) + (mode?.hazard || 0) + (specialist === "engineer" ? -0.1 : 0);
+    const duration = Math.max(15000, ((body.travel * 1000) - fuelBoost * 3000 + (mode?.durationMs || 0)) * (state.tech.auto_pilots ? 0.9 : 1));
+    const objective = Math.random() < 0.3 ? makeObjective(body) : null;
+    const mission = { bodyId: body.id, endsAt: Date.now() + duration, hazard: Math.max(0, hazard), mode: modeId, specialist, objective };
     dispatch({ type: "UPDATE", patch: { missions: { active: [...(state.missions.active || []), mission] } } });
-    log(`Launched mission to ${body.name}. ETA ${formatDuration(duration)}.`);
+    if (!silent) log(`Launched ${mode?.name || "mission"} to ${body.name}. ETA ${formatDuration(duration)}.`);
     dispatch({ type: "UPDATE", patch: { milestones: { ...state.milestones, firstLaunch: true } } });
   }
 
-  function missionYield(body) {
+  function setAutoLaunch(payload) {
+    dispatch({ type: "UPDATE", patch: { autoLaunch: payload } });
+    log(payload.enabled ? `Auto-launch enabled for ${BODIES.find((b) => b.id === payload.bodyId)?.name || "target"}.` : "Auto-launch disabled.");
+  }
+
+  function missionYield(body, modeId, specialist = "none") {
     const base = body.resources || {}; const drone = state.tech.drone_log ? 0.2 : 0; const rareBonus = state.tech.rift_mapping ? 0.2 : 0; const mult = 1 + drone + rareBonus;
-    const cargo = {}; Object.entries(base).forEach(([k, v]) => (cargo[k] = Math.floor(v * mult))); return cargo;
+    const mode = missionModeById(modeId);
+    const cargo = {};
+    Object.entries(base).forEach(([k, v]) => {
+      const modeBoost = mode?.reward?.[k] ?? mode?.reward?.all ?? 1;
+      let specBoost = 1;
+      if (specialist === "miner" && (k === "metal" || k === "rare")) specBoost = 1.15;
+      if (specialist === "botanist" && (k === "organics" || k === "fuel")) specBoost = 1.15;
+      if (specialist === "engineer" && (k === "research")) specBoost = 1.1;
+      cargo[k] = Math.floor(v * mult * modeBoost * specBoost);
+    });
+    return cargo;
   }
 
-  function isUnlocked(body) { if (body.requireTech && !state.tech[body.requireTech]) return false; return state.resources.signal >= (body.unlock || 0); }
-
-  function bodyEvents(body) {
-    const tables = {
-      asteroid: ["Micrometeor shower: minor hazard spike", "Ore cache detected: bonus metal", "Radiation pocket: power drain"],
-      ice: ["Ice quake: structural stress", "Steam vent: bonus organics", "Coolant leak: fuel loss"],
-      warm: ["Dust storm: hazard up", "Thermal updraft: faster travel", "Shield strain: morale down"],
-      unknown: ["Anomalous echo: rare sample", "Temporal glitch: double cargo", "Spatial shear: risk spike"],
-    };
-    const events = tables[body.type] || tables.asteroid; return events.slice(0, 2 + Math.floor(Math.random() * 2));
+function isUnlocked(body) {
+    if (body.requireTech && !state.tech[body.requireTech]) return false;
+    if (body.requireMissions && (state.milestones.missionsDone || 0) < body.requireMissions) return false;
+    return state.resources.signal >= (body.unlock || 0);
   }
+
+  function bodyEvents(body) { return [createEvent(body)]; }
 
   function buildHub(id) {
     const def = HUB_BUILDINGS.find((b) => b.id === id); if (!def) return;
-    if (!canAfford(def.cost)) { log("Not enough resources."); return; }
-    spend(def.cost);
+    const level = state.hubBuildings[id] || 0;
+    const cost = scaledCost(def.cost, level, COST_EXP.hub);
+    if (!canAfford(cost)) { log("Not enough resources."); return; }
+    spend(cost);
     dispatch({ type: "UPDATE", patch: { hubBuildings: { ...state.hubBuildings, [id]: (state.hubBuildings[id] || 0) + 1 } } });
     log(`Constructed ${def.name}.`);
   }
@@ -257,12 +405,28 @@ export default function App() {
 
   function buildBase(id) {
     const def = biomeBuildingById(id); if (!def) return;
-    if (!canAfford(def.cost)) { log("Not enough resources."); return; }
-    spend(def.cost);
-    const base = state.bases[state.selectedBody] || { buildings: {}, events: bodyEvents(selectedBody()) };
+    const level = (state.bases[state.selectedBody]?.buildings?.[id] || 0);
+    const cost = withLogisticsCost(scaledCost(def.cost, level, COST_EXP.base), selectedBody());
+    if (!canAfford(cost)) { log("Not enough resources (includes logistics fuel)."); return; }
+    spend(cost);
+    const base = state.bases[state.selectedBody] || defaultBaseState();
     const newBase = { ...base, buildings: { ...base.buildings, [id]: (base.buildings[id] || 0) + 1 } };
     dispatch({ type: "UPDATE", patch: { bases: { ...state.bases, [state.selectedBody]: newBase } } });
-    log(`Built ${def.name} on ${selectedBody().name}.`);
+    log(`Built ${def.name} on ${selectedBody().name} (logistics fuel included).`);
+  }
+
+  function setBaseFocus(focus) {
+    const base = state.bases[state.selectedBody] || defaultBaseState();
+    const updated = { ...base, focus };
+    dispatch({ type: "UPDATE", patch: { bases: { ...state.bases, [state.selectedBody]: updated } } });
+    log(`Outpost focus set to ${focus}.`);
+  }
+
+  function refreshEvents() {
+    const base = state.bases[state.selectedBody] || defaultBaseState();
+    const updated = { ...base, events: bodyEvents(selectedBody()) };
+    dispatch({ type: "UPDATE", patch: { bases: { ...state.bases, [state.selectedBody]: updated } } });
+    log("Local events refreshed.");
   }
 
   function selectedBody() { return BODIES.find((b) => b.id === state.selectedBody) || BODIES[0]; }
@@ -273,9 +437,74 @@ export default function App() {
 
   function buyTech(id) {
     const def = TECH.find((t) => t.id === id); if (!def || state.tech[id]) return;
+    if (!hasPrereqs(state, def)) { log("Complete prerequisite tech first."); return; }
+    if (state.resources.signal < def.unlock) { log("Need more signal to access this tech."); return; }
     if (!canAfford(def.cost)) { log("Not enough resources."); return; }
     spend(def.cost); dispatch({ type: "UPDATE", patch: { tech: { ...state.tech, [id]: 1 } } });
     log(`Tech unlocked: ${def.name}.`);
+  }
+
+  function runLabPulse() {
+    const cooldownMs = 20000;
+    if (Date.now() < (state.labReadyAt || 0)) { log("Research lab recalibrating."); return; }
+    const cost = { signal: 60, metal: 20 };
+    if (!canAfford(cost)) { log("Need signal + metal for research pulse."); return; }
+    spend(cost);
+    bumpResources({ research: 6 });
+    dispatch({ type: "UPDATE", patch: { labReadyAt: Date.now() + cooldownMs } });
+    log("Research pulse completed. New data archived.");
+  }
+
+  function ascend() {
+    const totalValue = (state.resources.signal || 0) + (state.resources.metal || 0) + (state.resources.research || 0) * 5 + (state.resources.rare || 0) * 20;
+    const points = Math.max(1, Math.floor(totalValue / 5000));
+    const prestige = { points: (state.prestige?.points || 0) + points, runs: (state.prestige?.runs || 0) + 1, boost: 1 + ((state.prestige?.points || 0) + points) * 0.02 };
+    const resetState = { ...initialState, prestige };
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(resetState));
+    dispatch({ type: "LOAD", payload: resetState });
+    log(`Ascended for ${points} prestige. Global production boost now ${Math.round((prestige.boost - 1) * 100)}%.`);
+  }
+
+  function exportProfile() {
+    try {
+      const raw = JSON.stringify(state);
+      const hash = hashStr(raw);
+      const salted = xorString(raw, "signal-salt");
+      const encoded = btoa(salted);
+      const bundle = `${hash}.${encoded}`;
+      const copyPromise = navigator.clipboard?.writeText ? navigator.clipboard.writeText(bundle) : Promise.reject();
+      copyPromise
+        .then(() => {
+          log("Profile exported. Copied to clipboard; keep the string safe.");
+          window.alert("Export copied to clipboard. Keep it safe.");
+        })
+        .catch(() => {
+          log("Profile exported. Copy the shown string to import elsewhere.");
+          window.prompt("Copy your export string", bundle);
+        });
+    } catch (e) {
+      console.error(e);
+      alert("Failed to export profile.");
+    }
+  }
+
+  function importProfile() {
+    const data = window.prompt("Paste exported profile string");
+    if (!data) return;
+    try {
+      const [hash, payload] = data.trim().split(".");
+      if (!hash || !payload) throw new Error("Malformed bundle");
+      const salted = atob(payload);
+      const raw = xorString(salted, "signal-salt");
+      if (hashStr(raw) !== hash) throw new Error("Checksum mismatch");
+      const parsed = JSON.parse(raw);
+      dispatch({ type: "LOAD", payload: { ...initialState, ...parsed } });
+      log("Profile imported.");
+      alert("Profile import successful.");
+    } catch (e) {
+      console.error(e);
+      alert("Import failed: invalid string.");
+    }
   }
 
   function rollRecruits(force) {
@@ -283,6 +512,33 @@ export default function App() {
     if (!force && now - state.lastRecruitRoll < 45000 && state.recruits.length) return;
     const candidates = Array.from({ length: 3 }, (_, i) => makeCandidate(i));
     dispatch({ type: "SET_RECRUITS", recruits: candidates });
+  }
+
+  function resolveEvent(bodyId, eventId) {
+    const base = state.bases[bodyId] || defaultBaseState();
+    const ev = (base.events || []).find((e) => e.id === eventId);
+    if (!ev) return;
+    if (ev.requiresRole && (state.workers.assigned[ev.requiresRole] || 0) <= 0) { log(`Need an active ${ev.requiresRole} to resolve.`); return; }
+    if (ev.cost && !canAfford(ev.cost)) { log("Not enough resources to resolve event."); return; }
+    if (ev.cost) spend(ev.cost);
+    const events = (base.events || []).filter((e) => e.id !== eventId);
+    const updated = { ...base, events };
+    dispatch({ type: "UPDATE", patch: { bases: { ...state.bases, [bodyId]: updated } } });
+    log(`Resolved event: ${ev.name}.`);
+  }
+
+  function runBaseOp(bodyId, opId) {
+    const body = BODIES.find((b) => b.id === bodyId); if (!body) return;
+    const ops = BASE_OPS[body.type] || [];
+    const op = ops.find((o) => o.id === opId); if (!op) return;
+    const base = state.bases[bodyId] || defaultBaseState();
+    if (Date.now() < (base.opsReadyAt || 0)) { log("Base ops cooling down."); return; }
+    if (!canAfford(op.cost)) { log("Not enough resources for this op."); return; }
+    spend(op.cost);
+    bumpResources(op.reward);
+    const updated = { ...base, opsReadyAt: Date.now() + op.cooldown };
+    dispatch({ type: "UPDATE", patch: { bases: { ...state.bases, [bodyId]: updated } } });
+    log(`Ran ${op.name} on ${body.name}.`);
   }
 
   function makeCandidate(seed) {
@@ -322,39 +578,61 @@ export default function App() {
   }
 
   function formatDuration(ms) { const sec = Math.max(0, Math.ceil(ms / 1000)); const m = Math.floor(sec / 60); const s = sec % 60; return m > 0 ? `${m}m ${s}s` : `${s}s`; }
-  function biomeBuildingById(id) { return Object.values(BIOME_BUILDINGS).flat().find((b) => b.id === id); }
+function biomeBuildingById(id) { return Object.values(BIOME_BUILDINGS).flat().find((b) => b.id === id); }
   return (
     <div className="min-h-screen pb-16">
       <div className="max-w-6xl xl:max-w-7xl w-[96vw] mx-auto px-4 pt-6 flex flex-col gap-4">
         <header className="panel flex flex-col gap-3">
-          <div>
-            <div className="inline-flex px-3 py-1 rounded-full bg-white/10 border border-white/10 text-xs tracking-[0.1em] font-semibold">Signal Frontier</div>
-            <div className="text-muted text-sm mt-1">Scan, settle, and build outposts across the void.</div>
-          </div>
-          <div className="flex flex-wrap gap-2">
-            {['hub','missions','bases','crew','tech','log'].map((tab) => (
-              <button key={tab} className={`tab ${state.tab === tab ? 'active' : ''}`} onClick={() => dispatch({ type: 'SET_TAB', tab })}>{tab[0].toUpperCase() + tab.slice(1)}</button>
-            ))}
+          <div className="flex items-center justify-between gap-3">
+            <div>
+              <div className="inline-flex px-3 py-1 rounded-full bg-white/10 border border-white/10 text-xs tracking-[0.1em] font-semibold">Signal Frontier</div>
+              <div className="text-muted text-sm mt-1">Scan, settle, and build outposts across the void.</div>
+            </div>
+            <div className="flex gap-2">
+              <button className="btn btn-primary" onClick={collectSignal}>Collect Signal (Space)</button>
+              <button className="btn" disabled={state.resources.signal < Math.min(180, 60 + (state.pulseCount || 0) * 15) || state.pulseReadyAt > Date.now()} onClick={pulseScan}>Pulse Scan</button>
+            </div>
           </div>
           <ResourceBar resources={state.resources} rates={state.rates} format={format} />
         </header>
 
-        <main className="flex flex-col gap-4">
-          {state.tab === 'hub' && (
-            <HubView state={state} selectedBody={selectedBody()} onCollect={collectSignal} onPulse={pulseScan} buildHub={buildHub} buyHubUpgrade={buyHubUpgrade} format={format} />
-          )}
-          {state.tab === 'missions' && (
-            <MissionsView state={state} startMission={startMission} setSelected={(id) => dispatch({ type: 'SET_SELECTED_BODY', id })} format={format} />
-          )}
-          {state.tab === 'bases' && (
-            <BasesView state={state} setSelected={(id) => dispatch({ type: 'SET_SELECTED_BODY', id })} buildBase={buildBase} format={format} bodyEvents={bodyEvents} />
-          )}
-          {state.tab === 'crew' && (
-            <CrewView state={state} hire={hire} rollRecruits={() => rollRecruits(true)} changeCrew={changeCrew} format={format} />
-          )}
-          {state.tab === 'tech' && <TechView state={state} buyTech={buyTech} format={format} />}
-          {state.tab === 'log' && <LogView log={state.log} />}
-        </main>
+        <div className="flex flex-col md:flex-row gap-4">
+          <nav className="md:w-48 flex md:flex-col gap-2">
+            {['hub','missions','bases','crew','tech','log','profile'].map((tab) => (
+              <button key={tab} className={`tab w-full text-left ${state.tab === tab ? 'active' : ''}`} onClick={() => dispatch({ type: 'SET_TAB', tab })}>{tab[0].toUpperCase() + tab.slice(1)}</button>
+            ))}
+          </nav>
+          <main className="flex-1 flex flex-col gap-3">
+            {state.tab === 'hub' && (
+              <HubView
+                state={state}
+                selectedBody={selectedBody()}
+                onCollect={collectSignal}
+                onPulse={pulseScan}
+                runLabPulse={runLabPulse}
+                buildHub={buildHub}
+                buyHubUpgrade={buyHubUpgrade}
+                crewBonusText={crewBonusText}
+                ascend={ascend}
+                format={format}
+              />
+            )}
+            {state.tab === 'missions' && (
+              <MissionsView state={state} startMission={startMission} setAutoLaunch={setAutoLaunch} setSelected={(id) => dispatch({ type: 'SET_SELECTED_BODY', id })} format={format} />
+            )}
+            {state.tab === 'bases' && (
+              <BasesView state={state} setSelected={(id) => dispatch({ type: 'SET_SELECTED_BODY', id })} buildBase={buildBase} setBaseFocus={setBaseFocus} refreshEvents={refreshEvents} resolveEvent={resolveEvent} runBaseOp={runBaseOp} crewBonusText={crewBonusText} format={format} bodyEvents={bodyEvents} />
+            )}
+            {state.tab === 'crew' && (
+              <CrewView state={state} hire={hire} rollRecruits={() => rollRecruits(true)} changeCrew={changeCrew} format={format} />
+            )}
+            {state.tab === 'tech' && <TechView state={state} buyTech={buyTech} format={format} />}
+            {state.tab === 'log' && <LogView log={state.log} />}
+            {state.tab === 'profile' && (
+              <ProfileView state={state} ascend={ascend} exportProfile={exportProfile} importProfile={importProfile} compact={compact} setCompact={setCompact} />
+            )}
+          </main>
+        </div>
       </div>
       <StarterTour tourStep={state.tourStep} seen={state.tourSeen} onStep={(step, seen) => dispatch({ type: 'TOUR_STEP', step, seen })} />
     </div>
@@ -380,7 +658,52 @@ function ResourceBar({ resources, rates, format }) {
   );
 }
 
-function HubView({ state, onCollect, onPulse, buildHub, buyHubUpgrade, format }) {
+function ProfileView({ state, ascend, exportProfile, importProfile, compact, setCompact }) {
+  return (
+    <section className="panel space-y-3">
+      <div className="text-lg font-semibold">Profile</div>
+      <div className="grid md:grid-cols-3 gap-3">
+        <div className="card space-y-2">
+          <div className="font-semibold">Prestige</div>
+          <div className="text-sm text-muted">Reset for a global production boost. Current boost: {Math.round(((state.prestige?.boost || 1) - 1) * 100)}% · Points: {state.prestige?.points || 0}</div>
+          <button className="btn" onClick={ascend}>Ascend & Reset</button>
+          <div className="text-xs text-muted">Grants prestige based on total value. Progress auto-saves locally; refresh won't wipe.</div>
+        </div>
+        <div className="card space-y-2">
+          <div className="font-semibold">Save / Import</div>
+          <div className="text-sm text-muted">Profiles save locally (storage + cookie). Export/import to move between browsers.</div>
+          <div className="flex flex-wrap gap-2">
+            <button className="btn" onClick={exportProfile}>Export</button>
+            <button className="btn" onClick={importProfile}>Import</button>
+          </div>
+          <div className="text-xs text-muted">Export copies a base64 string; import pastes it here.</div>
+        </div>
+        <div className="card space-y-2">
+          <div className="font-semibold">Layout</div>
+          <div className="text-sm text-muted">Toggle compact mode to reduce padding and tighten cards.</div>
+          <label className="row">
+            <span className="text-sm">Compact mode</span>
+            <input type="checkbox" checked={compact} onChange={(e) => setCompact(e.target.checked)} />
+          </label>
+        </div>
+      </div>
+    </section>
+  );
+}
+
+function HubView({ state, onCollect, onPulse, runLabPulse, buildHub, buyHubUpgrade, crewBonusText, ascend, format }) {
+  const labCd = Math.max(0, (state.labReadyAt || 0) - Date.now());
+  const pulseCost = Math.min(180, 60 + (state.pulseCount || 0) * 15);
+  const briefing = [
+    "Collect Signal then run a Pulse Scan (ramps 60+ signal, 8s CD) to convert signal into metal/fuel/research.",
+    "First launch is fuel-free; Debris missions return early research + fuel.",
+    "Build a Fuel Refinery or Fuel Cracker early to keep missions flowing.",
+    "Keep power >= 0 and food positive to avoid morale drops.",
+    "Use Research Console if fuel is low to bootstrap research.",
+  ];
+  const [showBuilds, setShowBuilds] = useState(true);
+  const [showUpgrades, setShowUpgrades] = useState(true);
+  const [showBrief, setShowBrief] = useState(false);
   return (
     <section className="panel space-y-3">
       <div className="flex flex-wrap gap-2 items-center justify-between">
@@ -388,59 +711,97 @@ function HubView({ state, onCollect, onPulse, buildHub, buyHubUpgrade, format })
           <div className="text-lg font-semibold">Main Hub</div>
           <div className="text-muted text-sm">Launch expeditions, manage power, and scale signal.</div>
         </div>
-        <div className="flex gap-2">
-          <button className="btn btn-primary" onClick={onCollect}>Collect Signal (Space)</button>
-          <button className="btn" onClick={onPulse}>Pulse Scan</button>
-        </div>
       </div>
+      <div className="text-xs text-muted">Pulse Scan ramps in cost each use and has an 8s cooldown. Spend signal for a small metal/fuel/research bump when you can’t launch yet.</div>
 
       <div className="grid md:grid-cols-2 gap-3">
         <div className="card">
-          <div className="font-semibold mb-1">Hub Buildings</div>
-          <div className="list">
-            {HUB_BUILDINGS.map((b) => {
-              const level = state.hubBuildings[b.id] || 0;
-              const can = canAffordUI(state.resources, b.cost);
-              return (
-                <div key={b.id} className="row-item">
-                  <div className="row-details">
-                    <div className="row-title">{b.name} <span className="tag">Lv {level}</span></div>
-                    <div className="row-meta">{b.desc}</div>
-                  </div>
-                  <button className="btn" disabled={!can} onClick={() => buildHub(b.id)}>Build ({costText(b.cost, format)})</button>
-                </div>
-              );
-            })}
+          <div className="row row-between mb-1">
+            <div className="font-semibold">Hub Buildings</div>
+            <button className="btn" onClick={() => setShowBuilds((v) => !v)}>{showBuilds ? "Collapse" : "Expand"}</button>
           </div>
+          {showBuilds && (
+            <div className="list">
+              {HUB_BUILDINGS.map((b) => {
+                const level = state.hubBuildings[b.id] || 0;
+                const can = canAffordUI(state.resources, scaledCost(b.cost, level, COST_EXP.hub));
+                return (
+                  <div key={b.id} className="row-item">
+                    <div className="row-details">
+                      <div className="row-title">{b.name} <span className="tag">Lv {level}</span></div>
+                      <div className="row-meta">{b.desc}</div>
+                      <div className="row-meta text-xs text-muted">Crew bonus: {crewBonusText(b.id)}</div>
+                      <div className="row-meta text-xs text-muted">Next cost: {costText(scaledCost(b.cost, level, COST_EXP.hub), format)}</div>
+                    </div>
+                    <button className="btn" disabled={!can} onClick={() => buildHub(b.id)}>Build ({costText(scaledCost(b.cost, level, COST_EXP.hub), format)})</button>
+                  </div>
+                );
+              })}
+            </div>
+          )}
         </div>
 
         <div className="card">
-          <div className="font-semibold mb-1">Hub Upgrades</div>
-          <div className="list">
-            {HUB_UPGRADES.map((u) => {
-              const level = state.hubUpgrades[u.id] || 0;
-              return (
-                <div key={u.id} className="row-item">
-                  <div className="row-details">
-                    <div className="row-title">{u.name} <span className="tag">Lv {level}</span></div>
-                    <div className="row-meta">{u.desc}</div>
-                  </div>
-                  <button className="btn" disabled={!canAffordUI(state.resources, u.cost)} onClick={() => buyHubUpgrade(u.id)}>Upgrade ({costText(u.cost, format)})</button>
-                </div>
-              );
-            })}
+          <div className="row row-between mb-1">
+            <div className="font-semibold">Hub Upgrades</div>
+            <button className="btn" onClick={() => setShowUpgrades((v) => !v)}>{showUpgrades ? "Collapse" : "Expand"}</button>
           </div>
+          {showUpgrades && (
+            <div className="list">
+              {HUB_UPGRADES.map((u) => {
+                const level = state.hubUpgrades[u.id] || 0;
+                return (
+                  <div key={u.id} className="row-item">
+                    <div className="row-details">
+                      <div className="row-title">{u.name} <span className="tag">Lv {level}</span></div>
+                      <div className="row-meta">{u.desc}</div>
+                    </div>
+                    <button className="btn" disabled={!canAffordUI(state.resources, scaledCost(u.cost, level, COST_EXP.hub))} onClick={() => buyHubUpgrade(u.id)}>Upgrade ({costText(scaledCost(u.cost, level, COST_EXP.hub), format)})</button>
+                  </div>
+                );
+              })}
+            </div>
+          )}
+        </div>
+      </div>
+
+      <div className="grid md:grid-cols-3 gap-3">
+        <div className="card space-y-2">
+          <div className="font-semibold">Research Console</div>
+          <div className="text-muted text-sm">Convert signal + metal into early research. Great when fuel is tight.</div>
+          <button className="btn btn-primary w-full" onClick={runLabPulse} disabled={labCd > 0}>Pulse Lab {labCd > 0 ? `(${formatDuration(labCd)})` : ""}</button>
+          <div className="text-muted text-xs">Cost: 60 signal, 20 metal · Yields 6 research · 20s cooldown</div>
+        </div>
+        <div className="card space-y-2">
+          <div className="font-semibold">Hub Status</div>
+          <div className="text-sm text-muted">Power {format(state.resources.power)} · Food {format(state.resources.food)} · Habitat {format(state.resources.habitat)}</div>
+          <div className="text-sm text-muted">Morale {Math.round((state.workers.satisfaction || 1) * 100)}% · Workers {state.workers.total}</div>
+          <div className="text-xs text-muted">Keep power non-negative and food above upkeep ({(state.workers.total * 0.2).toFixed(1)}/tick).</div>
+        </div>
+        <div className="card space-y-2">
+          <div className="row row-between">
+            <div className="font-semibold">Briefing & Controls</div>
+            <button className="btn" onClick={() => setShowBrief((v) => !v)}>{showBrief ? "Hide" : "Show"}</button>
+          </div>
+          {showBrief && (
+            <>
+              <ul className="text-sm text-muted list-disc list-inside space-y-1">
+                {briefing.map((b, i) => <li key={i}>{b}</li>)}
+              </ul>
+              <div className="text-xs text-muted">Space: Collect · 1-7: Tabs · Arrow keys: cycle tabs</div>
+            </>
+          )}
         </div>
       </div>
     </section>
   );
 }
-function MissionsView({ state, startMission, setSelected, format }) {
+function MissionsView({ state, startMission, setAutoLaunch, setSelected, format }) {
   return (
     <section className="panel space-y-3">
       <div>
         <div className="text-lg font-semibold">Missions</div>
-        <div className="text-muted text-sm">Biome-specific hazards and loot. Boost fuel to cut travel time.</div>
+        <div className="text-muted text-sm">Biome-specific hazards and loot. Boost fuel to cut travel time. Debris Field is your early fuel/research drip.</div>
       </div>
       <div className="grid md:grid-cols-2 gap-3">
         <div className="card">
@@ -465,22 +826,37 @@ function MissionsView({ state, startMission, setSelected, format }) {
 
         <div className="card">
           <div className="font-semibold mb-1">Launch</div>
-          <MissionLaunch state={state} startMission={startMission} format={format} />
+          <MissionLaunch state={state} startMission={startMission} setAutoLaunch={setAutoLaunch} format={format} />
         </div>
       </div>
     </section>
   );
 }
 
-function MissionLaunch({ state, startMission, format }) {
+function MissionLaunch({ state, startMission, setAutoLaunch, format }) {
   const [fuelBoost, setFuelBoost] = useState(0);
+  const [modeId, setModeId] = useState("balanced");
+  const [specialist, setSpecialist] = useState("none");
   const body = BODIES.find((b) => b.id === state.selectedBody) || BODIES[0];
   const slots = 1 + (state.hubUpgrades.launch_bay || 0);
   const active = state.missions.active || [];
-  const hazard = Math.max(0, body.hazard - (state.tech.hazard_gear ? 0.25 : 0) - (state.tech.shielding ? 0.2 : 0));
+  const mode = missionModeById(modeId);
+  const hazard = Math.max(0, body.hazard - (state.tech.hazard_gear ? 0.25 : 0) - (state.tech.shielding ? 0.2 : 0) + (mode?.hazard || 0) + (specialist === "engineer" ? -0.1 : 0));
+  const forecast = missionYield(body, modeId, specialist);
+  const failChance = Math.min(80, Math.max(5, Math.round(((hazard || 0) * 60 + 5))));
+  const auto = state.autoLaunch || {};
   return (
     <div className="space-y-3">
       <div className="text-sm text-muted">Slots {active.length}/{slots}</div>
+      <div className="row-item">
+        <div className="row-details">
+          <div className="row-title">Mission Stance</div>
+          <div className="row-meta">{mode?.desc}</div>
+        </div>
+        <select className="select bg-slate-800 text-white" value={modeId} onChange={(e) => setModeId(e.target.value)}>
+          {MISSION_MODES.map((m) => <option key={m.id} value={m.id}>{m.name}</option>)}
+        </select>
+      </div>
       <div className="row">
         <input type="range" min="0" max="10" value={fuelBoost} onChange={(e) => setFuelBoost(Number(e.target.value))} />
         <span className="text-sm text-muted">Fuel boost: {fuelBoost}</span>
@@ -488,10 +864,35 @@ function MissionLaunch({ state, startMission, format }) {
       <div className="row-item">
         <div className="row-details">
           <div className="row-title">Cargo Forecast</div>
-          <div className="row-meta">{Object.entries(body.resources).map(([k, v]) => `${format(v)} ${k}`).join(" - ")}</div>
-          <div className="row-meta">Hazard {Math.round(hazard * 100)}% - Travel {formatDuration(Math.max(15000, body.travel * 1000 - fuelBoost * 3000))}</div>
+          <div className="row-meta">{Object.entries(forecast).map(([k, v]) => `${format(v)} ${k}`).join(" - ")}</div>
+          <div className="row-meta">Hazard {Math.round(hazard * 100)}% · Fail risk ~{failChance}% · Travel {formatDuration(Math.max(15000, body.travel * 1000 - fuelBoost * 3000 + (mode?.durationMs || 0)))} · Mode {mode?.name}</div>
         </div>
-        <button className="btn btn-primary" onClick={() => startMission(body.id, fuelBoost)}>Launch</button>
+        <button className="btn btn-primary" onClick={() => startMission(body.id, fuelBoost, modeId, specialist)}>Launch</button>
+      </div>
+      <div className="row-item">
+        <div className="row-details">
+          <div className="row-title">Assign Specialist</div>
+          <div className="row-meta">Miner: +metal/rare · Botanist: +organics/fuel · Engineer: -hazard, +research</div>
+        </div>
+        <select className="select bg-slate-800 text-white" value={specialist} onChange={(e) => setSpecialist(e.target.value)}>
+          <option value="none">None</option>
+          <option value="miner">Miner</option>
+          <option value="botanist">Botanist</option>
+          <option value="engineer">Engineer</option>
+        </select>
+      </div>
+      <div className="row-item">
+        <div className="row-details">
+          <div className="row-title">Auto-launch</div>
+          <div className="row-meta">Launch this target automatically when slots are free.</div>
+        </div>
+        <div className="flex gap-2 items-center">
+          <input type="checkbox" checked={auto.enabled && auto.bodyId === body.id} onChange={(e) => {
+            if (e.target.checked) setAutoLaunch({ enabled: true, bodyId: body.id, mode: modeId, specialist });
+            else setAutoLaunch({ enabled: false, bodyId: null, mode: "balanced", specialist: "none" });
+          }} />
+          <span className="text-sm text-muted">{auto.enabled && auto.bodyId === body.id ? "Enabled" : "Disabled"}</span>
+        </div>
       </div>
       <div className="list">
         {active.map((m, i) => {
@@ -500,8 +901,10 @@ function MissionLaunch({ state, startMission, format }) {
           return (
             <div key={i} className="row-item">
               <div className="row-details">
-                <div className="row-title">En route to {b?.name || "target"}</div>
+                <div className="row-title">En route to {b?.name || "target"} <span className="tag">{missionModeById(m.mode)?.name || "Balanced"}</span></div>
                 <div className="row-meta">{formatDuration(remaining)} remaining</div>
+                {m.objective && <div className="row-meta text-xs text-muted">Side objective: {m.objective.desc}</div>}
+                {m.specialist && m.specialist !== "none" && <div className="row-meta text-xs text-muted">Specialist: {m.specialist}</div>}
               </div>
             </div>
           );
@@ -511,53 +914,85 @@ function MissionLaunch({ state, startMission, format }) {
     </div>
   );
 }
-function BasesView({ state, setSelected, buildBase, format, bodyEvents }) {
+function BasesView({ state, setSelected, buildBase, setBaseFocus, refreshEvents, resolveEvent, runBaseOp, crewBonusText, format, bodyEvents }) {
   const body = BODIES.find((b) => b.id === state.selectedBody) || BODIES[0];
   const buildings = BIOME_BUILDINGS[body.type] || [];
-  const base = state.bases[body.id] || { buildings: {}, events: bodyEvents(body) };
+  const base = state.bases[body.id] || { buildings: {}, events: bodyEvents(body), focus: "balanced" };
+  const ops = BASE_OPS[body.type] || [];
+  const opsCd = Math.max(0, (base.opsReadyAt || 0) - Date.now());
   return (
     <section className="panel space-y-3">
       <div>
         <div className="text-lg font-semibold">Bases</div>
-        <div className="text-muted text-sm">Each biome has unique structures and procedural events.</div>
+        <div className="text-muted text-sm">Manage structures, events, and base-specific ops. Mission targeting lives in Missions.</div>
       </div>
       <div className="grid md:grid-cols-2 gap-3">
-        <div className="card">
-          <div className="font-semibold mb-1">Sites</div>
-          <div className="list">
-            {BODIES.map((b) => (
-              <div key={b.id} className="row-item">
-                <div className="row-details">
-                  <div className="row-title">{b.name} {state.selectedBody === b.id && <span className="tag">Active</span>}</div>
-                  <div className="row-meta">{b.type.toUpperCase()} - Travel {formatDuration(b.travel * 1000)}</div>
-                </div>
-                <button className="btn" onClick={() => setSelected(b.id)}>Focus</button>
-              </div>
-            ))}
+        <div className="card space-y-3">
+          <div className="font-semibold">Select Site</div>
+          <div className="row-item">
+            <div className="row-details">
+              <div className="row-title">{body.name}</div>
+              <div className="row-meta">{body.type.toUpperCase()} · Travel {formatDuration(body.travel * 1000)} · Hazard {(body.hazard * 100).toFixed(0)}%</div>
+            </div>
+            <select className="select bg-slate-800 text-white" value={body.id} onChange={(e) => setSelected(e.target.value)}>
+              {BODIES.map((b) => <option key={b.id} value={b.id} disabled={!isUnlockedUI(state, b)}>{b.name} {isUnlockedUI(state, b) ? "" : "(locked)"}</option>)}
+            </select>
           </div>
+          <div className="text-sm text-muted">Switching focus here does not launch missions; use Missions tab to send expeditions.</div>
         </div>
         <div className="card space-y-2">
           <div className="font-semibold">Build on {body.name}</div>
           <div className="list">
-            {buildings.map((b) => (
-              <div key={b.id} className="row-item">
-                <div className="row-details">
-                  <div className="row-title">{b.name} <span className="tag">Lv {base.buildings[b.id] || 0}</span></div>
-                  <div className="row-meta">{b.desc}</div>
+            {buildings.map((b) => {
+              const lvl = base.buildings[b.id] || 0;
+              const cost = withLogisticsCost(scaledCost(b.cost, lvl, COST_EXP.base), body);
+              return (
+                <div key={b.id} className="row-item">
+                  <div className="row-details">
+                    <div className="row-title">{b.name} <span className="tag">Lv {lvl}</span></div>
+                    <div className="row-meta">{b.desc}</div>
+                    <div className="row-meta text-xs text-muted">Logistics: +{Math.max(2, Math.floor((body.travel || 0) / 25))} fuel</div>
+                    <div className="row-meta text-xs text-muted">Crew bonus: {crewBonusText(b.id)}</div>
+                    <div className="row-meta text-xs text-muted">Next cost: {costText(cost, format)}</div>
+                  </div>
+                  <button className="btn" disabled={!canAffordUI(state.resources, cost)} onClick={() => buildBase(b.id)}>Build ({costText(cost, format)})</button>
                 </div>
-                <button className="btn" disabled={!canAffordUI(state.resources, b.cost)} onClick={() => buildBase(b.id)}>Build ({costText(b.cost, format)})</button>
-              </div>
-            ))}
+              );
+            })}
           </div>
           <div className="font-semibold mt-2">Local Events</div>
           <div className="list">
             {(base.events || []).map((e, i) => (
-              <div key={i} className="row-item">
+              <div key={e.id || i} className="row-item">
                 <div className="row-details">
-                  <div className="row-title">{e}</div>
+                  <div className="row-title">{e.name || e}</div>
+                  <div className="row-meta">{e.desc || "Local situation requires attention."}</div>
+                  {e.cost && <div className="row-meta text-xs">Cost {costText(e.cost, format)} {e.requiresRole ? `· Needs ${e.requiresRole}` : ""}</div>}
                 </div>
+                {e.id ? <button className="btn" onClick={() => resolveEvent(body.id, e.id)}>Resolve</button> : null}
               </div>
             ))}
+            <button className="btn mt-2" onClick={refreshEvents}>Refresh Events</button>
+          </div>
+          <div className="font-semibold mt-2">Outpost Focus</div>
+          <div className="flex flex-wrap gap-2">
+            {["balanced","production","sustain","morale"].map((f) => (
+              <button key={f} className={`btn ${base.focus === f ? "btn-primary" : ""}`} onClick={() => setBaseFocus(f)}>{f[0].toUpperCase() + f.slice(1)}</button>
+            ))}
+          </div>
+          <div className="font-semibold mt-2">Outpost Ops</div>
+          <div className="list">
+            {ops.map((op) => (
+              <div key={op.id} className="row-item">
+                <div className="row-details">
+                  <div className="row-title">{op.name}</div>
+                  <div className="row-meta">{op.desc}</div>
+                  <div className="row-meta text-xs text-muted">Cost {costText(op.cost, format)} · Cooldown {Math.round(op.cooldown / 1000)}s</div>
+                </div>
+                <button className="btn" disabled={opsCd > 0 || !canAffordUI(state.resources, op.cost)} onClick={() => runBaseOp(body.id, op.id)}>{opsCd > 0 ? `Ready in ${formatDuration(opsCd)}` : "Run"}</button>
+              </div>
+            ))}
+            {!ops.length && <div className="text-muted text-sm">No base ops for this biome yet.</div>}
           </div>
         </div>
       </div>
@@ -570,6 +1005,7 @@ function CrewView({ state, hire, rollRecruits, changeCrew, format }) {
   return (
     <section className="panel space-y-3">
       <div className="text-lg font-semibold">Crew & Recruits</div>
+      <div className="text-sm text-muted">Roles give +10% per assignment (miners/botanists) or +5% (engineers) to linked buildings. Morale scales all output; keep food/habitat/power stable.</div>
       <div className="grid md:grid-cols-2 gap-3">
         <div className="card">
           <div className="row-title mb-1">Assignments</div>
@@ -613,23 +1049,44 @@ function CrewView({ state, hire, rollRecruits, changeCrew, format }) {
   );
 }
 function TechView({ state, buyTech, format }) {
+  const tiers = Array.from(new Set(TECH.map((t) => t.tier))).sort((a, b) => a - b);
   return (
     <section className="panel space-y-3">
       <div className="text-lg font-semibold">Tech & Milestones</div>
-      <div className="list">
-        {TECH.map((t) => {
-          const visible = state.resources.signal >= t.unlock; if (!visible) return null;
-          const owned = state.tech[t.id];
-          return (
-            <div key={t.id} className="row-item">
-              <div className="row-details">
-                <div className="row-title">{t.name} {owned ? <span className="tag">Owned</span> : null}</div>
-                <div className="row-meta">{t.desc}</div>
-              </div>
-              <button className="btn" disabled={owned || !canAffordUI(state.resources, t.cost)} onClick={() => buyTech(t.id)}>Research ({costText(t.cost, format)})</button>
+      <div className="text-muted text-sm">Branching tree; unlocks require prior techs.</div>
+      <div className="space-y-4">
+        {tiers.map((tier) => (
+          <div key={tier} className="card space-y-2">
+            <div className="font-semibold">Tier {tier}</div>
+            <div className="list">
+              {TECH.filter((t) => t.tier === tier).map((t) => {
+                const unlockVisible = state.resources.signal >= t.unlock;
+                if (!unlockVisible) return (
+                  <div key={t.id} className="row-item opacity-50">
+                    <div className="row-details">
+                      <div className="row-title">{t.name}</div>
+                      <div className="row-meta">Requires {t.unlock} signal to reveal.</div>
+                    </div>
+                  </div>
+                );
+                const owned = state.tech[t.id];
+                const prereqsMet = hasPrereqs(state, t);
+                const prereqText = t.requires?.length ? `Requires: ${t.requires.map((r) => TECH.find((x) => x.id === r)?.name || r).join(", ")}` : "Root";
+                const disabled = owned || !prereqsMet || !canAffordUI(state.resources, t.cost);
+                return (
+                  <div key={t.id} className="row-item">
+                    <div className="row-details">
+                      <div className="row-title">{t.name} {owned ? <span className="tag">Owned</span> : null}</div>
+                      <div className="row-meta">{t.desc}</div>
+                      <div className="row-meta text-xs text-muted">{prereqText}</div>
+                    </div>
+                    <button className="btn" disabled={disabled} onClick={() => buyTech(t.id)}>{owned ? "Done" : `Research (${costText(t.cost, format)})`}</button>
+                  </div>
+                );
+              })}
             </div>
-          );
-        })}
+          </div>
+        ))}
       </div>
     </section>
   );
@@ -674,7 +1131,119 @@ function StarterTour({ tourStep, seen, onStep }) {
   );
 }
 
+function focusBoost(focus, resourceKey) {
+  if (focus === "production" && ["metal","organics","fuel","signal","rare"].includes(resourceKey)) return 1.2;
+  if (focus === "sustain" && ["food","habitat","power"].includes(resourceKey)) return 1.2;
+  if (focus === "morale" && resourceKey === "morale") return 1.25;
+  return 1;
+}
+
+function missionModeById(id) { return MISSION_MODES.find((m) => m.id === id) || MISSION_MODES[0]; }
+function scaledCost(baseCost, level, exp) {
+  const out = {};
+  Object.entries(baseCost || {}).forEach(([k, v]) => {
+    out[k] = Math.ceil(v * Math.pow(exp || 1.1, level || 0));
+  });
+  return out;
+}
+function scaleCons(cons = {}, lvl = 1) { const out = {}; Object.entries(cons || {}).forEach(([k, v]) => out[k] = v * lvl); return out; }
+function aggregateEventMods(base) {
+  const mult = {};
+  let moralePenalty = 0;
+  (base?.events || []).forEach((ev) => {
+    if (ev.status === "resolved") return;
+    Object.entries(ev.effect?.mult || {}).forEach(([k, v]) => { mult[k] = (mult[k] || 1) * v; });
+    moralePenalty += ev.effect?.moralePenalty || 0;
+  });
+  return { mult, moralePenalty };
+}
+function computeMorale(resources, rates, state, currentBase, eventMods, powerGate) {
+  const foodUpkeep = state.workers.total * 0.2;
+  const foodFactor = clamp((resources.food / Math.max(1, foodUpkeep)) * 0.9, 0.4, 1.25);
+  const habitatFactor = clamp((resources.habitat || 0) / Math.max(1, state.workers.total), 0.5, 1.2);
+  const powerFactor = powerGate ? 0.5 : 1;
+  const unassigned = state.workers.total - Object.values(state.workers.assigned).reduce((a, b) => a + b, 0);
+  const restFactor = clamp(0.9 + unassigned * 0.04, 0.85, 1.15);
+  const missionHazard = (state.missions.active || []).reduce((acc, m) => acc + (m.hazard || 0), 0) / Math.max(1, (state.missions.active || []).length);
+  const hazardPenalty = missionHazard * 0.3;
+  const eventPenalty = (currentBase.events || []).length * 0.04 + (eventMods.moralePenalty || 0);
+  const baseMorale = (foodFactor * 0.4) + (habitatFactor * 0.2) + (powerFactor * 0.15) + (restFactor * 0.15) - hazardPenalty - eventPenalty;
+  return clamp(baseMorale + (rates.morale || 0), 0.35, 1.25);
+}
+function randomBetween(min, max) { return min + Math.random() * (max - min); }
+function withLogisticsCost(cost, body) {
+  const logisticsFuel = Math.max(2, Math.floor((body?.travel || 0) / 25));
+  return { ...cost, fuel: (cost.fuel || 0) + logisticsFuel };
+}
+function reduceCargo(cargo, factor) { const out = {}; Object.entries(cargo).forEach(([k, v]) => out[k] = Math.floor(v * factor)); return out; }
+function createEvent(body) {
+  const pool = {
+    asteroid: [
+      { name: "Hull Breach", desc: "Power loss and morale drop until patched.", effect: { mult: { metal: 0.7 }, moralePenalty: 0.08 }, cost: { metal: 20 }, requiresRole: "engineer" },
+      { name: "Dust Clog", desc: "Signal arrays sluggish.", effect: { mult: { signal: 0.6 } }, cost: { fuel: 6 }, requiresRole: "engineer" },
+    ],
+    ice: [
+      { name: "Cryo Leak", desc: "Fuel bleeding off.", effect: { mult: { fuel: 0.5 } }, cost: { metal: 14, fuel: 6 }, requiresRole: "engineer" },
+      { name: "Frostbite", desc: "Crew morale falling in the cold.", effect: { moralePenalty: 0.1 }, cost: { food: 8 }, requiresRole: "botanist" },
+    ],
+    warm: [
+      { name: "Heat Stress", desc: "Systems throttled to avoid melt.", effect: { mult: { fuel: 0.7, metal: 0.8 } }, cost: { metal: 18 }, requiresRole: "engineer" },
+      { name: "Dust Storm", desc: "Visibility down, morale slipping.", effect: { mult: { signal: 0.7 }, moralePenalty: 0.06 }, cost: { food: 6 }, requiresRole: "miner" },
+    ],
+    unknown: [
+      { name: "Anomaly Surge", desc: "Strange readings disrupt output.", effect: { mult: { rare: 0.5, metal: 0.8 }, moralePenalty: 0.08 }, cost: { rare: 2, metal: 20 }, requiresRole: "engineer" },
+    ],
+  };
+  const list = pool[body.type] || pool.asteroid;
+  const pick = list[Math.floor(Math.random() * list.length)];
+  return { id: `${body.id}-${Date.now()}-${Math.random().toString(16).slice(2, 6)}`, bodyId: body.id, ...pick, status: "active" };
+}
+function makeObjective(body) {
+  const tables = {
+    asteroid: [
+      { desc: "Scan derelict hull for data cores", reward: { research: 10, metal: 15 }, rewardText: "+10 research +15 metal", failRisk: 0.25 },
+      { desc: "Detour to salvage pods", reward: { fuel: 8, metal: 12 }, rewardText: "+8 fuel +12 metal", failRisk: 0.2 },
+    ],
+    ice: [
+      { desc: "Sample cryo vents", reward: { organics: 12, fuel: 6 }, rewardText: "+12 organics +6 fuel", failRisk: 0.25 },
+      { desc: "Deep crevasse scan", reward: { research: 14 }, rewardText: "+14 research", failRisk: 0.3 },
+    ],
+    warm: [
+      { desc: "Investigate thermal plumes", reward: { rare: 3, metal: 18 }, rewardText: "+3 rare +18 metal", failRisk: 0.35 },
+      { desc: "Shield calibration drill", reward: { fuel: 10, research: 10 }, rewardText: "+10 fuel +10 research", failRisk: 0.25 },
+    ],
+    unknown: [
+      { desc: "Probe anomaly rift", reward: { rare: 5, research: 25 }, rewardText: "+5 rare +25 research", failRisk: 0.4 },
+      { desc: "Anchor relay node", reward: { fuel: 16, signal: 40 }, rewardText: "+16 fuel +40 signal", failRisk: 0.3 },
+    ],
+  };
+  const list = tables[body.type] || tables.asteroid;
+  const pick = list[Math.floor(Math.random() * list.length)];
+  return pick;
+}
+function combineCargo(base, bonus) {
+  const out = { ...base };
+  Object.entries(bonus || {}).forEach(([k, v]) => { out[k] = (out[k] || 0) + v; });
+  return out;
+}
+function hashStr(str) {
+  let h = 0;
+  for (let i = 0; i < str.length; i++) { h = (h * 131 + str.charCodeAt(i)) >>> 0; }
+  return h.toString(16);
+}
+function xorString(str, salt) {
+  let out = "";
+  for (let i = 0; i < str.length; i++) {
+    out += String.fromCharCode(str.charCodeAt(i) ^ salt.charCodeAt(i % salt.length));
+  }
+  return out;
+}
+function hasPrereqs(state, tech) { return (tech.requires || []).every((id) => state.tech[id]); }
 function canAffordUI(resources, cost) { return Object.entries(cost).every(([k, v]) => (resources[k] || 0) >= v); }
 function costText(cost, format) { return Object.entries(cost).map(([k, v]) => `${format(v)} ${k}`).join(', '); }
 function formatDuration(ms) { const sec = Math.max(0, Math.ceil(ms / 1000)); const m = Math.floor(sec / 60); const s = sec % 60; return m > 0 ? `${m}m ${s}s` : `${s}s`; }
-function isUnlockedUI(state, body) { if (body.requireTech && !state.tech[body.requireTech]) return false; return (state.resources.signal || 0) >= (body.unlock || 0); }
+function isUnlockedUI(state, body) {
+  if (body.requireTech && !state.tech[body.requireTech]) return false;
+  if (body.requireMissions && (state.milestones?.missionsDone || 0) < body.requireMissions) return false;
+  return (state.resources.signal || 0) >= (body.unlock || 0);
+}
