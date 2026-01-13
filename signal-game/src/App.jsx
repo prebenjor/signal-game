@@ -56,23 +56,35 @@ const BIOME_BUILDINGS = {
     { id: "fuel_cracker", name: "Fuel Cracker", desc: "+2 fuel/tick", cost: { metal: 90 }, prod: { fuel: 2 }, cons: { power: 1 } },
     { id: "ore_rig", name: "Ore Rig", desc: "+4 metal/tick", cost: { metal: 120 }, prod: { metal: 4 }, cons: { power: 1 } },
     { id: "solar_sail", name: "Solar Sail", desc: "+2 power/tick", cost: { metal: 70 }, prod: { power: 2 }, cons: {} },
+    { id: "cargo_rig", name: "Cargo Rig", desc: "Rig branch: +12% mission cargo from this base", cost: { metal: 220, fuel: 30 }, prod: {}, cons: { power: 1 }, requires: [{ id: "ore_rig", level: 3 }], cargoMult: 1.12, group: "rig_branch" },
+    { id: "core_rig", name: "Core Rig", desc: "Rig branch: +3 rare/tick, +4 metal/tick", cost: { metal: 260, fuel: 40 }, prod: { rare: 3, metal: 4 }, cons: { power: 2 }, requires: [{ id: "ore_rig", level: 3 }], group: "rig_branch" },
+    { id: "logistics_depot", name: "Logistics Depot", desc: "+5% cargo, -5% travel time", cost: { metal: 180, fuel: 20 }, prod: {}, cons: { power: 1 }, cargoMult: 1.05, travelMult: 0.95 },
     { id: "core_tap", name: "Core Tap", desc: "+6 metal/tick, +1 rare/tick", cost: { metal: 260, fuel: 50 }, prod: { metal: 6, rare: 1 }, cons: { power: 2 }, requires: [{ id: "ore_rig", level: 2 }] },
     { id: "orbital_foundry", name: "Orbital Foundry", desc: "+3 rare/tick, +10% mission cargo from this base (applied in cargo calc)", cost: { metal: 320, rare: 12 }, prod: { rare: 3 }, cons: { power: 2 }, requires: [{ id: "core_tap", level: 1 }], cargoMult: 1.1 },
   ],
   ice: [
     { id: "thermal_pump", name: "Thermal Pump", desc: "+3 fuel/tick", cost: { metal: 110, fuel: 16 }, prod: { fuel: 3 }, cons: { power: 1 } },
     { id: "algae_farm", name: "Algae Farm", desc: "+3 food/tick", cost: { metal: 90, organics: 40 }, prod: { food: 3 }, cons: { power: 1 } },
+    { id: "protein_farm", name: "Protein Farm", desc: "Algae branch: +5 food/tick, +2% morale", cost: { metal: 180, organics: 70 }, prod: { food: 5, morale: 0.02 }, cons: { power: 1 }, requires: [{ id: "algae_farm", level: 3 }], group: "algae_branch" },
+    { id: "bio_reactor", name: "Bio-Reactor", desc: "Algae branch: food -> power/fuel", cost: { metal: 200, organics: 80, fuel: 20 }, prod: { power: 2, fuel: 2 }, cons: { food: 1 }, requires: [{ id: "algae_farm", level: 3 }], group: "algae_branch" },
+    { id: "logistics_depot", name: "Logistics Depot", desc: "+5% cargo, -5% travel time", cost: { metal: 180, fuel: 20 }, prod: {}, cons: { power: 1 }, cargoMult: 1.05, travelMult: 0.95 },
     { id: "cryo_distillery", name: "Cryo Distillery", desc: "Converts organics to fuel (+3 fuel/tick, -1 organics/tick)", cost: { metal: 200, organics: 80 }, prod: { fuel: 3 }, cons: { organics: 1, power: 1 }, requires: [{ id: "thermal_pump", level: 2 }] },
     { id: "glacier_observatory", name: "Glacier Observatory", desc: "+3 research/tick", cost: { metal: 260, fuel: 40 }, prod: { research: 3 }, cons: { power: 2 }, requires: [{ id: "cryo_distillery", level: 1 }] },
   ],
   warm: [
     { id: "shield_dome", name: "Shield Dome", desc: "-20% hazard on missions from this base", cost: { metal: 140, fuel: 20 }, prod: {}, cons: { power: 1 }, hazardMult: 0.8 },
     { id: "vapor_trap", name: "Vapor Trap", desc: "+2 organics/tick", cost: { metal: 90, fuel: 12 }, prod: { organics: 2 }, cons: {} },
+    { id: "interceptor_net", name: "Interceptor Net", desc: "Shield branch: -35% hazard, -10% travel time", cost: { metal: 220, fuel: 50 }, prod: {}, cons: { power: 2 }, requires: [{ id: "shield_dome", level: 2 }], hazardMult: 0.65, travelMult: 0.9, group: "shield_branch" },
+    { id: "comfort_dome", name: "Comfort Dome", desc: "Shield branch: +6% morale, events less severe", cost: { metal: 200, organics: 90 }, prod: { morale: 0.06 }, cons: { power: 1 }, requires: [{ id: "shield_dome", level: 2 }], group: "shield_branch" },
+    { id: "logistics_depot", name: "Logistics Depot", desc: "+5% cargo, -5% travel time", cost: { metal: 180, fuel: 20 }, prod: {}, cons: { power: 1 }, cargoMult: 1.05, travelMult: 0.95 },
     { id: "plasma_furnace", name: "Plasma Furnace", desc: "+6 power/tick, +4 metal/tick", cost: { metal: 240, fuel: 60 }, prod: { power: 6, metal: 4 }, cons: { fuel: 2 } },
     { id: "shield_spire", name: "Shield Spire", desc: "Greatly reduces hazard; boosts morale", cost: { metal: 280, fuel: 80 }, prod: { morale: 0.08 }, cons: { power: 2 }, requires: [{ id: "shield_dome", level: 1 }], hazardMult: 0.7 },
   ],
   unknown: [
     { id: "anomaly_lab", name: "Anomaly Lab", desc: "+1 rare/tick", cost: { metal: 160, rare: 8 }, prod: { rare: 1 }, cons: { power: 1 } },
+    { id: "relay_spire", name: "Relay Spire", desc: "Lab branch: +8% cargo, -8% travel time", cost: { metal: 240, rare: 10, fuel: 40 }, prod: {}, cons: { power: 2 }, requires: [{ id: "anomaly_lab", level: 2 }], cargoMult: 1.08, travelMult: 0.92, group: "lab_branch" },
+    { id: "ward_matrix", name: "Ward Matrix", desc: "Lab branch: -40% hazard, +2 rare/tick", cost: { metal: 260, rare: 12 }, prod: { rare: 2 }, cons: { power: 2 }, requires: [{ id: "anomaly_lab", level: 2 }], hazardMult: 0.6, group: "lab_branch" },
+    { id: "logistics_depot", name: "Logistics Depot", desc: "+5% cargo, -5% travel time", cost: { metal: 180, fuel: 20 }, prod: {}, cons: { power: 1 }, cargoMult: 1.05, travelMult: 0.95 },
     { id: "phase_relay", name: "Phase Relay", desc: "+4 signal/tick, -travel time for missions", cost: { metal: 240, rare: 10, fuel: 40 }, prod: { signal: 4 }, cons: { power: 2 }, travelMult: 0.85 },
     { id: "anomaly_vault", name: "Anomaly Vault", desc: "+4 rare/tick, +4 research/tick", cost: { metal: 320, rare: 16 }, prod: { rare: 4, research: 4 }, cons: { power: 2 }, requires: [{ id: "anomaly_lab", level: 2 }] },
   ],
@@ -972,8 +984,13 @@ function scaledCost(baseCost, level, exp) {
   return out;
 }
 function requirementsMet(base, building) {
-  if (!building.requires) return true;
-  return building.requires.every((req) => (base.buildings?.[req.id] || 0) >= (req.level || 1));
+  const prereqs = building.requires ? building.requires.every((req) => (base.buildings?.[req.id] || 0) >= (req.level || 1)) : true;
+  const groupOk = building.group ? !Object.entries(base.buildings || {}).some(([id, lvl]) => {
+    if (lvl <= 0) return false;
+    const def = Object.values(BIOME_BUILDINGS).flat().find((b) => b.id === id);
+    return def?.group && def.group === building.group && id !== building.id;
+  }) : true;
+  return prereqs && groupOk;
 }
 function scaleCons(cons = {}, lvl = 1) { const out = {}; Object.entries(cons || {}).forEach(([k, v]) => out[k] = v * lvl); return out; }
 function aggregateEventMods(base) {
