@@ -25,6 +25,7 @@ export default function BasesView({
   requirementsMet,
   baseTraits,
   maintenanceStats,
+  baseBonuses,
 }) {
   const body = bodies.find((b) => b.id === state.selectedBody) || bodies[0];
   const buildings = biomeBuildings[body.type] || [];
@@ -33,6 +34,7 @@ export default function BasesView({
   const opsCd = Math.max(0, (base.opsReadyAt || 0) - Date.now());
   const [pane, setPane] = useState("build");
   const [buildGroup, setBuildGroup] = useState("All");
+  const bonuses = baseBonuses ? baseBonuses(body.id) : { cargo: 1, travel: 1, hazard: 1 };
   const groupedBuildings = useMemo(() => {
     const classify = (b) => {
       if (b.maintenanceCap) return "Infrastructure";
@@ -66,6 +68,11 @@ export default function BasesView({
     production: "Boosts metal, organics, fuel, signal, rare.",
     sustain: "Boosts food, habitat, and power.",
     morale: "Boosts morale generation.",
+  };
+  const formatMod = (value) => {
+    const delta = Math.round((value - 1) * 100);
+    if (delta === 0) return "0%";
+    return `${delta > 0 ? "+" : ""}${delta}%`;
   };
 
   return (
@@ -108,6 +115,28 @@ export default function BasesView({
               <div className="tag">{maintenanceStats.over ? "Reduced output" : "Stable"}</div>
             </div>
             <div className="text-xs text-muted">Build Maintenance Bays to raise cap and avoid event acceleration.</div>
+          </div>
+
+          <div className="card space-y-2">
+            <div className="font-semibold">Base Summary</div>
+            <div className="grid grid-cols-2 gap-2">
+              <div className="stat-box">
+                <span className="text-muted text-xs">Cargo Bonus</span>
+                <strong>{formatMod(bonuses.cargo || 1)}</strong>
+              </div>
+              <div className="stat-box">
+                <span className="text-muted text-xs">Travel Time</span>
+                <strong>{formatMod(bonuses.travel || 1)}</strong>
+              </div>
+              <div className="stat-box">
+                <span className="text-muted text-xs">Hazard</span>
+                <strong>{formatMod(bonuses.hazard || 1)}</strong>
+              </div>
+              <div className="stat-box">
+                <span className="text-muted text-xs">Traits</span>
+                <strong>{baseTraits.length}</strong>
+              </div>
+            </div>
           </div>
 
           <div className="card space-y-2">

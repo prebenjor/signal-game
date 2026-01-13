@@ -776,6 +776,7 @@ function biomeBuildingById(id) { return Object.values(BIOME_BUILDINGS).flat().fi
                 requirementsMet={requirementsMet}
                 baseTraits={currentTraits}
                 maintenanceStats={currentMaintenance}
+                baseBonuses={(id) => baseBonuses(state, id)}
               />
             )}
             {state.tab === 'crew' && (
