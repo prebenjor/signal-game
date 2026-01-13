@@ -23,7 +23,8 @@ const LEGACY_KEY = "signalFrontierState";
 const TICK_MS = 500;
 const SAVE_MS = 5000;
 const MAX_EVENTS_PER_BASE = 4;
-const TAB_ORDER = ["hub", "missions", "bases", "crew", "tech", "log", "profile"];
+const SAVE_VERSION = 2;
+const TAB_ORDER = ["hub", "missions", "bases", "crew", "tech", "systems", "codex", "log", "profile"];
 const EVENT_COOLDOWN_MS = [45000, 90000];
 const COST_EXP = { hub: 1.12, base: 1.14 };
 
@@ -154,6 +155,23 @@ const STARTER_TOUR = [
   { title: "Crew & Recruits", body: "Hire specialists with role bonuses. Assign crew to boost production.", anchor: "crew" },
 ];
 
+const CODEX_ENTRIES = [
+  { id: "foundations", title: "Baseline Foundations", body: "Save versioning, capability gating, and milestone triggers keep the loop stable as the frontier expands." },
+  { id: "local_ops", title: "Local Signal Operations", body: "Early missions and range upgrades push you toward the first system discovery threshold." },
+  { id: "systems_light", title: "System Discovery", body: "Systems are persistent entities with traits and distance. Survey chains unlock colonisable worlds." },
+  { id: "colonies_anchor", title: "First Colony Anchors", body: "Colonies add hub modifiers and consume command capacity, forcing trade-offs." },
+  { id: "integration_projects", title: "Integration Projects", body: "Multi-day projects stabilize systems and change global rules like travel penalties and event rates." },
+  { id: "prestige_recalibration", title: "Signal Recalibration", body: "Prestige resets the frontier for legacy perks and faster early cycles." },
+];
+
+const MILESTONES = [
+  { id: "M0_FOUNDATIONS", title: "Foundations Online", codexEntryId: "foundations", condition: (state) => true },
+  { id: "M1_SYSTEMS_DISCOVERED", title: "Systems Unlocked", codexEntryId: "systems_light", condition: (state) => hubRange(state) >= 3 || state.tech?.deep_scan },
+  { id: "M2_FIRST_COLONY", title: "First Colony", codexEntryId: "colonies_anchor", condition: (state) => (state.colonies || []).length >= 1 },
+  { id: "M3_INTEGRATION_UNLOCK", title: "Integration Projects", codexEntryId: "integration_projects", condition: (state) => (state.systems || []).some((s) => s.integratedAt) },
+  { id: "M4_PRESTIGE_UNLOCK", title: "Prestige Ready", codexEntryId: "prestige_recalibration", condition: (state) => !!state.prestige?.points && (state.systems || []).length >= 2 },
+];
+
 const MISSION_MODES = [
   { id: "balanced", name: "Balanced", desc: "Standard risk and rewards.", hazard: 0, durationMs: 0, reward: {} },
   { id: "survey", name: "Survey", desc: "+60% research, slower travel, lower cargo", hazard: 0.04, durationMs: 8000, reward: { research: 1.6, all: 0.9 } },
@@ -173,12 +191,16 @@ function defaultBaseState(body) {
 }
 
 const initialState = {
+  saveVersion: SAVE_VERSION,
   tab: "hub",
   resources: { signal: 0, research: 2, metal: 0, organics: 0, fuel: 12, power: 0, food: 0, habitat: 0, morale: 0, rare: 0 },
   rates: { signal: 0, research: 0, metal: 0, organics: 0, fuel: 0, power: 0, food: 0, morale: 0 },
   workers: { total: 3, assigned: { miner: 1, botanist: 1, engineer: 1 }, bonus: { miner: 0, botanist: 0, engineer: 0 }, satisfaction: 1 },
   hubBuildings: {},
   hubUpgrades: {},
+  systems: [],
+  colonies: [],
+  galaxies: [],
   bases: {},
   tech: {},
   missions: { active: [] },
@@ -190,6 +212,8 @@ const initialState = {
   lastRecruitRoll: 0,
   log: [],
   milestones: {},
+  milestonesUnlocked: [],
+  codexUnlocked: [],
   tourStep: 0,
   tourSeen: false,
   labReadyAt: 0,
@@ -233,6 +257,7 @@ export default function App() {
   const currentBase = useMemo(() => ensureBaseState(state.bases[state.selectedBody], currentBody), [state.bases, state.selectedBody]);
   const currentTraits = baseTraitList(currentBase);
   const currentMaintenance = baseMaintenanceStats(currentBase);
+  const capabilities = deriveCapabilities(state);
 
   useEffect(() => {
     if (!state.bases[state.selectedBody]) {
@@ -275,7 +300,7 @@ export default function App() {
   }, []);
 
   useEffect(() => { const id = setInterval(() => setTick((t) => t + 1), TICK_MS); return () => clearInterval(id); }, []);
-  useEffect(() => { applyProduction(); resolveMissions(); processEvents(); processHubOps(); }, [tick]);
+  useEffect(() => { applyProduction(); resolveMissions(); processEvents(); processHubOps(); processMilestones(); }, [tick]);
 
   useEffect(() => {
     const onKey = (e) => {
@@ -515,6 +540,24 @@ export default function App() {
     dispatch({ type: "UPDATE", patch: { hubOpsLog: next } });
   }
 
+  function processMilestones() {
+    const unlocked = new Set(state.milestonesUnlocked || []);
+    const codexUnlocked = new Set(state.codexUnlocked || []);
+    let changed = false;
+    MILESTONES.forEach((m) => {
+      if (unlocked.has(m.id)) return;
+      if (m.condition(state)) {
+        unlocked.add(m.id);
+        if (m.codexEntryId) codexUnlocked.add(m.codexEntryId);
+        log(`Milestone unlocked: ${m.title}.`);
+        changed = true;
+      }
+    });
+    if (changed) {
+      dispatch({ type: "UPDATE", patch: { milestonesUnlocked: Array.from(unlocked), codexUnlocked: Array.from(codexUnlocked) } });
+    }
+  }
+
 
 function isUnlocked(body) {
     if (body.requireTech && !state.tech[body.requireTech]) return false;
@@ -746,13 +789,24 @@ function biomeBuildingById(id) { return Object.values(BIOME_BUILDINGS).flat().fi
 
         <div className="flex flex-col md:flex-row gap-4">
           <nav className="md:w-48 w-full flex md:flex-col flex-wrap gap-2 overflow-x-auto pb-1">
-            {['hub','missions','bases','crew','tech','log','profile'].map((tab) => (
+            {[
+              { id: "hub", label: "Hub" },
+              { id: "missions", label: "Missions" },
+              { id: "bases", label: "Bases" },
+              { id: "crew", label: "Crew" },
+              { id: "tech", label: "Tech" },
+              { id: "systems", label: "Systems", locked: !capabilities.systems },
+              { id: "codex", label: "Codex" },
+              { id: "log", label: "Log" },
+              { id: "profile", label: "Profile" },
+            ].map((tab) => (
               <button
-                key={tab}
-                className={`tab w-full md:w-full text-left whitespace-nowrap ${state.tab === tab ? 'active' : ''}`}
-                onClick={() => dispatch({ type: 'SET_TAB', tab })}
+                key={tab.id}
+                className={`tab w-full md:w-full text-left whitespace-nowrap ${state.tab === tab.id ? 'active' : ''} ${tab.locked ? 'opacity-50 cursor-not-allowed' : ''}`}
+                onClick={() => !tab.locked && dispatch({ type: 'SET_TAB', tab: tab.id })}
+                disabled={tab.locked}
               >
-                {tab[0].toUpperCase() + tab.slice(1)}
+                {tab.label}
               </button>
             ))}
           </nav>
@@ -837,6 +891,8 @@ function biomeBuildingById(id) { return Object.values(BIOME_BUILDINGS).flat().fi
                 costText={costText}
               />
             )}
+            {state.tab === 'systems' && <SystemsView state={state} capabilities={capabilities} format={format} />}
+            {state.tab === 'codex' && <CodexView state={state} />}
             {state.tab === 'log' && <LogView log={state.log} />}
             {state.tab === 'profile' && (
               <ProfileView state={state} ascend={ascend} exportProfile={exportProfile} importProfile={importProfile} compact={compact} setCompact={setCompact} manualSave={manualSave} lastSaved={lastSaved} />
@@ -1036,6 +1092,14 @@ function HubView({ state, onCollect, onPulse, runLabPulse, buildHub, buyHubUpgra
                 <span className="text-muted text-xs">Morale</span>
                 <strong>{Math.round((state.workers.satisfaction || 1) * 100)}%</strong>
               </div>
+              <div className="stat-box">
+                <span className="text-muted text-xs">Range</span>
+                <strong>{hubRange(state)}</strong>
+              </div>
+              <div className="stat-box">
+                <span className="text-muted text-xs">Command Cap</span>
+                <strong>{commandCapacity(state)}</strong>
+              </div>
             </div>
             <div className="text-xs text-muted">Keep power non-negative and food above upkeep ({(state.workers.total * 0.2).toFixed(1)}/tick).</div>
           </div>
@@ -1140,6 +1204,56 @@ function LogView({ log }) {
   );
 }
 
+function SystemsView({ state, capabilities, format }) {
+  if (!capabilities.systems) {
+    return (
+      <section className="panel space-y-2">
+        <div className="text-lg font-semibold">Systems</div>
+        <div className="text-muted text-sm">Unlock by extending hub range or researching Deep Scan arrays.</div>
+      </section>
+    );
+  }
+  const systems = state.systems || [];
+  return (
+    <section className="panel space-y-2">
+      <div className="text-lg font-semibold">Systems</div>
+      <div className="text-muted text-sm">Discovered systems and their traits.</div>
+      <div className="list">
+        {systems.map((s) => (
+          <div key={s.id} className="row-item">
+            <div className="row-details">
+              <div className="row-title">{s.name}</div>
+              <div className="row-meta">Distance {format(s.distance || 0)} | Traits {(s.traits || []).join(", ")}</div>
+            </div>
+          </div>
+        ))}
+        {!systems.length && <div className="text-muted text-sm">No systems discovered yet. Raise hub range to reveal new targets.</div>}
+      </div>
+    </section>
+  );
+}
+
+function CodexView({ state }) {
+  const unlocked = new Set(state.codexUnlocked || []);
+  return (
+    <section className="panel space-y-2">
+      <div className="text-lg font-semibold">Codex</div>
+      <div className="text-muted text-sm">Operational knowledge unlocks as milestones are reached.</div>
+      <div className="list">
+        {CODEX_ENTRIES.map((entry) => (
+          <div key={entry.id} className="row-item">
+            <div className="row-details">
+              <div className="row-title">{entry.title}</div>
+              <div className="row-meta">{unlocked.has(entry.id) ? entry.body : "Locked. Reach the relevant milestone to reveal."}</div>
+            </div>
+            {unlocked.has(entry.id) && <span className="tag">Unlocked</span>}
+          </div>
+        ))}
+      </div>
+    </section>
+  );
+}
+
 function StarterTour({ tourStep, seen, onStep }) {
   const step = STARTER_TOUR[tourStep];
   return (
@@ -1176,7 +1290,8 @@ function loadSavedState() {
     const data = raw || (cookieData ? atob(cookieData) : null);
     if (data) {
       const parsed = JSON.parse(data);
-      return { ...initialState, ...parsed };
+      const migrated = migrateSave(parsed);
+      return { ...initialState, ...migrated };
     }
   } catch (e) {
     console.warn("Failed to load state, starting fresh", e);
@@ -1270,6 +1385,21 @@ function ensureBaseState(base, body) {
 }
 function baseTraitList(base) {
   return (base.traits || []).map(traitById).filter(Boolean);
+}
+function migrateSave(save) {
+  let out = { ...save };
+  const version = Number.isFinite(out.saveVersion) ? out.saveVersion : 0;
+  if (version < 1) {
+    out.hubOps = out.hubOps || { autoPulse: false, autoPulseMinSignal: 120, autoLab: false, autoLabMinSignal: 80, autoLabMinMetal: 20, reserveSignal: 50, reserveMetal: 0 };
+    out.hubOpsLog = out.hubOpsLog || [];
+    out.milestonesUnlocked = out.milestonesUnlocked || [];
+    out.codexUnlocked = out.codexUnlocked || [];
+    out.systems = out.systems || [];
+    out.colonies = out.colonies || [];
+    out.galaxies = out.galaxies || [];
+  }
+  out.saveVersion = SAVE_VERSION;
+  return out;
 }
 function baseBonuses(stateObj, bodyId) {
   const body = BODIES.find((b) => b.id === bodyId);
@@ -1382,4 +1512,19 @@ function isUnlockedUI(state, body) {
   if (body.requireTech && !state.tech[body.requireTech]) return false;
   if (body.requireMissions && (state.milestones?.missionsDone || 0) < body.requireMissions) return false;
   return (state.resources.signal || 0) >= (body.unlock || 0);
+}
+function hubRange(state) {
+  return 1 + (state.hubUpgrades.scan_array || 0) + (state.tech.deep_scan ? 1 : 0) + (state.tech.rift_mapping ? 1 : 0);
+}
+function commandCapacity(state) {
+  return 1 + (state.hubUpgrades.launch_bay || 0) + (state.tech.auto_pilots ? 1 : 0);
+}
+function deriveCapabilities(state) {
+  const unlocked = new Set(state.milestonesUnlocked || []);
+  return {
+    systems: unlocked.has("M1_SYSTEMS_DISCOVERED"),
+    colonies: unlocked.has("M2_FIRST_COLONY"),
+    integration: unlocked.has("M3_INTEGRATION_UNLOCK"),
+    prestige: unlocked.has("M4_PRESTIGE_UNLOCK"),
+  };
 }
