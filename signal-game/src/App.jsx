@@ -182,7 +182,8 @@ const initialState = {
   bases: {},
   tech: {},
   missions: { active: [] },
-  hubOps: { autoPulse: false, autoPulseMinSignal: 120, autoLab: false, autoLabMinSignal: 80, autoLabMinMetal: 20 },
+  hubOps: { autoPulse: false, autoPulseMinSignal: 120, autoLab: false, autoLabMinSignal: 80, autoLabMinMetal: 20, reserveSignal: 50, reserveMetal: 0 },
+  hubOpsLog: [],
   autoLaunch: { enabled: false, bodyId: null, mode: "balanced", specialist: "none" },
   selectedBody: "debris",
   recruits: [],
@@ -296,8 +297,8 @@ export default function App() {
   function pulseScan(silent = false) {
     const cost = Math.min(180, 60 + (state.pulseCount || 0) * 15);
     const cdMs = 8000;
-    if (Date.now() < (state.pulseReadyAt || 0)) { if (!silent) log("Pulse scanner cooling down."); return; }
-    if (state.resources.signal < cost) { if (!silent) log("Not enough signal for pulse scan."); return; }
+    if (Date.now() < (state.pulseReadyAt || 0)) { if (!silent) log("Pulse scanner cooling down."); return { ok: false, reason: "cooldown" }; }
+    if (state.resources.signal < cost) { if (!silent) log("Not enough signal for pulse scan."); return { ok: false, reason: "signal" }; }
     bumpResources({ signal: -cost });
     const rewardPool = ["metal","fuel","research"];
     const type = rewardPool[Math.floor(Math.random() * rewardPool.length)];
@@ -305,6 +306,7 @@ export default function App() {
     bumpResources({ [type]: amount });
     dispatch({ type: "UPDATE", patch: { pulseReadyAt: Date.now() + cdMs, pulseCount: (state.pulseCount || 0) + 1 } });
     if (!silent) log(`Pulse scan recovered ${amount} ${type} (cost ${cost}).`);
+    return { ok: true, type, amount, cost };
   }
 
   // Apply resource delta; used across economy adjustments.
@@ -458,16 +460,21 @@ export default function App() {
     const ops = state.hubOps || {};
     if (ops.autoPulse) {
       const cost = Math.min(180, 60 + (state.pulseCount || 0) * 15);
-      const minSignal = Math.max(cost, ops.autoPulseMinSignal || 0);
+      const reserve = ops.reserveSignal || 0;
+      const minSignal = Math.max(cost, ops.autoPulseMinSignal || 0, reserve + cost);
       if (Date.now() >= (state.pulseReadyAt || 0) && (state.resources.signal || 0) >= minSignal) {
-        pulseScan(true);
+        const result = pulseScan(true);
+        if (result?.ok) logOps(`Auto Pulse Scan: +${result.amount} ${result.type} (cost ${result.cost})`);
       }
     }
     if (ops.autoLab) {
-      const minSignal = Math.max(60, ops.autoLabMinSignal || 0);
-      const minMetal = Math.max(20, ops.autoLabMinMetal || 0);
+      const reserveSignal = ops.reserveSignal || 0;
+      const reserveMetal = ops.reserveMetal || 0;
+      const minSignal = Math.max(60, ops.autoLabMinSignal || 0, reserveSignal + 60);
+      const minMetal = Math.max(20, ops.autoLabMinMetal || 0, reserveMetal + 20);
       if (Date.now() >= (state.labReadyAt || 0) && (state.resources.signal || 0) >= minSignal && (state.resources.metal || 0) >= minMetal) {
-        runLabPulse(true);
+        const result = runLabPulse(true);
+        if (result?.ok) logOps("Auto Research Pulse: +6 research");
       }
     }
   }
@@ -501,6 +508,11 @@ export default function App() {
 
   function setHubOps(patch) {
     dispatch({ type: "UPDATE", patch: { hubOps: { ...state.hubOps, ...patch } } });
+  }
+
+  function logOps(text) {
+    const next = [...(state.hubOpsLog || []), { text, time: Date.now() }].slice(-8);
+    dispatch({ type: "UPDATE", patch: { hubOpsLog: next } });
   }
 
 
@@ -578,13 +590,14 @@ function isUnlocked(body) {
 
   function runLabPulse(silent = false) {
     const cooldownMs = 20000;
-    if (Date.now() < (state.labReadyAt || 0)) { if (!silent) log("Research lab recalibrating."); return; }
+    if (Date.now() < (state.labReadyAt || 0)) { if (!silent) log("Research lab recalibrating."); return { ok: false, reason: "cooldown" }; }
     const cost = { signal: 60, metal: 20 };
-    if (!canAfford(cost)) { if (!silent) log("Need signal + metal for research pulse."); return; }
+    if (!canAfford(cost)) { if (!silent) log("Need signal + metal for research pulse."); return { ok: false, reason: "resources" }; }
     spend(cost);
     bumpResources({ research: 6 });
     dispatch({ type: "UPDATE", patch: { labReadyAt: Date.now() + cooldownMs } });
     if (!silent) log("Research pulse completed. New data archived.");
+    return { ok: true, cost, research: 6 };
   }
 
   // Prestige/reset with boost based on total value.
@@ -893,7 +906,7 @@ function HubView({ state, onCollect, onPulse, runLabPulse, buildHub, buyHubUpgra
   const labCd = Math.max(0, (state.labReadyAt || 0) - Date.now());
   const pulseCost = Math.min(180, 60 + (state.pulseCount || 0) * 15);
   const pulseCd = Math.max(0, (state.pulseReadyAt || 0) - Date.now());
-  const ops = state.hubOps || { autoPulse: false, autoPulseMinSignal: 120, autoLab: false, autoLabMinSignal: 80, autoLabMinMetal: 20 };
+  const ops = state.hubOps || { autoPulse: false, autoPulseMinSignal: 120, autoLab: false, autoLabMinSignal: 80, autoLabMinMetal: 20, reserveSignal: 50, reserveMetal: 0 };
   const [pane, setPane] = useState("build");
   const briefing = [
     "Collect Signal then run a Pulse Scan (ramps 60+ signal, 8s CD) to convert signal into metal/fuel/research.",
@@ -979,6 +992,28 @@ function HubView({ state, onCollect, onPulse, runLabPulse, buildHub, buyHubUpgra
                 </label>
               </div>
             </div>
+            <div className="row-item">
+              <div className="row-details">
+                <div className="row-title">Safety Reserves</div>
+                <div className="row-meta">Automation keeps these minimums in storage.</div>
+              </div>
+              <div className="row gap-2">
+                <input
+                  type="number"
+                  className="w-20 rounded-lg border border-white/10 bg-slate-900 px-2 py-1 text-xs text-white"
+                  value={ops.reserveSignal}
+                  min={0}
+                  onChange={(e) => setOps({ reserveSignal: Number(e.target.value) })}
+                />
+                <input
+                  type="number"
+                  className="w-20 rounded-lg border border-white/10 bg-slate-900 px-2 py-1 text-xs text-white"
+                  value={ops.reserveMetal}
+                  min={0}
+                  onChange={(e) => setOps({ reserveMetal: Number(e.target.value) })}
+                />
+              </div>
+            </div>
             <div className="text-xs text-muted">Thresholds are signal | metal for lab, signal for pulse.</div>
           </div>
 
@@ -1004,6 +1039,21 @@ function HubView({ state, onCollect, onPulse, runLabPulse, buildHub, buyHubUpgra
             </div>
             <div className="text-xs text-muted">Keep power non-negative and food above upkeep ({(state.workers.total * 0.2).toFixed(1)}/tick).</div>
           </div>
+
+          <div className="card space-y-2">
+            <div className="font-semibold">Ops Feed</div>
+            <div className="list max-h-[180px] overflow-y-auto pr-1">
+              {(state.hubOpsLog || []).slice().reverse().map((e, i) => (
+                <div key={i} className="row-item">
+                  <div className="row-details">
+                    <div className="row-title">{e.text}</div>
+                    <div className="row-meta">{new Date(e.time).toLocaleTimeString()}</div>
+                  </div>
+                </div>
+              ))}
+              {!state.hubOpsLog?.length && <div className="text-muted text-sm">No automated actions yet.</div>}
+            </div>
+          </div>
         </div>
 
         <div className="card space-y-3">
@@ -1011,7 +1061,7 @@ function HubView({ state, onCollect, onPulse, runLabPulse, buildHub, buyHubUpgra
             <div className="font-semibold">Hub Workspace</div>
             <div className="flex flex-wrap gap-2">
               {['build', 'upgrades', 'briefing'].map((key) => (
-                <button key={key} className={	ab } onClick={() => setPane(key)}>
+                <button key={key} className={`tab ${pane === key ? 'active' : ''}`} onClick={() => setPane(key)}>
                   {key[0].toUpperCase() + key.slice(1)}
                 </button>
               ))}
