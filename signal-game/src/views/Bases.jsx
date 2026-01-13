@@ -84,7 +84,13 @@ export default function BasesView({
       <div className="grid lg:grid-cols-[340px,1fr] gap-3">
         <div className="space-y-3">
           <div className="card space-y-3">
-            <div className="font-semibold">Site Control</div>
+            <div className="flex items-center justify-between">
+              <div>
+                <div className="font-semibold">Site Control</div>
+                <div className="text-xs text-muted">Base Overview</div>
+              </div>
+              <span className="tag">{labelify(body.type)} Site</span>
+            </div>
             <div className="row-item">
               <div className="row-details">
                 <div className="row-title">{body.name}</div>
@@ -99,6 +105,12 @@ export default function BasesView({
                   </option>
                 ))}
               </select>
+            </div>
+            <div className="flex flex-wrap gap-2">
+              <span className="tag">Travel {formatDuration(body.travel * 1000)}</span>
+              <span className="tag">Hazard {(body.hazard * 100).toFixed(0)}%</span>
+              <span className="tag">Ops {ops.length}</span>
+              <span className="tag">Events {(base.events || []).length}/{4}</span>
             </div>
             <div className="text-sm text-muted">Switching focus here does not launch missions; use Missions tab to send expeditions.</div>
           </div>
