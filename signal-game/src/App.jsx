@@ -182,6 +182,7 @@ const initialState = {
   bases: {},
   tech: {},
   missions: { active: [] },
+  hubOps: { autoPulse: false, autoPulseMinSignal: 120, autoLab: false, autoLabMinSignal: 80, autoLabMinMetal: 20 },
   autoLaunch: { enabled: false, bodyId: null, mode: "balanced", specialist: "none" },
   selectedBody: "debris",
   recruits: [],
@@ -273,7 +274,7 @@ export default function App() {
   }, []);
 
   useEffect(() => { const id = setInterval(() => setTick((t) => t + 1), TICK_MS); return () => clearInterval(id); }, []);
-  useEffect(() => { applyProduction(); resolveMissions(); processEvents(); }, [tick]);
+  useEffect(() => { applyProduction(); resolveMissions(); processEvents(); processHubOps(); }, [tick]);
 
   useEffect(() => {
     const onKey = (e) => {
@@ -292,18 +293,18 @@ export default function App() {
   // Primary click action; scales later via upgrades/bonuses.
   function collectSignal() { bumpResources({ signal: 1 }); log("Manual signal calibration."); }
 
-  function pulseScan() {
+  function pulseScan(silent = false) {
     const cost = Math.min(180, 60 + (state.pulseCount || 0) * 15);
     const cdMs = 8000;
-    if (Date.now() < (state.pulseReadyAt || 0)) { log("Pulse scanner cooling down."); return; }
-    if (state.resources.signal < cost) { log("Not enough signal for pulse scan."); return; }
+    if (Date.now() < (state.pulseReadyAt || 0)) { if (!silent) log("Pulse scanner cooling down."); return; }
+    if (state.resources.signal < cost) { if (!silent) log("Not enough signal for pulse scan."); return; }
     bumpResources({ signal: -cost });
     const rewardPool = ["metal","fuel","research"];
     const type = rewardPool[Math.floor(Math.random() * rewardPool.length)];
     const amount = type === "research" ? 5 : type === "fuel" ? 12 : 18;
     bumpResources({ [type]: amount });
     dispatch({ type: "UPDATE", patch: { pulseReadyAt: Date.now() + cdMs, pulseCount: (state.pulseCount || 0) + 1 } });
-    log(`Pulse scan recovered ${amount} ${type} (cost ${cost}).`);
+    if (!silent) log(`Pulse scan recovered ${amount} ${type} (cost ${cost}).`);
   }
 
   // Apply resource delta; used across economy adjustments.
@@ -453,6 +454,24 @@ export default function App() {
     if (changed) dispatch({ type: "UPDATE", patch: { bases } });
   }
 
+  function processHubOps() {
+    const ops = state.hubOps || {};
+    if (ops.autoPulse) {
+      const cost = Math.min(180, 60 + (state.pulseCount || 0) * 15);
+      const minSignal = Math.max(cost, ops.autoPulseMinSignal || 0);
+      if (Date.now() >= (state.pulseReadyAt || 0) && (state.resources.signal || 0) >= minSignal) {
+        pulseScan(true);
+      }
+    }
+    if (ops.autoLab) {
+      const minSignal = Math.max(60, ops.autoLabMinSignal || 0);
+      const minMetal = Math.max(20, ops.autoLabMinMetal || 0);
+      if (Date.now() >= (state.labReadyAt || 0) && (state.resources.signal || 0) >= minSignal && (state.resources.metal || 0) >= minMetal) {
+        runLabPulse(true);
+      }
+    }
+  }
+
   // Launch mission with stance/specialist; charges fuel logistics and schedules resolution.
   function startMission(bodyId, fuelBoost = 0, modeId = "balanced", specialist = "none", silent = false) {
     const body = BODIES.find((b) => b.id === bodyId && isUnlocked(b));
@@ -478,6 +497,10 @@ export default function App() {
   function setAutoLaunch(payload) {
     dispatch({ type: "UPDATE", patch: { autoLaunch: payload } });
     log(payload.enabled ? `Auto-launch enabled for ${BODIES.find((b) => b.id === payload.bodyId)?.name || "target"}.` : "Auto-launch disabled.");
+  }
+
+  function setHubOps(patch) {
+    dispatch({ type: "UPDATE", patch: { hubOps: { ...state.hubOps, ...patch } } });
   }
 
 
@@ -553,15 +576,15 @@ function isUnlocked(body) {
     log(`Tech unlocked: ${def.name}.`);
   }
 
-  function runLabPulse() {
+  function runLabPulse(silent = false) {
     const cooldownMs = 20000;
-    if (Date.now() < (state.labReadyAt || 0)) { log("Research lab recalibrating."); return; }
+    if (Date.now() < (state.labReadyAt || 0)) { if (!silent) log("Research lab recalibrating."); return; }
     const cost = { signal: 60, metal: 20 };
-    if (!canAfford(cost)) { log("Need signal + metal for research pulse."); return; }
+    if (!canAfford(cost)) { if (!silent) log("Need signal + metal for research pulse."); return; }
     spend(cost);
     bumpResources({ research: 6 });
     dispatch({ type: "UPDATE", patch: { labReadyAt: Date.now() + cooldownMs } });
-    log("Research pulse completed. New data archived.");
+    if (!silent) log("Research pulse completed. New data archived.");
   }
 
   // Prestige/reset with boost based on total value.
@@ -733,6 +756,7 @@ function biomeBuildingById(id) { return Object.values(BIOME_BUILDINGS).flat().fi
                 crewBonusText={crewBonusText}
                 ascend={ascend}
                 format={format}
+                setHubOps={setHubOps}
               />
             )}
             {state.tab === 'missions' && (
@@ -865,9 +889,12 @@ function ProfileView({ state, ascend, exportProfile, importProfile, compact, set
   );
 }
 
-function HubView({ state, onCollect, onPulse, runLabPulse, buildHub, buyHubUpgrade, crewBonusText, ascend, format }) {
+function HubView({ state, onCollect, onPulse, runLabPulse, buildHub, buyHubUpgrade, crewBonusText, ascend, format, setHubOps }) {
   const labCd = Math.max(0, (state.labReadyAt || 0) - Date.now());
   const pulseCost = Math.min(180, 60 + (state.pulseCount || 0) * 15);
+  const pulseCd = Math.max(0, (state.pulseReadyAt || 0) - Date.now());
+  const ops = state.hubOps || { autoPulse: false, autoPulseMinSignal: 120, autoLab: false, autoLabMinSignal: 80, autoLabMinMetal: 20 };
+  const [pane, setPane] = useState("build");
   const briefing = [
     "Collect Signal then run a Pulse Scan (ramps 60+ signal, 8s CD) to convert signal into metal/fuel/research.",
     "First launch is fuel-free; Debris missions return early research + fuel.",
@@ -875,27 +902,124 @@ function HubView({ state, onCollect, onPulse, runLabPulse, buildHub, buyHubUpgra
     "Keep power >= 0 and food positive to avoid morale drops.",
     "Use Research Console if fuel is low to bootstrap research.",
   ];
-  const [showBuilds, setShowBuilds] = useState(true);
-  const [showUpgrades, setShowUpgrades] = useState(true);
-  const [showBrief, setShowBrief] = useState(false);
+
+  const setOps = (patch) => {
+    if (setHubOps) setHubOps(patch);
+  };
+
   return (
     <section className="panel space-y-3">
       <div className="flex flex-wrap gap-2 items-center justify-between">
         <div>
           <div className="text-lg font-semibold">Main Hub</div>
-          <div className="text-muted text-sm">Launch expeditions, manage power, and scale signal.</div>
+          <div className="text-muted text-sm">Command core for operations, automation, and expansion.</div>
         </div>
       </div>
-      <div className="text-xs text-muted">Pulse Scan ramps in cost each use and has an 8s cooldown. Spend signal for a small metal/fuel/research bump when you can’t launch yet.</div>
 
-      <div className="grid md:grid-cols-2 gap-3">
-        <div className="card">
-          <div className="row row-between mb-1">
-            <div className="font-semibold">Hub Buildings</div>
-            <button className="btn" onClick={() => setShowBuilds((v) => !v)}>{showBuilds ? "Collapse" : "Expand"}</button>
+      <div className="grid lg:grid-cols-[340px,1fr] gap-3">
+        <div className="space-y-3">
+          <div className="card space-y-2">
+            <div className="font-semibold">Command Console</div>
+            <div className="row">
+              <button className="btn btn-primary" onClick={onCollect}>Collect Signal (Space)</button>
+              <button className="btn" disabled={state.resources.signal < pulseCost || pulseCd > 0} onClick={onPulse}>
+                Pulse Scan {pulseCd > 0 ? `(${formatDuration(pulseCd)})` : ""}
+              </button>
+              <button className="btn" onClick={runLabPulse} disabled={labCd > 0}>
+                Pulse Lab {labCd > 0 ? `(${formatDuration(labCd)})` : ""}
+              </button>
+            </div>
+            <div className="text-xs text-muted">Pulse cost: {format(pulseCost)} signal | Lab cost: 60 signal, 20 metal</div>
           </div>
-          {showBuilds && (
-            <div className="list">
+
+          <div className="card space-y-2">
+            <div className="font-semibold">Automation</div>
+            <div className="row-item">
+              <div className="row-details">
+                <div className="row-title">Auto Pulse Scan</div>
+                <div className="row-meta">Run when cooldown ready and signal above threshold.</div>
+              </div>
+              <div className="row gap-2">
+                <input
+                  type="number"
+                  className="w-20 rounded-lg border border-white/10 bg-slate-900 px-2 py-1 text-xs text-white"
+                  value={ops.autoPulseMinSignal}
+                  min={0}
+                  onChange={(e) => setOps({ autoPulseMinSignal: Number(e.target.value) })}
+                />
+                <label className="row">
+                  <span className="text-xs">On</span>
+                  <input type="checkbox" checked={!!ops.autoPulse} onChange={(e) => setOps({ autoPulse: e.target.checked })} />
+                </label>
+              </div>
+            </div>
+            <div className="row-item">
+              <div className="row-details">
+                <div className="row-title">Auto Research Pulse</div>
+                <div className="row-meta">Runs when lab ready and resources exceed thresholds.</div>
+              </div>
+              <div className="row gap-2">
+                <input
+                  type="number"
+                  className="w-20 rounded-lg border border-white/10 bg-slate-900 px-2 py-1 text-xs text-white"
+                  value={ops.autoLabMinSignal}
+                  min={0}
+                  onChange={(e) => setOps({ autoLabMinSignal: Number(e.target.value) })}
+                />
+                <input
+                  type="number"
+                  className="w-20 rounded-lg border border-white/10 bg-slate-900 px-2 py-1 text-xs text-white"
+                  value={ops.autoLabMinMetal}
+                  min={0}
+                  onChange={(e) => setOps({ autoLabMinMetal: Number(e.target.value) })}
+                />
+                <label className="row">
+                  <span className="text-xs">On</span>
+                  <input type="checkbox" checked={!!ops.autoLab} onChange={(e) => setOps({ autoLab: e.target.checked })} />
+                </label>
+              </div>
+            </div>
+            <div className="text-xs text-muted">Thresholds are signal | metal for lab, signal for pulse.</div>
+          </div>
+
+          <div className="card space-y-2">
+            <div className="font-semibold">Hub Status</div>
+            <div className="grid grid-cols-2 gap-2">
+              <div className="stat-box">
+                <span className="text-muted text-xs">Power</span>
+                <strong>{format(state.resources.power)}</strong>
+              </div>
+              <div className="stat-box">
+                <span className="text-muted text-xs">Food</span>
+                <strong>{format(state.resources.food)}</strong>
+              </div>
+              <div className="stat-box">
+                <span className="text-muted text-xs">Habitat</span>
+                <strong>{format(state.resources.habitat)}</strong>
+              </div>
+              <div className="stat-box">
+                <span className="text-muted text-xs">Morale</span>
+                <strong>{Math.round((state.workers.satisfaction || 1) * 100)}%</strong>
+              </div>
+            </div>
+            <div className="text-xs text-muted">Keep power non-negative and food above upkeep ({(state.workers.total * 0.2).toFixed(1)}/tick).</div>
+          </div>
+        </div>
+
+        <div className="card space-y-3">
+          <div className="row row-between">
+            <div className="font-semibold">Hub Workspace</div>
+            <div className="flex flex-wrap gap-2">
+              {['build', 'upgrades', 'briefing'].map((key) => (
+                <button key={key} className={	ab } onClick={() => setPane(key)}>
+                  {key[0].toUpperCase() + key.slice(1)}
+                </button>
+              ))}
+            </div>
+          </div>
+
+          {pane === "build" && (
+            <div className="list max-h-[520px] overflow-y-auto pr-1">
               {HUB_BUILDINGS.map((b) => {
                 const level = state.hubBuildings[b.id] || 0;
                 const can = canAffordUI(state.resources, scaledCost(b.cost, level, COST_EXP.hub));
@@ -913,15 +1037,9 @@ function HubView({ state, onCollect, onPulse, runLabPulse, buildHub, buyHubUpgra
               })}
             </div>
           )}
-        </div>
 
-        <div className="card">
-          <div className="row row-between mb-1">
-            <div className="font-semibold">Hub Upgrades</div>
-            <button className="btn" onClick={() => setShowUpgrades((v) => !v)}>{showUpgrades ? "Collapse" : "Expand"}</button>
-          </div>
-          {showUpgrades && (
-            <div className="list">
+          {pane === "upgrades" && (
+            <div className="list max-h-[520px] overflow-y-auto pr-1">
               {HUB_UPGRADES.map((u) => {
                 const level = state.hubUpgrades[u.id] || 0;
                 return (
@@ -930,40 +1048,23 @@ function HubView({ state, onCollect, onPulse, runLabPulse, buildHub, buyHubUpgra
                       <div className="row-title">{u.name} <span className="tag">Lv {level}</span></div>
                       <div className="row-meta">{u.desc}</div>
                     </div>
-                    <button className="btn" disabled={!canAffordUI(state.resources, scaledCost(u.cost, level, COST_EXP.hub))} onClick={() => buyHubUpgrade(u.id)}>Upgrade ({costText(scaledCost(u.cost, level, COST_EXP.hub), format)})</button>
+                    <button className="btn" disabled={!canAffordUI(state.resources, scaledCost(u.cost, level, COST_EXP.hub))} onClick={() => buyHubUpgrade(u.id)}>
+                      Upgrade ({costText(scaledCost(u.cost, level, COST_EXP.hub), format)})
+                    </button>
                   </div>
                 );
               })}
             </div>
           )}
-        </div>
-      </div>
 
-      <div className="grid md:grid-cols-3 gap-3">
-        <div className="card space-y-2">
-          <div className="font-semibold">Research Console</div>
-          <div className="text-muted text-sm">Convert signal + metal into early research. Great when fuel is tight.</div>
-          <button className="btn btn-primary w-full" onClick={runLabPulse} disabled={labCd > 0}>Pulse Lab {labCd > 0 ? `(${formatDuration(labCd)})` : ""}</button>
-          <div className="text-muted text-xs">Cost: 60 signal, 20 metal · Yields 6 research · 20s cooldown</div>
-        </div>
-        <div className="card space-y-2">
-          <div className="font-semibold">Hub Status</div>
-          <div className="text-sm text-muted">Power {format(state.resources.power)} · Food {format(state.resources.food)} · Habitat {format(state.resources.habitat)}</div>
-          <div className="text-sm text-muted">Morale {Math.round((state.workers.satisfaction || 1) * 100)}% · Workers {state.workers.total}</div>
-          <div className="text-xs text-muted">Keep power non-negative and food above upkeep ({(state.workers.total * 0.2).toFixed(1)}/tick).</div>
-        </div>
-        <div className="card space-y-2">
-          <div className="row row-between">
-            <div className="font-semibold">Briefing & Controls</div>
-            <button className="btn" onClick={() => setShowBrief((v) => !v)}>{showBrief ? "Hide" : "Show"}</button>
-          </div>
-          {showBrief && (
-            <>
+          {pane === "briefing" && (
+            <div className="space-y-3">
+              <div className="font-semibold">Briefing & Controls</div>
               <ul className="text-sm text-muted list-disc list-inside space-y-1">
                 {briefing.map((b, i) => <li key={i}>{b}</li>)}
               </ul>
-              <div className="text-xs text-muted">Space: Collect · 1-7: Tabs · Arrow keys: cycle tabs</div>
-            </>
+              <div className="text-xs text-muted">Space: Collect | 1-7: Tabs | Arrow keys: cycle tabs</div>
+            </div>
           )}
         </div>
       </div>
