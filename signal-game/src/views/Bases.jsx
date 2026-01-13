@@ -1,5 +1,5 @@
 // Bases view: per-biome build queues, events, ops, and focus controls. Uses helpers from App to reuse logic.
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 
 export default function BasesView({
   state,
@@ -32,6 +32,7 @@ export default function BasesView({
   const ops = baseOps[body.type] || [];
   const opsCd = Math.max(0, (base.opsReadyAt || 0) - Date.now());
   const [pane, setPane] = useState("build");
+  const [buildGroup, setBuildGroup] = useState("All");
   const groupedBuildings = useMemo(() => {
     const classify = (b) => {
       if (b.maintenanceCap) return "Infrastructure";
@@ -48,6 +49,18 @@ export default function BasesView({
     const order = ["Production", "Infrastructure", "Logistics", "Specializations"];
     return order.filter((k) => groups[k]?.length).map((k) => ({ name: k, items: groups[k] }));
   }, [buildings]);
+  const groupNames = useMemo(() => groupedBuildings.map((g) => g.name), [groupedBuildings]);
+  useEffect(() => {
+    if (buildGroup === "All") return;
+    if (!groupNames.includes(buildGroup)) setBuildGroup(groupNames[0] || "All");
+  }, [groupNames, buildGroup]);
+
+  const labelify = (value) => value.replace(/_/g, " ").replace(/\b\w/g, (m) => m.toUpperCase());
+  const groupLabel = (group) => labelify(group || "");
+  const buildingNameById = (id) => buildings.find((b) => b.id === id)?.name || labelify(id || "");
+  const visibleGroups = buildGroup === "All"
+    ? groupedBuildings
+    : groupedBuildings.filter((g) => g.name === buildGroup);
   const focusHelp = {
     balanced: "Even output across systems.",
     production: "Boosts metal, organics, fuel, signal, rare.",
@@ -139,7 +152,16 @@ export default function BasesView({
 
           {pane === "build" && (
             <div className="space-y-4">
-              {groupedBuildings.map((group) => (
+              {groupNames.length > 1 && (
+                <div className="flex flex-wrap gap-2">
+                  {["All", ...groupNames].map((name) => (
+                    <button key={name} className={`tab ${buildGroup === name ? "active" : ""}`} onClick={() => setBuildGroup(name)}>
+                      {name}
+                    </button>
+                  ))}
+                </div>
+              )}
+              {visibleGroups.map((group) => (
                 <div key={group.name} className="space-y-2">
                   <div className="font-semibold">{group.name}</div>
                   <div className="list max-h-[420px] overflow-y-auto pr-1">
@@ -148,8 +170,8 @@ export default function BasesView({
                       const cost = withLogisticsCost(scaledCost(b.cost, lvl, costExpBase), body);
                       const logistics = Math.max(2, Math.floor((body.travel || 0) / 25));
                       const reqMet = requirementsMet(base, b);
-                      const reqText = b.requires ? `Req: ${b.requires.map((r) => `${r.id} Lv ${r.level || 1}`).join(", ")}` : "";
-                      const groupText = b.group ? `Exclusive: ${b.group}` : "";
+                      const reqText = b.requires ? `Requires: ${b.requires.map((r) => `${buildingNameById(r.id)} Lv ${r.level || 1}`).join(", ")}` : "";
+                      const groupText = b.group ? `Branch: ${groupLabel(b.group)} (choose one)` : "";
                       return (
                         <div key={b.id} className="row-item">
                           <div className="row-details">
