@@ -21,6 +21,8 @@ export default function BasesView({
   canAffordUI,
   costExpBase,
   requirementsMet,
+  baseTraits,
+  maintenanceStats,
 }) {
   const body = bodies.find((b) => b.id === state.selectedBody) || bodies[0];
   const buildings = biomeBuildings[body.type] || [];
@@ -53,6 +55,21 @@ export default function BasesView({
             </select>
           </div>
           <div className="text-sm text-muted">Switching focus here does not launch missions; use Missions tab to send expeditions.</div>
+          <div className="text-sm text-muted">
+            Maintenance {maintenanceStats.used}/{maintenanceStats.cap} {maintenanceStats.over ? "(Over cap: output reduced, events faster)" : ""}
+          </div>
+          <div className="text-sm text-muted">Traits</div>
+          <div className="list">
+            {baseTraits.map((t) => (
+              <div key={t.id} className="row-item">
+                <div className="row-details">
+                  <div className="row-title">{t.name}</div>
+                  <div className="row-meta">{t.desc}</div>
+                </div>
+              </div>
+            ))}
+            {!baseTraits.length && <div className="text-muted text-sm">No traits assigned.</div>}
+          </div>
         </div>
         <div className="card space-y-2">
           <div className="font-semibold">Build on {body.name}</div>

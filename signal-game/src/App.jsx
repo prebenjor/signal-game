@@ -53,6 +53,7 @@ const HUB_BUILDINGS = [
 ];
 const BIOME_BUILDINGS = {
   asteroid: [
+    { id: "maintenance_bay", name: "Maintenance Bay", desc: "+2 maintenance cap", cost: { metal: 110, fuel: 10 }, prod: {}, cons: { power: 1 }, maintenanceCap: 2 },
     { id: "fuel_cracker", name: "Fuel Cracker", desc: "+2 fuel/tick", cost: { metal: 90 }, prod: { fuel: 2 }, cons: { power: 1 } },
     { id: "ore_rig", name: "Ore Rig", desc: "+4 metal/tick", cost: { metal: 120 }, prod: { metal: 4 }, cons: { power: 1 } },
     { id: "solar_sail", name: "Solar Sail", desc: "+2 power/tick", cost: { metal: 70 }, prod: { power: 2 }, cons: {} },
@@ -63,6 +64,7 @@ const BIOME_BUILDINGS = {
     { id: "orbital_foundry", name: "Orbital Foundry", desc: "+3 rare/tick, +10% mission cargo from this base (applied in cargo calc)", cost: { metal: 320, rare: 12 }, prod: { rare: 3 }, cons: { power: 2 }, requires: [{ id: "core_tap", level: 1 }], cargoMult: 1.1 },
   ],
   ice: [
+    { id: "maintenance_bay", name: "Maintenance Bay", desc: "+2 maintenance cap", cost: { metal: 110, fuel: 10 }, prod: {}, cons: { power: 1 }, maintenanceCap: 2 },
     { id: "thermal_pump", name: "Thermal Pump", desc: "+3 fuel/tick", cost: { metal: 110, fuel: 16 }, prod: { fuel: 3 }, cons: { power: 1 } },
     { id: "algae_farm", name: "Algae Farm", desc: "+3 food/tick", cost: { metal: 90, organics: 40 }, prod: { food: 3 }, cons: { power: 1 } },
     { id: "protein_farm", name: "Protein Farm", desc: "Algae branch: +5 food/tick, +2% morale", cost: { metal: 180, organics: 70 }, prod: { food: 5, morale: 0.02 }, cons: { power: 1 }, requires: [{ id: "algae_farm", level: 3 }], group: "algae_branch" },
@@ -72,6 +74,7 @@ const BIOME_BUILDINGS = {
     { id: "glacier_observatory", name: "Glacier Observatory", desc: "+3 research/tick", cost: { metal: 260, fuel: 40 }, prod: { research: 3 }, cons: { power: 2 }, requires: [{ id: "cryo_distillery", level: 1 }] },
   ],
   warm: [
+    { id: "maintenance_bay", name: "Maintenance Bay", desc: "+2 maintenance cap", cost: { metal: 110, fuel: 10 }, prod: {}, cons: { power: 1 }, maintenanceCap: 2 },
     { id: "shield_dome", name: "Shield Dome", desc: "-20% hazard on missions from this base", cost: { metal: 140, fuel: 20 }, prod: {}, cons: { power: 1 }, hazardMult: 0.8 },
     { id: "vapor_trap", name: "Vapor Trap", desc: "+2 organics/tick", cost: { metal: 90, fuel: 12 }, prod: { organics: 2 }, cons: {} },
     { id: "interceptor_net", name: "Interceptor Net", desc: "Shield branch: -35% hazard, -10% travel time", cost: { metal: 220, fuel: 50 }, prod: {}, cons: { power: 2 }, requires: [{ id: "shield_dome", level: 2 }], hazardMult: 0.65, travelMult: 0.9, group: "shield_branch" },
@@ -81,12 +84,36 @@ const BIOME_BUILDINGS = {
     { id: "shield_spire", name: "Shield Spire", desc: "Greatly reduces hazard; boosts morale", cost: { metal: 280, fuel: 80 }, prod: { morale: 0.08 }, cons: { power: 2 }, requires: [{ id: "shield_dome", level: 1 }], hazardMult: 0.7 },
   ],
   unknown: [
+    { id: "maintenance_bay", name: "Maintenance Bay", desc: "+2 maintenance cap", cost: { metal: 110, fuel: 10 }, prod: {}, cons: { power: 1 }, maintenanceCap: 2 },
     { id: "anomaly_lab", name: "Anomaly Lab", desc: "+1 rare/tick", cost: { metal: 160, rare: 8 }, prod: { rare: 1 }, cons: { power: 1 } },
     { id: "relay_spire", name: "Relay Spire", desc: "Lab branch: +8% cargo, -8% travel time", cost: { metal: 240, rare: 10, fuel: 40 }, prod: {}, cons: { power: 2 }, requires: [{ id: "anomaly_lab", level: 2 }], cargoMult: 1.08, travelMult: 0.92, group: "lab_branch" },
     { id: "ward_matrix", name: "Ward Matrix", desc: "Lab branch: -40% hazard, +2 rare/tick", cost: { metal: 260, rare: 12 }, prod: { rare: 2 }, cons: { power: 2 }, requires: [{ id: "anomaly_lab", level: 2 }], hazardMult: 0.6, group: "lab_branch" },
     { id: "logistics_depot", name: "Logistics Depot", desc: "+5% cargo, -5% travel time", cost: { metal: 180, fuel: 20 }, prod: {}, cons: { power: 1 }, cargoMult: 1.05, travelMult: 0.95 },
     { id: "phase_relay", name: "Phase Relay", desc: "+4 signal/tick, -travel time for missions", cost: { metal: 240, rare: 10, fuel: 40 }, prod: { signal: 4 }, cons: { power: 2 }, travelMult: 0.85 },
     { id: "anomaly_vault", name: "Anomaly Vault", desc: "+4 rare/tick, +4 research/tick", cost: { metal: 320, rare: 16 }, prod: { rare: 4, research: 4 }, cons: { power: 2 }, requires: [{ id: "anomaly_lab", level: 2 }] },
+  ],
+};
+
+const BASE_TRAITS = {
+  asteroid: [
+    { id: "rich_veins", name: "Rich Veins", desc: "Metal output +15%, events slightly more frequent.", effects: { prod: { metal: 1.15 }, eventMult: 0.9 } },
+    { id: "brittle_shell", name: "Brittle Shell", desc: "Hazards +8%, maintenance cap +1.", effects: { hazardMult: 1.08, maintenanceCap: 1 } },
+    { id: "stable_orbit", name: "Stable Orbit", desc: "Travel time -6%.", effects: { travelMult: 0.94 } },
+  ],
+  ice: [
+    { id: "cryo_core", name: "Cryo Core", desc: "Fuel output +12%, events less frequent.", effects: { prod: { fuel: 1.12 }, eventMult: 1.1 } },
+    { id: "algae_bloom", name: "Algae Bloom", desc: "Food output +15%, morale +2%.", effects: { prod: { food: 1.15 }, morale: 0.02 } },
+    { id: "thin_ice", name: "Thin Ice", desc: "Hazards +10%, travel -4%.", effects: { hazardMult: 1.1, travelMult: 0.96 } },
+  ],
+  warm: [
+    { id: "thermal_plumes", name: "Thermal Plumes", desc: "Power output +12%, hazards +6%.", effects: { prod: { power: 1.12 }, hazardMult: 1.06 } },
+    { id: "stable_crust", name: "Stable Crust", desc: "Hazards -10%, maintenance cap +1.", effects: { hazardMult: 0.9, maintenanceCap: 1 } },
+    { id: "dense_atmos", name: "Dense Atmosphere", desc: "Organics output +12%, travel +6%.", effects: { prod: { organics: 1.12 }, travelMult: 1.06 } },
+  ],
+  unknown: [
+    { id: "echo_rift", name: "Echo Rift", desc: "Research +15%, events slightly more frequent.", effects: { prod: { research: 1.15 }, eventMult: 0.9 } },
+    { id: "phase_static", name: "Phase Static", desc: "Travel -8%, hazards +6%.", effects: { travelMult: 0.92, hazardMult: 1.06 } },
+    { id: "ancient_signal", name: "Ancient Signal", desc: "Signal +15%, cargo +6%.", effects: { prod: { signal: 1.15 }, cargoMult: 1.06 } },
   ],
 };
 
@@ -134,8 +161,15 @@ const MISSION_MODES = [
   { id: "secure", name: "Secure", desc: "-35% hazard, longer flight, -10% cargo", hazard: -0.35, durationMs: 6000, reward: { all: 0.9 } },
   { id: "relay", name: "Relay", desc: "+25% fuel & signal cargo, modest hazard", hazard: 0.08, durationMs: -2000, reward: { fuel: 1.25, signal: 1.25 } },
 ];
-function defaultBaseState() {
-  return { buildings: {}, events: [], focus: "balanced", nextEventAt: Date.now() + randomBetween(...EVENT_COOLDOWN_MS), opsReadyAt: 0 };
+function defaultBaseState(body) {
+  return {
+    buildings: {},
+    events: [],
+    focus: "balanced",
+    nextEventAt: Date.now() + randomBetween(...EVENT_COOLDOWN_MS),
+    opsReadyAt: 0,
+    traits: body ? rollTraits(body) : [],
+  };
 }
 
 const initialState = {
@@ -193,7 +227,17 @@ export default function App() {
   const [compact, setCompact] = useState(false);
   const [lastSaved, setLastSaved] = useState(null);
   const stateRef = useRef(state);
-  const currentBase = useMemo(() => state.bases[state.selectedBody] || defaultBaseState(), [state.bases, state.selectedBody]);
+  const currentBody = selectedBody();
+  const currentBase = useMemo(() => ensureBaseState(state.bases[state.selectedBody], currentBody), [state.bases, state.selectedBody]);
+  const currentTraits = baseTraitList(currentBase);
+  const currentMaintenance = baseMaintenanceStats(currentBase);
+
+  useEffect(() => {
+    if (!state.bases[state.selectedBody]) {
+      const base = defaultBaseState(currentBody);
+      dispatch({ type: "UPDATE", patch: { bases: { ...state.bases, [currentBody.id]: base } } });
+    }
+  }, [state.selectedBody, state.bases]);
 
   useEffect(() => { stateRef.current = state; }, [state]);
 
@@ -274,6 +318,8 @@ export default function App() {
     const r = { ...state.resources };
     const contributions = [];
     const eventMods = aggregateEventMods(currentBase);
+    const traitMods = traitEffects(currentBase.traits);
+    const maintenance = baseMaintenanceStats(currentBase);
 
     const addContribution = (prod, cons, requiresPower) => contributions.push({ prod, cons, requiresPower });
 
@@ -291,7 +337,11 @@ export default function App() {
     const focus = currentBase.focus || "balanced";
     Object.entries(currentBase.buildings || {}).forEach(([id, lvl]) => {
       const def = biomeBuildingById(id); if (!def) return;
-      const prod = {}; Object.entries(def.prod || {}).forEach(([k, v]) => prod[k] = v * lvl * workerMult(id) * focusBoost(focus, k) * (eventMods.mult[k] || 1));
+      const prod = {};
+      Object.entries(def.prod || {}).forEach(([k, v]) => {
+        const traitMult = traitMods.prod[k] || 1;
+        prod[k] = v * lvl * workerMult(id) * focusBoost(focus, k) * (eventMods.mult[k] || 1) * traitMult * (maintenance.factor || 1);
+      });
       addContribution(prod, scaleCons(def.cons, lvl), !!def.cons?.power);
     });
 
@@ -310,6 +360,7 @@ export default function App() {
     const projectedPower = (state.resources.power || 0) + projected.power;
     const powerGate = projectedPower <= 0;
     const rates = sumRates(powerGate);
+    rates.morale = (rates.morale || 0) + (traitMods.morale || 0);
 
     Object.keys(rates).forEach((k) => { r[k] = Math.max(0, r[k] + rates[k] * (k === "power" ? 1 : prodBoost)); });
     const foodUpkeep = state.workers.total * 0.2; r.food = Math.max(0, r.food - foodUpkeep);
@@ -384,16 +435,18 @@ export default function App() {
     let changed = false;
     BODIES.forEach((body) => {
       if (!isUnlocked(body)) return;
-      const base = bases[body.id] || defaultBaseState();
+      const base = ensureBaseState(bases[body.id], body);
+      if (!bases[body.id]) { bases[body.id] = base; changed = true; }
+      const maintenance = baseMaintenanceStats(base);
+      const traitMods = traitEffects(base.traits);
       if (!base.nextEventAt) base.nextEventAt = now + randomBetween(...EVENT_COOLDOWN_MS);
       if (now >= base.nextEventAt) {
         if ((base.events || []).length < MAX_EVENTS_PER_BASE) {
           base.events = [...(base.events || []), createEvent(body)];
           log(`Event at ${body.name}: ${base.events[base.events.length - 1].name}`);
         }
-        base.nextEventAt = now + randomBetween(...EVENT_COOLDOWN_MS);
-        bases[body.id] = base; changed = true;
-      } else if (!bases[body.id]) {
+        const eventMult = (traitMods.eventMult || 1) * (maintenance.over ? 0.7 : 1);
+        base.nextEventAt = now + randomBetween(...EVENT_COOLDOWN_MS) * eventMult;
         bases[body.id] = base; changed = true;
       }
     });
@@ -459,7 +512,7 @@ function isUnlocked(body) {
   function buildBase(id) {
     const def = biomeBuildingById(id); if (!def) return;
     const level = (state.bases[state.selectedBody]?.buildings?.[id] || 0);
-    const base = state.bases[state.selectedBody] || defaultBaseState();
+    const base = ensureBaseState(state.bases[state.selectedBody], selectedBody());
     if (!requirementsMet(base, def)) { log("Requirements not met for this structure."); return; }
     const cost = withLogisticsCost(scaledCost(def.cost, level, COST_EXP.base), selectedBody());
     if (!canAfford(cost)) { log("Not enough resources (includes logistics fuel)."); return; }
@@ -470,14 +523,14 @@ function isUnlocked(body) {
   }
 
   function setBaseFocus(focus) {
-    const base = state.bases[state.selectedBody] || defaultBaseState();
+    const base = ensureBaseState(state.bases[state.selectedBody], selectedBody());
     const updated = { ...base, focus };
     dispatch({ type: "UPDATE", patch: { bases: { ...state.bases, [state.selectedBody]: updated } } });
     log(`Outpost focus set to ${focus}.`);
   }
 
   function refreshEvents() {
-    const base = state.bases[state.selectedBody] || defaultBaseState();
+    const base = ensureBaseState(state.bases[state.selectedBody], selectedBody());
     const updated = { ...base, events: bodyEvents(selectedBody()) };
     dispatch({ type: "UPDATE", patch: { bases: { ...state.bases, [state.selectedBody]: updated } } });
     log("Local events refreshed.");
@@ -574,7 +627,7 @@ function isUnlocked(body) {
   }
 
   function resolveEvent(bodyId, eventId) {
-    const base = state.bases[bodyId] || defaultBaseState();
+    const base = ensureBaseState(state.bases[bodyId], bodyById(bodyId));
     const ev = (base.events || []).find((e) => e.id === eventId);
     if (!ev) return;
     if (ev.requiresRole && (state.workers.assigned[ev.requiresRole] || 0) <= 0) { log(`Need an active ${ev.requiresRole} to resolve.`); return; }
@@ -590,7 +643,7 @@ function isUnlocked(body) {
     const body = BODIES.find((b) => b.id === bodyId); if (!body) return;
     const ops = BASE_OPS[body.type] || [];
     const op = ops.find((o) => o.id === opId); if (!op) return;
-    const base = state.bases[bodyId] || defaultBaseState();
+    const base = ensureBaseState(state.bases[bodyId], bodyById(bodyId));
     if (Date.now() < (base.opsReadyAt || 0)) { log("Base ops cooling down."); return; }
     if (!canAfford(op.cost)) { log("Not enough resources for this op."); return; }
     spend(op.cost);
@@ -721,6 +774,8 @@ function biomeBuildingById(id) { return Object.values(BIOME_BUILDINGS).flat().fi
                 canAffordUI={canAffordUI}
                 costExpBase={COST_EXP.base}
                 requirementsMet={requirementsMet}
+                baseTraits={currentTraits}
+                maintenanceStats={currentMaintenance}
               />
             )}
             {state.tab === 'crew' && (
@@ -1017,11 +1072,61 @@ function computeMorale(resources, rates, state, currentBase, eventMods, powerGat
   return clamp(baseMorale + (rates.morale || 0), 0.35, 1.25);
 }
 function randomBetween(min, max) { return min + Math.random() * (max - min); }
+function traitById(id) {
+  return Object.values(BASE_TRAITS).flat().find((t) => t.id === id);
+}
+function rollTraits(body) {
+  const pool = BASE_TRAITS[body.type] || [];
+  const count = pool.length >= 2 ? 2 : 1;
+  const picks = [];
+  while (picks.length < count && pool.length) {
+    const pick = pool[Math.floor(Math.random() * pool.length)];
+    if (!picks.includes(pick.id)) picks.push(pick.id);
+  }
+  return picks;
+}
+function traitEffects(traitIds = []) {
+  const out = { prod: {}, hazardMult: 1, travelMult: 1, cargoMult: 1, eventMult: 1, maintenanceCap: 0, morale: 0 };
+  traitIds.forEach((id) => {
+    const trait = traitById(id);
+    if (!trait?.effects) return;
+    Object.entries(trait.effects.prod || {}).forEach(([k, v]) => {
+      out.prod[k] = (out.prod[k] || 1) * v;
+    });
+    if (trait.effects.hazardMult) out.hazardMult *= trait.effects.hazardMult;
+    if (trait.effects.travelMult) out.travelMult *= trait.effects.travelMult;
+    if (trait.effects.cargoMult) out.cargoMult *= trait.effects.cargoMult;
+    if (trait.effects.eventMult) out.eventMult *= trait.effects.eventMult;
+    if (trait.effects.maintenanceCap) out.maintenanceCap += trait.effects.maintenanceCap;
+    if (trait.effects.morale) out.morale += trait.effects.morale;
+  });
+  return out;
+}
+function baseMaintenanceStats(base) {
+  const used = Object.values(base.buildings || {}).reduce((sum, lvl) => sum + (lvl || 0), 0);
+  const cap = 4 + ((base.buildings?.maintenance_bay || 0) * 2) + (traitEffects(base.traits).maintenanceCap || 0);
+  const over = used > cap;
+  const factor = over ? Math.max(0.6, 1 - (used - cap) * 0.08) : 1;
+  return { used, cap, over, factor };
+}
+function ensureBaseState(base, body) {
+  if (base) {
+    if (!base.traits?.length) return { ...base, traits: rollTraits(body) };
+    return base;
+  }
+  return defaultBaseState(body);
+}
+function baseTraitList(base) {
+  return (base.traits || []).map(traitById).filter(Boolean);
+}
 function baseBonuses(stateObj, bodyId) {
   const body = BODIES.find((b) => b.id === bodyId);
   const defs = body ? BIOME_BUILDINGS[body.type] || [] : [];
-  const base = stateObj?.bases?.[bodyId] || {};
-  let cargo = 1, travel = 1, hazard = 1;
+  const base = ensureBaseState(stateObj?.bases?.[bodyId], body || BODIES[0]);
+  const traits = traitEffects(base.traits);
+  let cargo = traits.cargoMult || 1;
+  let travel = traits.travelMult || 1;
+  let hazard = traits.hazardMult || 1;
   Object.entries(base.buildings || {}).forEach(([id, lvl]) => {
     const def = defs.find((d) => d.id === id);
     if (!def) return;
@@ -1031,6 +1136,7 @@ function baseBonuses(stateObj, bodyId) {
   });
   return { cargo, travel, hazard };
 }
+function bodyById(id) { return BODIES.find((b) => b.id === id) || BODIES[0]; }
 function withLogisticsCost(cost, body) {
   const logisticsFuel = Math.max(2, Math.floor((body?.travel || 0) / 25));
   return { ...cost, fuel: (cost.fuel || 0) + logisticsFuel };
