@@ -130,9 +130,12 @@ export default function FactionView({
       <div className="grid md:grid-cols-2 gap-3">
         <div className="card space-y-2">
           <div className="font-semibold">Status</div>
-          <div className="text-sm text-muted">{supabaseReady ? "Supabase connected." : "Supabase not configured yet."}</div>
+          <div className="text-sm text-muted">{supabaseReady ? "Network link online." : "Network link offline."}</div>
           {needsName && <div className="text-xs text-muted">Set a callsign in Account to unlock faction features.</div>}
           {!needsName && supabaseReady && !membership && <div className="text-xs text-muted">Choose a faction to start contributing.</div>}
+          {supabaseReady && !factions.length && (
+            <div className="text-xs text-muted">No factions found in the database. Seed them in Supabase.</div>
+          )}
           {status && <div className="text-xs text-muted">{status}</div>}
           {error && <div className="text-xs text-amber-300">Faction sync issue: {error}</div>}
           <button className="btn" disabled={!canTestRpc} onClick={() => onDonate("metal", 1)}>
@@ -236,7 +239,7 @@ export default function FactionView({
       <div className="card space-y-2">
         <div className="font-semibold">Factions</div>
         <div className="text-sm text-muted">Pick a faction to align with their doctrine and buffs.</div>
-        {!factions.length && <div className="text-xs text-muted">No factions loaded yet.</div>}
+        {!factions.length && <div className="text-xs text-muted">No factions found. Seed them in Supabase.</div>}
         <div className="grid md:grid-cols-3 gap-2">
           {factions.map((faction) => (
             <div key={faction.id} className="rounded-xl border border-white/10 bg-slate-950/60 p-3 space-y-2">
