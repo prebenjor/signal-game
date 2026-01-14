@@ -2,9 +2,9 @@
 /**
  * Core app shell and game loop.
  * - State lives in a single reducer; see initialState and reducer cases.
- * - Auto-saves via persistState() to localStorage + cookie (key: signalFrontierReact), with export/import in Profile tab.
+ * - Auto-saves via persistState() to localStorage + cookie (key: signalFrontierReact), with export/import in Account tab.
  * - Tick loop applies production, resolves missions/events, and keeps UI in sync.
- * - Tabs render via view components in src/views/ (Missions, Bases, Crew, Tech); pass helpers as props to keep logic centralized here.
+ * - Tabs render via view components in src/views/ (Missions, Bases, Crew, Tech, Systems, Faction); pass helpers as props to keep logic centralized here.
  * Extend flow:
  *   * Add new resources/rates in initialState and bump compute loops in applyProduction().
  *   * Add new buildings/tech/targets by extending constants (HUB_BUILDINGS, TECH, BODIES, BIOME_BUILDINGS) and any unlock rules.
@@ -17,6 +17,8 @@ import MissionsView from "./views/Missions";
 import BasesView from "./views/Bases";
 import CrewView from "./views/Crew";
 import TechView from "./views/Tech";
+import FactionView from "./views/Faction";
+import { supabase, supabaseConfigured } from "./lib/supabase";
 
 const STORAGE_KEY = "signalFrontierReact";
 const LEGACY_KEY = "signalFrontierState";
@@ -24,7 +26,7 @@ const TICK_MS = 500;
 const SAVE_MS = 5000;
 const MAX_EVENTS_PER_BASE = 4;
 const SAVE_VERSION = 10;
-const TAB_ORDER = ["hub", "missions", "bases", "crew", "tech", "systems", "codex", "log", "profile"];
+const TAB_ORDER = ["hub", "missions", "bases", "crew", "tech", "systems", "faction", "codex", "log", "profile"];
 const EVENT_COOLDOWN_MS = [45000, 90000];
 const PACE = {
   costExp: { hub: 1.18, base: 1.22, crew: 1.25 },
@@ -350,6 +352,7 @@ function seedCrewRoster(workers) {
 const initialState = {
   saveVersion: SAVE_VERSION,
   tab: "hub",
+  profile: { name: "" },
   resources: { signal: 0, research: 2, metal: 0, organics: 0, fuel: 12, power: 0, food: 0, habitat: 0, morale: 0, rare: 0 },
   rates: { signal: 0, research: 0, metal: 0, organics: 0, fuel: 0, power: 0, food: 0, morale: 0 },
   workers: { total: 3, assigned: { miner: 1, botanist: 1, engineer: 1 }, bonus: { miner: 0, botanist: 0, engineer: 0 }, satisfaction: 1 },
@@ -419,6 +422,9 @@ export default function App() {
   const [tick, setTick] = useState(0);
   const [compact, setCompact] = useState(false);
   const [lastSaved, setLastSaved] = useState(null);
+  const [supabaseUserId, setSupabaseUserId] = useState(null);
+  const [factionState, setFactionState] = useState({ factions: [], projects: {}, membership: null, loading: false, error: null, leaderboard: [], leaderboardError: null });
+  const [profileNameDraft, setProfileNameDraft] = useState(initState.profile?.name || "");
   const stateRef = useRef(state);
   const manualSignalRef = useRef(0);
   const currentBody = selectedBody();
@@ -427,6 +433,7 @@ export default function App() {
   const currentMaintenance = baseMaintenanceStats(currentBase);
   const capabilities = deriveCapabilities(state);
   const missionMods = colonyModifiers(state);
+  const supabaseReady = supabaseConfigured && !!supabase;
 
   useEffect(() => {
     if (!state.bases[state.selectedBody]) {
@@ -436,6 +443,84 @@ export default function App() {
   }, [state.selectedBody, state.bases]);
 
   useEffect(() => { stateRef.current = state; }, [state]);
+  useEffect(() => { setProfileNameDraft(state.profile?.name || ""); }, [state.profile?.name]);
+
+  useEffect(() => {
+    if (!supabaseConfigured || !supabase) return;
+    let active = true;
+    const initAuth = async () => {
+      const { data } = await supabase.auth.getSession();
+      if (!active) return;
+      if (data?.session?.user?.id) {
+        setSupabaseUserId(data.session.user.id);
+        return;
+      }
+      const { data: signed } = await supabase.auth.signInAnonymously();
+      if (!active) return;
+      setSupabaseUserId(signed?.session?.user?.id || null);
+    };
+    const { data: authListener } = supabase.auth.onAuthStateChange((_event, session) => {
+      if (!active) return;
+      setSupabaseUserId(session?.user?.id || null);
+    });
+    initAuth();
+    return () => {
+      active = false;
+      authListener?.subscription?.unsubscribe();
+    };
+  }, []);
+
+  useEffect(() => {
+    if (!supabaseConfigured || !supabase || !supabaseUserId) return;
+    let active = true;
+    setFactionState((prev) => ({ ...prev, loading: true, error: null }));
+    const loadFactionData = async () => {
+      const [factionsRes, projectsRes, memberRes, leaderboardRes] = await Promise.all([
+        supabase.from("factions").select("*").order("name"),
+        supabase.from("faction_projects").select("*"),
+        supabase.from("faction_members").select("*").eq("user_id", supabaseUserId).maybeSingle(),
+        supabase.rpc("get_faction_leaderboard", { limit_count: 10 }),
+      ]);
+      if (!active) return;
+      const projectsByFaction = {};
+      (projectsRes.data || []).forEach((project) => {
+        projectsByFaction[project.faction_id] = project;
+      });
+      const error = factionsRes.error?.message || projectsRes.error?.message || memberRes.error?.message || null;
+      const leaderboardError = leaderboardRes.error ? "Leaderboard RPC unavailable." : null;
+      setFactionState((prev) => ({
+        ...prev,
+        factions: factionsRes.data || prev.factions,
+        projects: projectsRes.data ? projectsByFaction : prev.projects,
+        membership: memberRes.data || null,
+        leaderboard: leaderboardRes.data || prev.leaderboard,
+        leaderboardError,
+        loading: false,
+        error,
+      }));
+    };
+    loadFactionData();
+    const channel = supabase
+      .channel("faction_projects")
+      .on("postgres_changes", { event: "*", schema: "public", table: "faction_projects" }, (payload) => {
+        const record = payload.new || payload.old;
+        if (!record?.faction_id) return;
+        setFactionState((prev) => {
+          const nextProjects = { ...prev.projects };
+          if (payload.eventType === "DELETE") {
+            delete nextProjects[record.faction_id];
+          } else {
+            nextProjects[record.faction_id] = record;
+          }
+          return { ...prev, projects: nextProjects };
+        });
+      })
+      .subscribe();
+    return () => {
+      active = false;
+      supabase.removeChannel(channel);
+    };
+  }, [supabaseUserId]);
 
   // Persist current in-memory state to storage (localStorage + cookie).
   const persistState = () => {
@@ -449,10 +534,51 @@ export default function App() {
     }
   };
 
-  // Manual save trigger used by Profile tab.
+  // Manual save trigger used by Account tab.
   const manualSave = () => {
     persistState();
   };
+
+  async function joinFaction(factionId) {
+    if (!supabaseReady || !supabase) return { ok: false, message: "Supabase not configured." };
+    if (!state.profile?.name?.trim()) return { ok: false, message: "Set a callsign in Account first." };
+    if (!supabaseUserId) return { ok: false, message: "Signing in? try again." };
+    const { data, error } = await supabase
+      .from("faction_members")
+      .upsert({ user_id: supabaseUserId, faction_id: factionId, joined_at: new Date().toISOString() })
+      .select("*")
+      .maybeSingle();
+    if (error) {
+      log(`Faction join failed: ${error.message}`);
+      return { ok: false, message: `Join failed: ${error.message}` };
+    }
+    setFactionState((prev) => ({ ...prev, membership: data }));
+    const name = factionState.factions.find((f) => f.id === factionId)?.name || "faction";
+    log(`Aligned with ${name}.`);
+    return { ok: true, message: `Aligned with ${name}.` };
+  }
+
+  async function donateFaction(resource, amount) {
+    const value = Math.floor(Number(amount));
+    if (!supabaseReady || !supabase) return { ok: false, message: "Supabase not configured." };
+    if (!factionState.membership?.faction_id) return { ok: false, message: "Join a faction first." };
+    if (!resource || !Number.isFinite(value) || value <= 0) return { ok: false, message: "Enter a valid amount." };
+    const cost = { [resource]: value };
+    if (!canAfford(cost)) return { ok: false, message: "Not enough resources." };
+    spend(cost);
+    const { error } = await supabase.rpc("donate_faction", {
+      p_faction_id: factionState.membership.faction_id,
+      p_resource: resource,
+      p_amount: value,
+    });
+    if (error) {
+      bumpResources(cost);
+      log(`Donation failed: ${error.message}`);
+      return { ok: false, message: `Donation failed: ${error.message}` };
+    }
+    log(`Donated ${value} ${resource} to faction project.`);
+    return { ok: true, message: "Donation sent." };
+  }
 
   useEffect(() => {
     persistState(); // initial save to normalize keys
@@ -476,7 +602,11 @@ export default function App() {
     const onKey = (e) => {
       if (["INPUT","TEXTAREA"].includes(e.target.tagName) || e.target.isContentEditable) return;
       if (e.code === "Space" || e.key === " ") { e.preventDefault(); collectSignal(); }
-      else if (e.code.startsWith("Digit")) { const idx = Number(e.key) - 1; if (idx >= 0 && idx < TAB_ORDER.length) dispatch({ type: "SET_TAB", tab: TAB_ORDER[idx] }); }
+      else if (e.code.startsWith("Digit")) {
+        const num = Number(e.key);
+        const idx = num === 0 ? TAB_ORDER.length - 1 : num - 1;
+        if (idx >= 0 && idx < TAB_ORDER.length) dispatch({ type: "SET_TAB", tab: TAB_ORDER[idx] });
+      }
       else if (e.code === "ArrowRight") cycleTab(1);
       else if (e.code === "ArrowLeft") cycleTab(-1);
     };
@@ -1413,14 +1543,56 @@ export default function App() {
 
   function formatDuration(ms) { const sec = Math.max(0, Math.ceil(ms / 1000)); const m = Math.floor(sec / 60); const s = sec % 60; return m > 0 ? `${m}m ${s}s` : `${s}s`; }
 function biomeBuildingById(id) { return Object.values(BIOME_BUILDINGS).flat().find((b) => b.id === id); }
+  const needsProfileName = !state.profile?.name?.trim();
+  const saveProfileName = () => {
+    const name = profileNameDraft.trim();
+    if (!name) return;
+    dispatch({ type: "UPDATE", patch: { profile: { ...state.profile, name } } });
+    log(`Callsign set to ${name}.`);
+  };
   return (
     <div className="min-h-screen pb-16">
+      <AnimatePresence>
+        {needsProfileName && (
+          <motion.div
+            className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 px-4"
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+          >
+            <div className="w-full max-w-md rounded-2xl border border-white/10 bg-slate-950 p-5 shadow-xl">
+              <div className="text-lg font-semibold">Choose a callsign</div>
+              <div className="text-sm text-muted mt-1">Anonymous profiles need a name before joining multiplayer features.</div>
+              <div className="mt-3 space-y-2">
+                <input
+                  className="w-full rounded-lg border border-white/10 bg-slate-900 px-3 py-2 text-sm text-white"
+                  placeholder="Enter callsign"
+                  value={profileNameDraft}
+                  onChange={(e) => setProfileNameDraft(e.target.value)}
+                />
+                <button className="btn w-full" onClick={saveProfileName} disabled={!profileNameDraft.trim()}>
+                  Save callsign
+                </button>
+              </div>
+            </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
       <div className="w-full max-w-screen-2xl mx-auto px-3 sm:px-5 lg:px-8 pt-6 flex flex-col gap-4">
         <header className="panel flex flex-col gap-3">
           <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-3">
             <div>
               <div className="inline-flex px-3 py-1 rounded-full bg-white/10 border border-white/10 text-xs tracking-[0.1em] font-semibold">Signal Frontier</div>
               <div className="text-muted text-sm mt-1">Scan, settle, and build outposts across the void.</div>
+            </div>
+            <div className="flex items-center gap-2">
+              <div className="hidden sm:block text-xs text-muted">Callsign: {state.profile?.name || "unset"}</div>
+              <button
+                className={`btn ${state.tab === "profile" ? "btn-primary" : ""}`}
+                onClick={() => dispatch({ type: "SET_TAB", tab: "profile" })}
+              >
+                Account
+              </button>
             </div>
           </div>
           <ResourceBar resources={state.resources} rates={state.rates} format={format} />
@@ -1436,9 +1608,9 @@ function biomeBuildingById(id) { return Object.values(BIOME_BUILDINGS).flat().fi
               { id: "crew", label: "Crew" },
               { id: "tech", label: "Tech" },
               { id: "systems", label: "Systems", locked: !capabilities.systems },
+              { id: "faction", label: "Faction" },
               { id: "codex", label: "Codex" },
               { id: "log", label: "Log" },
-              { id: "profile", label: "Profile" },
             ].map((tab) => (
               <button
                 key={tab.id}
@@ -1563,10 +1735,38 @@ function biomeBuildingById(id) { return Object.values(BIOME_BUILDINGS).flat().fi
                 colonyRoles={COLONY_ROLES}
               />
             )}
+            {state.tab === 'faction' && (
+              <FactionView
+                profileName={state.profile?.name}
+                supabaseReady={supabaseReady}
+                factions={factionState.factions}
+                projects={factionState.projects}
+                membership={factionState.membership}
+                loading={factionState.loading}
+                error={factionState.error}
+                leaderboard={factionState.leaderboard}
+                leaderboardError={factionState.leaderboardError}
+                onJoin={joinFaction}
+                onDonate={donateFaction}
+                resources={state.resources}
+                format={format}
+              />
+            )}
             {state.tab === 'codex' && <CodexView state={state} />}
             {state.tab === 'log' && <LogView log={state.log} />}
             {state.tab === 'profile' && (
-              <ProfileView state={state} ascend={ascend} exportProfile={exportProfile} importProfile={importProfile} compact={compact} setCompact={setCompact} manualSave={manualSave} lastSaved={lastSaved} chooseDoctrine={chooseDoctrine} />
+              <AccountView
+                state={state}
+                exportProfile={exportProfile}
+                importProfile={importProfile}
+                compact={compact}
+                setCompact={setCompact}
+                manualSave={manualSave}
+                lastSaved={lastSaved}
+                chooseDoctrine={chooseDoctrine}
+                setProfileName={(name) => dispatch({ type: "UPDATE", patch: { profile: { ...state.profile, name } } })}
+                supabaseReady={supabaseReady}
+              />
             )}
           </main>
         </div>
@@ -1620,20 +1820,34 @@ function ActionBar({ state, onCollect, onPulse, onLab, format, formatDuration })
   );
 }
 
-function ProfileView({ state, ascend, exportProfile, importProfile, compact, setCompact, manualSave, lastSaved, chooseDoctrine }) {
+function AccountView({ state, exportProfile, importProfile, compact, setCompact, manualSave, lastSaved, chooseDoctrine, setProfileName, supabaseReady }) {
   const doctrine = doctrineById(state.doctrine);
-  const canPrestige = (state.milestonesUnlocked || []).includes("M4_PRESTIGE_UNLOCK");
+  const [nameInput, setNameInput] = useState(state.profile?.name || "");
+  useEffect(() => { setNameInput(state.profile?.name || ""); }, [state.profile?.name]);
+  const saveName = () => {
+    const name = nameInput.trim();
+    if (!name) return;
+    setProfileName(name);
+  };
   return (
     <section className="panel space-y-3">
-      <div className="text-lg font-semibold">Profile</div>
+      <div className="text-lg font-semibold">Account</div>
       <div className="grid md:grid-cols-3 gap-3">
         <div className="card space-y-2">
-          <div className="font-semibold">Prestige</div>
-          <div className="text-sm text-muted">Reset for a global production boost. Current boost: {Math.round(((state.prestige?.boost || 1) - 1) * 100)}% · Points: {state.prestige?.points || 0}</div>
-          <button className="btn" disabled={!canPrestige} onClick={ascend}>Ascend & Reset</button>
-          <div className="text-xs text-muted">
-            {canPrestige ? "Grants prestige based on total value. Progress auto-saves locally; refresh won't wipe." : "Prestige unlocks after galaxy depth 2, two integrations, and saturation pressure."}
-          </div>
+          <div className="font-semibold">Callsign</div>
+          <div className="text-sm text-muted">Required for multiplayer features and leaderboards.</div>
+          <input
+            className="w-full rounded-lg border border-white/10 bg-slate-900 px-3 py-2 text-sm text-white"
+            placeholder="Enter callsign"
+            value={nameInput}
+            onChange={(e) => setNameInput(e.target.value)}
+          />
+          <button className="btn" onClick={saveName} disabled={!nameInput.trim()}>Save callsign</button>
+        </div>
+        <div className="card space-y-2">
+          <div className="font-semibold">Multiplayer</div>
+          <div className="text-sm text-muted">Supabase: {supabaseReady ? "Connected" : "Not configured"}</div>
+          <div className="text-xs text-muted">Callsigned pilots can join factions and contribute to projects.</div>
         </div>
         <div className="card space-y-2">
           <div className="font-semibold">Doctrine</div>
@@ -1685,6 +1899,7 @@ function HubView({ state, buildHub, buyHubUpgrade, crewBonusText, ascend, format
   const ops = state.hubOps || { autoPulse: false, autoPulseMinSignal: 150, autoLab: false, autoLabMinSignal: 120, autoLabMinMetal: 40, reserveSignal: 70, reserveMetal: 0 };
   const [pane, setPane] = useState("build");
   const command = commandUsage(state);
+  const canPrestige = (state.milestonesUnlocked || []).includes("M4_PRESTIGE_UNLOCK");
   const briefing = [
     "Collect Signal then run a Pulse Scan (ramping signal cost + longer cooldown) to convert signal into metal/fuel/research.",
     "First launch is fuel-free; Debris missions return early research + fuel.",
@@ -1717,6 +1932,14 @@ function HubView({ state, buildHub, buyHubUpgrade, crewBonusText, ascend, format
               </div>
             </div>
             <div className="text-xs text-muted">Increase range via Scan Array (Hub), Deep Scan Arrays + Rift Mapping (Tech), and Relay Anchor colonies.</div>
+          </div>
+          <div className="card space-y-2">
+            <div className="font-semibold">Prestige</div>
+            <div className="text-sm text-muted">Reset for a global production boost. Current boost: {Math.round(((state.prestige?.boost || 1) - 1) * 100)}% Aú Points: {state.prestige?.points || 0}</div>
+            <button className="btn" disabled={!canPrestige} onClick={ascend}>Ascend & Reset</button>
+            <div className="text-xs text-muted">
+              {canPrestige ? "Grants prestige based on total value. Progress auto-saves locally; refresh won't wipe." : "Prestige unlocks after galaxy depth 2, two integrations, and saturation pressure."}
+            </div>
           </div>
           <div className="card space-y-2">
             <div className="font-semibold">Automation</div>
@@ -1909,7 +2132,7 @@ function HubView({ state, buildHub, buyHubUpgrade, crewBonusText, ascend, format
               <ul className="text-sm text-muted list-disc list-inside space-y-1">
                 {briefing.map((b, i) => <li key={i}>{b}</li>)}
               </ul>
-              <div className="text-xs text-muted">Space: Collect | 1-7: Tabs | Arrow keys: cycle tabs</div>
+              <div className="text-xs text-muted">Space: Collect | 1-9: Tabs | 0: Account | Arrow keys: cycle tabs</div>
             </div>
           )}
         </div>
@@ -2325,6 +2548,9 @@ function migrateSave(save) {
     out.crewContracts = out.crewContracts || [];
     out.nextContractAt = out.nextContractAt || 0;
   }
+  if (!out.profile) out.profile = { name: "" };
+  if (typeof out.profile?.name !== "string") out.profile.name = "";
+
   if (!out.crewRoster?.length && out.workers?.total) {
     out.crewRoster = seedCrewRoster(out.workers);
   }
