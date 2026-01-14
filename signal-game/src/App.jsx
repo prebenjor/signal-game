@@ -23,19 +23,21 @@ const LEGACY_KEY = "signalFrontierState";
 const TICK_MS = 500;
 const SAVE_MS = 5000;
 const MAX_EVENTS_PER_BASE = 4;
-const SAVE_VERSION = 2;
+const SAVE_VERSION = 7;
 const TAB_ORDER = ["hub", "missions", "bases", "crew", "tech", "systems", "codex", "log", "profile"];
 const EVENT_COOLDOWN_MS = [45000, 90000];
 const COST_EXP = { hub: 1.12, base: 1.14 };
+const SYSTEM_EVENT_COOLDOWN_MS = [90000, 180000];
+const MAX_SYSTEM_EVENTS = 3;
 
 const BODIES = [
-  { id: "debris", name: "Debris Field", type: "asteroid", travel: 30, hazard: 0.05, unlock: 0, resources: { metal: 18, fuel: 4, research: 3 } },
-  { id: "ice", name: "Ice Moon", type: "ice", travel: 60, hazard: 0.12, unlock: 400, resources: { organics: 25, fuel: 10, research: 5 } },
-  { id: "lava", name: "Lava Rock", type: "warm", travel: 90, hazard: 0.2, unlock: 1200, resources: { metal: 50, rare: 3, research: 10 } },
-  { id: "cradle", name: "Cradle Station", type: "asteroid", travel: 120, hazard: 0.18, unlock: 2400, requireTech: "deep_scan", resources: { fuel: 26, research: 22, rare: 8 } },
-  { id: "ruins", name: "Fallen Relay", type: "warm", travel: 140, hazard: 0.22, unlock: 3800, requireTech: "shielding", resources: { metal: 160, research: 80, rare: 18 } },
-  { id: "rift", name: "Rift Beacon", type: "unknown", travel: 180, hazard: 0.3, unlock: 6200, requireTech: "rift_mapping", resources: { fuel: 90, research: 140, rare: 30 } },
-  { id: "spire", name: "Veil Spire", type: "unknown", travel: 210, hazard: 0.35, unlock: 8200, requireTech: "rift_mapping", requireMissions: 5, resources: { research: 200, rare: 40, fuel: 120 } },
+  { id: "debris", name: "Debris Field", type: "asteroid", tier: 1, travel: 30, hazard: 0.05, unlock: 0, resources: { metal: 18, fuel: 4, research: 3 } },
+  { id: "ice", name: "Ice Moon", type: "ice", tier: 2, travel: 60, hazard: 0.12, unlock: 400, resources: { organics: 25, fuel: 10, research: 5 } },
+  { id: "lava", name: "Lava Rock", type: "warm", tier: 3, travel: 90, hazard: 0.2, unlock: 1200, resources: { metal: 50, rare: 3, research: 10 } },
+  { id: "cradle", name: "Cradle Station", type: "asteroid", tier: 4, travel: 120, hazard: 0.18, unlock: 2400, requireTech: "deep_scan", resources: { fuel: 26, research: 22, rare: 8 } },
+  { id: "ruins", name: "Fallen Relay", type: "warm", tier: 5, travel: 140, hazard: 0.22, unlock: 3800, requireTech: "shielding", resources: { metal: 160, research: 80, rare: 18 } },
+  { id: "rift", name: "Rift Beacon", type: "unknown", tier: 6, travel: 180, hazard: 0.3, unlock: 6200, requireTech: "rift_mapping", resources: { fuel: 90, research: 140, rare: 30 } },
+  { id: "spire", name: "Veil Spire", type: "unknown", tier: 7, travel: 210, hazard: 0.35, unlock: 8200, requireTech: "rift_mapping", requireMissions: 5, resources: { research: 200, rare: 40, fuel: 120 } },
 ];
 
 const HUB_UPGRADES = [
@@ -157,19 +159,28 @@ const STARTER_TOUR = [
 
 const CODEX_ENTRIES = [
   { id: "foundations", title: "Baseline Foundations", body: "Save versioning, capability gating, and milestone triggers keep the loop stable as the frontier expands." },
+  { id: "scan_ops", title: "Signal Scans", body: "Manual signal collection and pulse scans are your early lifeline for fuel, metal, and research." },
+  { id: "mission_ops", title: "Mission Ops", body: "Targets have depletion curves. Expect diminishing returns as you farm the same body." },
+  { id: "hub_ops", title: "Hub Operations", body: "Hub upgrades expand range and slot capacity, unlocking higher-tier targets." },
+  { id: "tech_ops", title: "Research Tracks", body: "Tech branches unlock new targets and efficiency tools." },
   { id: "local_ops", title: "Local Signal Operations", body: "Early missions and range upgrades push you toward the first system discovery threshold." },
   { id: "systems_light", title: "System Discovery", body: "Systems are persistent entities with traits and distance. Survey chains unlock colonisable worlds." },
   { id: "colonies_anchor", title: "First Colony Anchors", body: "Colonies add hub modifiers and consume command capacity, forcing trade-offs." },
   { id: "integration_projects", title: "Integration Projects", body: "Multi-day projects stabilize systems and change global rules like travel penalties and event rates." },
+  { id: "galaxy_ops", title: "Galaxy Operations", body: "Galaxies reshape the rules. Chart new ones once integrations are stable to unlock new modifiers." },
+  { id: "doctrine_ops", title: "Doctrine Shifts", body: "Prestige unlocks doctrines. Each doctrine changes core efficiencies and constraints." },
   { id: "prestige_recalibration", title: "Signal Recalibration", body: "Prestige resets the frontier for legacy perks and faster early cycles." },
 ];
 
 const MILESTONES = [
   { id: "M0_FOUNDATIONS", title: "Foundations Online", codexEntryId: "foundations", condition: (state) => true },
-  { id: "M1_SYSTEMS_DISCOVERED", title: "Systems Unlocked", codexEntryId: "systems_light", condition: (state) => hubRange(state) >= 3 || state.tech?.deep_scan },
+  { id: "M1_LOCAL_OPS", title: "Local Operations", codexEntryId: "local_ops", condition: (state) => (state.milestones?.missionsDone || 0) >= 1 || !!state.milestones?.firstLaunch },
+  { id: "M2_SYSTEMS_DISCOVERED", title: "Systems Unlocked", codexEntryId: "systems_light", condition: (state) => hubRange(state) >= 3 },
   { id: "M2_FIRST_COLONY", title: "First Colony", codexEntryId: "colonies_anchor", condition: (state) => (state.colonies || []).length >= 1 },
   { id: "M3_INTEGRATION_UNLOCK", title: "Integration Projects", codexEntryId: "integration_projects", condition: (state) => (state.systems || []).some((s) => s.integratedAt) },
-  { id: "M4_PRESTIGE_UNLOCK", title: "Prestige Ready", codexEntryId: "prestige_recalibration", condition: (state) => !!state.prestige?.points && (state.systems || []).length >= 2 },
+  { id: "M4_GALAXY_CHARTED", title: "Galaxy Charted", codexEntryId: "galaxy_ops", condition: (state) => galaxyDepth(state) >= 2 },
+  { id: "M5_DOCTRINE_SELECTED", title: "Doctrine Selected", codexEntryId: "doctrine_ops", condition: (state) => !!state.doctrine },
+  { id: "M4_PRESTIGE_UNLOCK", title: "Prestige Ready", codexEntryId: "prestige_recalibration", condition: (state) => galaxyDepth(state) >= 2 && (state.systems || []).filter((s) => s.integratedAt).length >= 2 && signalSaturation(state).penalty >= 0.25 },
 ];
 
 const MISSION_MODES = [
@@ -178,6 +189,52 @@ const MISSION_MODES = [
   { id: "salvage", name: "Salvage", desc: "+30% metal/organics cargo, small hazard bump", hazard: 0.06, durationMs: 0, reward: { metal: 1.3, organics: 1.3 } },
   { id: "secure", name: "Secure", desc: "-35% hazard, longer flight, -10% cargo", hazard: -0.35, durationMs: 6000, reward: { all: 0.9 } },
   { id: "relay", name: "Relay", desc: "+25% fuel & signal cargo, modest hazard", hazard: 0.08, durationMs: -2000, reward: { fuel: 1.25, signal: 1.25 } },
+];
+const SYSTEM_NAME_PARTS = {
+  prefix: ["Astra", "Helix", "Orion", "Vanta", "Nyx", "Vega", "Argo", "Lumen", "Cinder", "Atlas"],
+  suffix: ["Reach", "Drift", "Nexus", "Vale", "Crown", "Ridge", "Spur", "Gate", "Span", "Haven"],
+};
+const SYSTEM_TRAITS = [
+  { id: "rich_metal", name: "Rich Metal", desc: "Dense ore belts and higher extraction yields." },
+  { id: "high_resonance", name: "High Resonance", desc: "Scan returns trend higher, but surveys are slower." },
+  { id: "quiet_orbit", name: "Quiet Orbit", desc: "Lower event frequency; stability holds longer." },
+  { id: "debris_field", name: "Debris Field", desc: "Salvage opportunities increase mission cargo." },
+  { id: "ion_storms", name: "Ion Storms", desc: "Hazards spike on aggressive runs." },
+  { id: "ancient_relay", name: "Ancient Relay", desc: "Legacy infrastructure boosts travel efficiency." },
+];
+const SYSTEM_SURVEY_STEPS = {
+  scan: { id: "scan", name: "Deep Scan", cost: { signal: 160 }, duration: 20000 },
+  probe: { id: "probe", name: "Probe Drop", cost: { metal: 60, fuel: 18 }, duration: 30000 },
+  survey: { id: "survey", name: "Full Survey", cost: { research: 30, fuel: 30 }, duration: 42000 },
+};
+const SURVEY_SEQUENCE = ["scan", "probe", "survey", "colonize", "colonized"];
+const COLONY_ROLES = [
+  { id: "relay", name: "Relay Anchor", desc: "Extends hub range and trims travel times." },
+  { id: "survey", name: "Survey Anchor", desc: "Improves scan yield and survey throughput." },
+  { id: "logistics", name: "Logistics Anchor", desc: "Improves mission throughput and travel efficiency." },
+];
+const COLONY_COST = { metal: 180, fuel: 60, food: 20, organics: 12 };
+const SYSTEM_EVENTS = [
+  { id: "supply_shortage", name: "Supply Shortage", desc: "Cargo throughput reduced until resupplied.", effect: { cargoMult: 0.85 }, cost: { food: 12, fuel: 10 } },
+  { id: "crew_friction", name: "Crew Friction", desc: "Survey pace slowed; scans feel noisy.", effect: { surveySpeed: 1.1, scanMult: 0.9 }, cost: { food: 8, organics: 8 } },
+  { id: "interference_spike", name: "Interference Spike", desc: "Travel time rises; hazards intensify.", effect: { travelMult: 1.12, hazardMult: 1.08 }, cost: { signal: 120, metal: 20 } },
+  { id: "anomaly_bloom", name: "Anomaly Bloom", desc: "Strange pulses unsettle crews but enrich data.", effect: { cargoMult: 1.05, stabilityDrain: 0.02 }, cost: { research: 20, fuel: 12 } },
+];
+const INTEGRATION_PROJECTS = [
+  { id: "stabilize_system", name: "Stabilize System", desc: "Reduce event rates and restore stability.", duration: 180000, cost: { metal: 160, fuel: 40, research: 40 }, effect: { eventRateMult: 0.85, stability: 15 } },
+  { id: "build_gate", name: "Build Gate", desc: "Reduces travel penalties across the frontier.", duration: 240000, cost: { metal: 220, fuel: 80, rare: 4 }, effect: { travelMult: 0.9 } },
+  { id: "harmonize_signal", name: "Harmonize Signal", desc: "Reduces signal saturation penalties.", duration: 300000, cost: { signal: 400, research: 80, rare: 6 }, effect: { saturationRelief: 0.15, signalCapBonus: 200 } },
+];
+const GALAXY_RULESETS = [
+  { id: "dense", name: "Dense Galaxy", desc: "More systems, higher upkeep pressure, stronger industry.", mods: { eventRateMult: 1.08, cargoMult: 1.06, commandCapBonus: 1, systemCountBonus: 1 } },
+  { id: "chaotic", name: "Chaotic Galaxy", desc: "Volatile events and hazards with spiky returns.", mods: { eventRateMult: 1.2, hazardMult: 1.12, cargoMult: 1.04, systemCountBonus: 0 } },
+  { id: "silent", name: "Silent Galaxy", desc: "Signal is capped; research and scans are more efficient.", mods: { signalCapMult: 0.9, scanMult: 1.12, saturationRelief: 0.2, systemCountBonus: -1 } },
+];
+const DOCTRINES = [
+  { id: "expansion", name: "Expansion Doctrine", desc: "Higher command capacity but more volatile events.", mods: { commandCapBonus: 1, eventRateMult: 1.06 } },
+  { id: "stability", name: "Stability Doctrine", desc: "Lower event rates with slower expansion.", mods: { eventRateMult: 0.9, travelMult: 1.06 } },
+  { id: "automation", name: "Automation Doctrine", desc: "Stronger throughput but higher hazard exposure.", mods: { cargoMult: 1.06, hazardMult: 1.06 } },
+  { id: "research", name: "Research Doctrine", desc: "Higher scan efficiency at the cost of slower travel.", mods: { scanMult: 1.12, travelMult: 1.06 } },
 ];
 function defaultBaseState(body) {
   return {
@@ -201,9 +258,14 @@ const initialState = {
   systems: [],
   colonies: [],
   galaxies: [],
+  activeGalaxyId: null,
+  doctrine: null,
   bases: {},
   tech: {},
   missions: { active: [] },
+  targetDepletion: {},
+  systemEvents: [],
+  integration: { eventRateMult: 1, travelMult: 1, saturationRelief: 0, signalCapBonus: 0 },
   hubOps: { autoPulse: false, autoPulseMinSignal: 120, autoLab: false, autoLabMinSignal: 80, autoLabMinMetal: 20, reserveSignal: 50, reserveMetal: 0 },
   hubOpsLog: [],
   autoLaunch: { enabled: false, bodyId: null, mode: "balanced", specialist: "none" },
@@ -258,6 +320,7 @@ export default function App() {
   const currentTraits = baseTraitList(currentBase);
   const currentMaintenance = baseMaintenanceStats(currentBase);
   const capabilities = deriveCapabilities(state);
+  const missionMods = colonyModifiers(state);
 
   useEffect(() => {
     if (!state.bases[state.selectedBody]) {
@@ -300,7 +363,8 @@ export default function App() {
   }, []);
 
   useEffect(() => { const id = setInterval(() => setTick((t) => t + 1), TICK_MS); return () => clearInterval(id); }, []);
-  useEffect(() => { applyProduction(); resolveMissions(); processEvents(); processHubOps(); processMilestones(); }, [tick]);
+  useEffect(() => { applyProduction(); resolveMissions(); processSystems(); processEvents(); processHubOps(); processMilestones(); ensureSystems(); }, [tick]);
+  useEffect(() => { ensureGalaxy(); }, [state.systems.length, state.milestonesUnlocked]);
 
   useEffect(() => {
     const onKey = (e) => {
@@ -317,7 +381,11 @@ export default function App() {
   function cycleTab(delta) { const idx = TAB_ORDER.indexOf(state.tab); const next = (idx + delta + TAB_ORDER.length) % TAB_ORDER.length; dispatch({ type: "SET_TAB", tab: TAB_ORDER[next] }); }
 
   // Primary click action; scales later via upgrades/bonuses.
-  function collectSignal() { bumpResources({ signal: 1 }); log("Manual signal calibration."); }
+  function collectSignal() {
+    bumpResources({ signal: 1 });
+    unlockCodex("scan_ops");
+    log("Manual signal calibration.");
+  }
 
   function pulseScan(silent = false) {
     const cost = Math.min(180, 60 + (state.pulseCount || 0) * 15);
@@ -325,9 +393,12 @@ export default function App() {
     if (Date.now() < (state.pulseReadyAt || 0)) { if (!silent) log("Pulse scanner cooling down."); return { ok: false, reason: "cooldown" }; }
     if (state.resources.signal < cost) { if (!silent) log("Not enough signal for pulse scan."); return { ok: false, reason: "signal" }; }
     bumpResources({ signal: -cost });
+    unlockCodex("scan_ops");
     const rewardPool = ["metal","fuel","research"];
     const type = rewardPool[Math.floor(Math.random() * rewardPool.length)];
-    const amount = type === "research" ? 5 : type === "fuel" ? 12 : 18;
+    const baseAmount = type === "research" ? 5 : type === "fuel" ? 12 : 18;
+    const scanMult = colonyModifiers(state).scanMult || 1;
+    const amount = Math.floor(baseAmount * scanMult);
     bumpResources({ [type]: amount });
     dispatch({ type: "UPDATE", patch: { pulseReadyAt: Date.now() + cdMs, pulseCount: (state.pulseCount || 0) + 1 } });
     if (!silent) log(`Pulse scan recovered ${amount} ${type} (cost ${cost}).`);
@@ -340,6 +411,14 @@ export default function App() {
   }
 
   function log(text) { dispatch({ type: "LOG", text }); }
+
+  function unlockCodex(id, message) {
+    const unlocked = new Set(state.codexUnlocked || []);
+    if (unlocked.has(id)) return;
+    unlocked.add(id);
+    dispatch({ type: "UPDATE", patch: { codexUnlocked: Array.from(unlocked) } });
+    if (message) log(message);
+  }
 
   // Per-tick production: aggregates hub/base output, morale, focus, hazards, and power gating.
   function applyProduction() {
@@ -389,6 +468,8 @@ export default function App() {
     const powerGate = projectedPower <= 0;
     const rates = sumRates(powerGate);
     rates.morale = (rates.morale || 0) + (traitMods.morale || 0);
+    const saturation = signalSaturation(state);
+    if (rates.signal > 0 && saturation.factor < 1) rates.signal *= saturation.factor;
 
     Object.keys(rates).forEach((k) => { r[k] = Math.max(0, r[k] + rates[k] * (k === "power" ? 1 : prodBoost)); });
     const foodUpkeep = state.workers.total * 0.2; r.food = Math.max(0, r.food - foodUpkeep);
@@ -416,10 +497,15 @@ export default function App() {
     const active = state.missions.active || [];
     if (!active.length) return;
     const now = Date.now(); const remaining = [];
+    const depletion = { ...(state.targetDepletion || {}) };
+    const depletionWarned = { ...(state.milestones?.depletionWarned || {}) };
+    let depletionChanged = false;
     active.forEach((m) => {
       if (now < m.endsAt) { remaining.push(m); return; }
       const body = BODIES.find((b) => b.id === m.bodyId); if (!body) return;
-      let cargo = missionYield(state, body, m.mode, m.specialist);
+      const efficiency = m.efficiency || depletionFactor(state, body.id);
+      let cargo = missionYield(state, body, m.mode, m.specialist, efficiency);
+      if (m.variance && m.variance !== 1) cargo = scaleCargo(cargo, m.variance);
       if (m.objective) {
         const choice = window.confirm(`Side Objective: ${m.objective.desc}.\nTake the risk for ${m.objective.rewardText}?`);
         if (choice) {
@@ -442,9 +528,31 @@ export default function App() {
       } else {
         bumpResources(cargo); log(`Mission from ${body.name} returned with cargo.`);
       }
+      if ((state.colonies || []).length && m.hazard >= 0.2) {
+        const colonySystems = (state.colonies || []).map((c) => c.systemId);
+        const systemId = colonySystems[Math.floor(Math.random() * colonySystems.length)];
+        if (systemId) adjustSystemStability(systemId, -Math.round(m.hazard * 6), "Mission strain detected.");
+      }
+      const current = depletion[body.id] || 0;
+      const next = clamp(current + depletionRate(body), 0, 0.85);
+      if (next !== current) {
+        depletion[body.id] = next;
+        depletionChanged = true;
+        if (next >= 0.55 && !depletionWarned[body.id]) {
+          depletionWarned[body.id] = true;
+          log(`${body.name} yields are thinning. Extend range to access stronger targets.`);
+        }
+      }
     });
     const missionsDone = (state.milestones.missionsDone || 0) + (active.length - remaining.length);
-    dispatch({ type: "UPDATE", patch: { missions: { active: remaining }, milestones: { ...state.milestones, missionsDone } } });
+    dispatch({
+      type: "UPDATE",
+      patch: {
+        missions: { active: remaining },
+        milestones: { ...state.milestones, missionsDone, depletionWarned },
+        ...(depletionChanged ? { targetDepletion: depletion } : {}),
+      },
+    });
 
     // Auto-launch if enabled and slots free
     const slots = 1 + (state.hubUpgrades.launch_bay || 0) + (state.tech.auto_pilots ? 1 : 0);
@@ -504,24 +612,254 @@ export default function App() {
     }
   }
 
+  function processSystems() {
+    const systems = state.systems || [];
+    if (!systems.length) return;
+    const now = Date.now();
+    let updated = systems;
+    let changed = false;
+    const modifiers = colonyModifiers(state);
+    const systemEvents = [...(state.systemEvents || [])];
+    let eventsChanged = false;
+    let integrationPatch = null;
+    updated = systems.map((system) => {
+      if (!system.op || now < system.op.endsAt) return system;
+      const nextStage = nextSurveyStage(system.stage);
+      const stepName = SYSTEM_SURVEY_STEPS[system.stage]?.name || "Survey step";
+      log(`${stepName} complete for ${system.name}.`);
+      changed = true;
+      return { ...system, stage: nextStage, op: null, surveyedAt: nextStage === "colonize" ? now : system.surveyedAt };
+    });
+    updated = updated.map((system) => {
+      if (system.project && now >= system.project.endsAt) {
+        const project = INTEGRATION_PROJECTS.find((p) => p.id === system.project.id);
+        const integrationBase = integrationPatch || state.integration || { eventRateMult: 1, travelMult: 1, saturationRelief: 0, signalCapBonus: 0 };
+        const integration = { ...integrationBase };
+        if (project?.effect) {
+          if (project.effect.eventRateMult) integration.eventRateMult = (integration.eventRateMult || 1) * project.effect.eventRateMult;
+          if (project.effect.travelMult) integration.travelMult = (integration.travelMult || 1) * project.effect.travelMult;
+          if (project.effect.saturationRelief) integration.saturationRelief = clamp((integration.saturationRelief || 0) + project.effect.saturationRelief, 0, 0.6);
+          if (project.effect.signalCapBonus) integration.signalCapBonus = (integration.signalCapBonus || 0) + project.effect.signalCapBonus;
+        }
+        if (project?.effect?.stability) {
+          system.stability = clamp((system.stability ?? 100) + project.effect.stability, 35, 100);
+        }
+        integrationPatch = integration;
+        log(`Integration complete in ${system.name}: ${project?.name || "Project"}.`);
+        changed = true;
+        return { ...system, project: null, integratedAt: system.integratedAt || now };
+      }
+      return system;
+    });
+
+    updated = updated.map((system) => {
+      const isColonized = (state.colonies || []).some((c) => c.systemId === system.id);
+      if (!isColonized) return system;
+      const relatedEvents = systemEvents.filter((e) => e.systemId === system.id);
+      const regen = relatedEvents.length ? 0 : 0.005;
+      const nextStability = clamp((system.stability ?? 100) + regen, 35, 100);
+      if (nextStability !== system.stability) {
+        changed = true;
+        system = { ...system, stability: nextStability };
+      }
+      if (!system.nextEventAt) system.nextEventAt = now + randomBetween(...SYSTEM_EVENT_COOLDOWN_MS);
+      if (now >= system.nextEventAt && relatedEvents.length < MAX_SYSTEM_EVENTS) {
+        const pick = SYSTEM_EVENTS[Math.floor(Math.random() * SYSTEM_EVENTS.length)];
+        systemEvents.push({ ...pick, id: `${system.id}-${Date.now()}-${Math.random().toString(16).slice(2, 6)}`, systemId: system.id });
+        eventsChanged = true;
+        log(`System event at ${system.name}: ${pick.name}.`);
+        const stabilityFactor = clamp((system.stability ?? 100) / 100, 0.6, 1.2);
+        const eventRate = modifiers.eventRateMult || 1;
+        system.nextEventAt = now + randomBetween(...SYSTEM_EVENT_COOLDOWN_MS) * stabilityFactor * eventRate;
+        changed = true;
+      } else if (now >= system.nextEventAt && relatedEvents.length >= MAX_SYSTEM_EVENTS) {
+        const stabilityFactor = clamp((system.stability ?? 100) / 100, 0.6, 1.2);
+        const eventRate = modifiers.eventRateMult || 1;
+        system.nextEventAt = now + randomBetween(...SYSTEM_EVENT_COOLDOWN_MS) * stabilityFactor * eventRate;
+        changed = true;
+      }
+      return system;
+    });
+    if (modifiers.stabilityDrain > 0) {
+      updated = updated.map((system) => {
+        if (!(state.colonies || []).some((c) => c.systemId === system.id)) return system;
+        const next = clamp((system.stability ?? 100) - modifiers.stabilityDrain, 35, 100);
+        if (next === system.stability) return system;
+        changed = true;
+        return { ...system, stability: next };
+      });
+    }
+    const patch = {};
+    if (changed) patch.systems = updated;
+    if (eventsChanged) patch.systemEvents = systemEvents;
+    if (modifiers.command.over > 0 && !state.milestones?.commandOverCap) {
+      patch.milestones = { ...state.milestones, commandOverCap: true };
+      log("Command capacity exceeded. Colony efficiency slipping.");
+    }
+    if (integrationPatch) patch.integration = integrationPatch;
+    if (Object.keys(patch).length) dispatch({ type: "UPDATE", patch });
+  }
+
+  function ensureGalaxy() {
+    if (!capabilities.systems) return;
+    if ((state.galaxies || []).length) {
+      if (!state.activeGalaxyId) {
+        dispatch({ type: "UPDATE", patch: { activeGalaxyId: state.galaxies[0].id } });
+      }
+      return;
+    }
+    const starter = { id: `gal-${Date.now()}`, name: "Origin Galaxy", rulesetId: "dense", depth: 1, discoveredAt: Date.now() };
+    dispatch({ type: "UPDATE", patch: { galaxies: [starter], activeGalaxyId: starter.id } });
+    log("Galaxy layer initialized: Origin Galaxy.");
+  }
+
+  function chartNewGalaxy(rulesetId) {
+    const integratedSystems = (state.systems || []).filter((s) => s.integratedAt).length;
+    if (integratedSystems < 2) {
+      log("Integrate at least two systems before charting a new galaxy.");
+      return;
+    }
+    const ruleset = galaxyById(rulesetId);
+    const galaxies = state.galaxies || [];
+    const depth = galaxies.length + 1;
+    const newGalaxy = { id: `gal-${Date.now()}-${Math.random().toString(16).slice(2, 6)}`, name: `${ruleset.name} ${depth}`, rulesetId: ruleset.id, depth, discoveredAt: Date.now() };
+    dispatch({
+      type: "UPDATE",
+      patch: {
+        galaxies: [...galaxies, newGalaxy],
+        activeGalaxyId: newGalaxy.id,
+        systems: [],
+        colonies: [],
+        systemEvents: [],
+        integration: { eventRateMult: 1, travelMult: 1, saturationRelief: 0, signalCapBonus: 0 },
+        missions: { active: [] },
+      },
+    });
+    log(`Charted new galaxy: ${ruleset.name}. Systems reinitialized.`);
+  }
+
+  function chooseDoctrine(id) {
+    if (state.doctrine) { log("Doctrine already selected."); return; }
+    if ((state.prestige?.runs || 0) < 1) { log("Prestige once to unlock doctrines."); return; }
+    const def = doctrineById(id);
+    if (!def) return;
+    dispatch({ type: "UPDATE", patch: { doctrine: def.id } });
+    log(`Doctrine adopted: ${def.name}.`);
+  }
+
+  function ensureSystems() {
+    const desired = targetSystemCount(state);
+    if (!desired) return;
+    const existing = state.systems || [];
+    if (existing.length >= desired) return;
+    const extra = generateSystems(desired - existing.length, existing);
+    dispatch({ type: "UPDATE", patch: { systems: [...existing, ...extra] } });
+    log("Signal echoes reveal nearby systems. Survey chains are now available.");
+  }
+
+  function startSystemOp(systemId) {
+    const system = (state.systems || []).find((s) => s.id === systemId);
+    if (!system) return;
+    if (system.op) { log("Survey already running for this system."); return; }
+    if (!["scan", "probe", "survey"].includes(system.stage)) { log("No survey operations available."); return; }
+    const step = SYSTEM_SURVEY_STEPS[system.stage];
+    if (!step) return;
+    if (!canAfford(step.cost)) { log("Not enough resources for that survey operation."); return; }
+    spend(step.cost);
+    const speed = colonyModifiers(state).surveySpeed || 1;
+    const endsAt = Date.now() + Math.floor(step.duration * speed);
+    const systems = (state.systems || []).map((s) => s.id === systemId ? { ...s, op: { type: step.id, endsAt } } : s);
+    dispatch({ type: "UPDATE", patch: { systems } });
+    log(`${step.name} started in ${system.name}.`);
+  }
+
+  function colonizeSystem(systemId, roleId) {
+    const system = (state.systems || []).find((s) => s.id === systemId);
+    if (!system) return;
+    if (system.stage !== "colonize") { log("Complete the survey chain before colonizing."); return; }
+    if ((state.colonies || []).some((c) => c.systemId === systemId)) { log("Colony already established here."); return; }
+    const role = colonyRoleById(roleId);
+    if (!canAfford(COLONY_COST)) { log("Not enough resources to establish a colony."); return; }
+    spend(COLONY_COST);
+    const colony = {
+      id: `col-${Date.now()}-${Math.random().toString(16).slice(2, 6)}`,
+      systemId,
+      role: role.id,
+      distance: system.distance,
+      createdAt: Date.now(),
+    };
+    const systems = (state.systems || []).map((s) => s.id === systemId ? { ...s, stage: "colonized", colonizedAt: Date.now() } : s);
+    dispatch({ type: "UPDATE", patch: { colonies: [...(state.colonies || []), colony], systems } });
+    unlockCodex("colonies_anchor", `Colony established at ${system.name}.`);
+  }
+
+  function startIntegrationProject(systemId, projectId) {
+    const system = (state.systems || []).find((s) => s.id === systemId);
+    if (!system) return;
+    if (system.project) { log("Integration project already running here."); return; }
+    if (!(state.colonies || []).some((c) => c.systemId === systemId)) { log("Establish a colony before starting integration."); return; }
+    const project = INTEGRATION_PROJECTS.find((p) => p.id === projectId);
+    if (!project) return;
+    const activeProjects = (state.systems || []).filter((s) => s.project).length;
+    const capacity = Math.max(1, Math.floor(commandCapacity(state) / 2) + 1);
+    if (activeProjects >= capacity) { log("Hub attention maxed. Finish an active integration project first."); return; }
+    if (!canAfford(project.cost)) { log("Not enough resources to start this project."); return; }
+    spend(project.cost);
+    const systems = (state.systems || []).map((s) => s.id === systemId ? { ...s, project: { id: project.id, endsAt: Date.now() + project.duration } } : s);
+    dispatch({ type: "UPDATE", patch: { systems } });
+    log(`Integration project started in ${system.name}: ${project.name}.`);
+  }
+
+  function resolveSystemEvent(systemId, eventId) {
+    const event = (state.systemEvents || []).find((e) => e.id === eventId && e.systemId === systemId);
+    if (!event) return;
+    if (!canAfford(event.cost)) { log("Not enough resources to resolve event."); return; }
+    spend(event.cost);
+    const systemEvents = (state.systemEvents || []).filter((e) => e.id !== eventId);
+    dispatch({ type: "UPDATE", patch: { systemEvents } });
+    adjustSystemStability(systemId, 4, "Stability improved after resolving the incident.");
+    log(`Resolved ${event.name} at ${systemNameById(systemId)}.`);
+  }
+
+  function systemNameById(id) {
+    return (state.systems || []).find((s) => s.id === id)?.name || "system";
+  }
+
+  function adjustSystemStability(systemId, delta, message) {
+    const systems = (state.systems || []).map((system) => {
+      if (system.id !== systemId) return system;
+      const next = clamp((system.stability ?? 100) + delta, 35, 100);
+      return { ...system, stability: next };
+    });
+    dispatch({ type: "UPDATE", patch: { systems } });
+    if (message) log(message);
+  }
+
   // Launch mission with stance/specialist; charges fuel logistics and schedules resolution.
   function startMission(bodyId, fuelBoost = 0, modeId = "balanced", specialist = "none", silent = false) {
     const body = BODIES.find((b) => b.id === bodyId && isUnlocked(b));
     if (!body) { log("Target locked."); return; }
     const slots = 1 + (state.hubUpgrades.launch_bay || 0) + (state.tech.auto_pilots ? 1 : 0);
     if ((state.missions.active || []).length >= slots) { log("All mission slots busy."); return; }
+    const missionMods = colonyModifiers(state);
     let fuelCost = Math.max(5, Math.floor(body.travel / 3)) + fuelBoost;
+    fuelCost = Math.ceil(fuelCost * (missionMods.fuelMult || 1));
     if (!state.milestones?.firstLaunch) fuelCost = 0;
     if (state.resources.fuel < fuelCost) { log("Not enough fuel."); return; }
     bumpResources({ fuel: -fuelCost });
     const mode = missionModeById(modeId);
     const bonuses = baseBonuses(state, body.id);
     const hazardBase = body.hazard - (state.tech.hazard_gear ? 0.25 : 0) - (state.tech.shielding ? 0.2 : 0) + (mode?.hazard || 0) + (specialist === "engineer" ? -0.1 : 0);
-    const hazard = Math.max(0, hazardBase * (bonuses.hazard || 1));
-    const duration = Math.max(15000, ((body.travel * 1000 * (bonuses.travel || 1)) - fuelBoost * 3000 + (mode?.durationMs || 0)) * (state.tech.auto_pilots ? 0.9 : 1));
-    const objective = Math.random() < 0.3 ? makeObjective(body) : null;
-    const mission = { bodyId: body.id, endsAt: Date.now() + duration, hazard, mode: modeId, specialist, objective };
+    const hazard = Math.max(0, hazardBase * (bonuses.hazard || 1) * (missionMods.hazardMult || 1));
+    const duration = Math.max(15000, ((body.travel * 1000 * (bonuses.travel || 1) * (missionMods.travelMult || 1)) - fuelBoost * 3000 + (mode?.durationMs || 0)) * (state.tech.auto_pilots ? 0.9 : 1));
+    const objectiveChance = Math.min(0.55, 0.3 + (missionMods.objectiveBonus || 0));
+    const objective = Math.random() < objectiveChance ? makeObjective(body) : null;
+    const efficiency = depletionFactor(state, body.id);
+    const variance = Number(randomBetween(0.9, 1.1).toFixed(2));
+    const mission = { bodyId: body.id, endsAt: Date.now() + duration, hazard, mode: modeId, specialist, objective, efficiency, variance };
     dispatch({ type: "UPDATE", patch: { missions: { active: [...(state.missions.active || []), mission] } } });
+    unlockCodex("mission_ops");
+    unlockCodex("local_ops");
     if (!silent) log(`Launched ${mode?.name || "mission"} to ${body.name}. ETA ${formatDuration(duration)}.`);
     dispatch({ type: "UPDATE", patch: { milestones: { ...state.milestones, firstLaunch: true } } });
   }
@@ -559,7 +897,8 @@ export default function App() {
   }
 
 
-function isUnlocked(body) {
+  function isUnlocked(body) {
+    if ((body.tier || 1) > hubRange(state)) return false;
     if (body.requireTech && !state.tech[body.requireTech]) return false;
     if (body.requireMissions && (state.milestones.missionsDone || 0) < body.requireMissions) return false;
     return state.resources.signal >= (body.unlock || 0);
@@ -575,6 +914,7 @@ function isUnlocked(body) {
     if (!canAfford(cost)) { log("Not enough resources."); return; }
     spend(cost);
     dispatch({ type: "UPDATE", patch: { hubBuildings: { ...state.hubBuildings, [id]: (state.hubBuildings[id] || 0) + 1 } } });
+    unlockCodex("hub_ops");
     log(`Constructed ${def.name}.`);
   }
 
@@ -583,6 +923,7 @@ function isUnlocked(body) {
     if (!canAfford(def.cost)) { log("Not enough resources."); return; }
     spend(def.cost);
     dispatch({ type: "UPDATE", patch: { hubUpgrades: { ...state.hubUpgrades, [id]: (state.hubUpgrades[id] || 0) + 1 } } });
+    unlockCodex("hub_ops");
     log(`Upgraded ${def.name}.`);
   }
 
@@ -628,6 +969,7 @@ function isUnlocked(body) {
     if (state.resources.signal < def.unlock) { log("Need more signal to access this tech."); return; }
     if (!canAfford(def.cost)) { log("Not enough resources."); return; }
     spend(def.cost); dispatch({ type: "UPDATE", patch: { tech: { ...state.tech, [id]: 1 } } });
+    unlockCodex("tech_ops");
     log(`Tech unlocked: ${def.name}.`);
   }
 
@@ -645,6 +987,10 @@ function isUnlocked(body) {
 
   // Prestige/reset with boost based on total value.
   function ascend() {
+    if (!(state.milestonesUnlocked || []).includes("M4_PRESTIGE_UNLOCK")) {
+      log("Prestige is locked. Reach galaxy depth 2 and integrate systems first.");
+      return;
+    }
     const totalValue = (state.resources.signal || 0) + (state.resources.metal || 0) + (state.resources.research || 0) * 5 + (state.resources.rare || 0) * 20;
     const points = Math.max(1, Math.floor(totalValue / 5000));
     const prestige = { points: (state.prestige?.points || 0) + points, runs: (state.prestige?.runs || 0) + 1, boost: 1 + ((state.prestige?.points || 0) + points) * 0.02 };
@@ -839,6 +1185,9 @@ function biomeBuildingById(id) { return Object.values(BIOME_BUILDINGS).flat().fi
                 bodies={BODIES}
                 missionModes={MISSION_MODES}
                 isUnlockedUI={isUnlockedUI}
+                hubRange={hubRange(state)}
+                depletionFactor={(id) => depletionFactor(state, id)}
+                missionMods={missionMods}
                 baseBonuses={(id) => baseBonuses(state, id)}
               />
             )}
@@ -891,11 +1240,24 @@ function biomeBuildingById(id) { return Object.values(BIOME_BUILDINGS).flat().fi
                 costText={costText}
               />
             )}
-            {state.tab === 'systems' && <SystemsView state={state} capabilities={capabilities} format={format} />}
+            {state.tab === 'systems' && (
+              <SystemsView
+                state={state}
+                capabilities={capabilities}
+                format={format}
+                formatDuration={formatDuration}
+                startSystemOp={startSystemOp}
+                colonizeSystem={colonizeSystem}
+                startIntegrationProject={startIntegrationProject}
+                resolveSystemEvent={resolveSystemEvent}
+                chartNewGalaxy={chartNewGalaxy}
+                colonyRoles={COLONY_ROLES}
+              />
+            )}
             {state.tab === 'codex' && <CodexView state={state} />}
             {state.tab === 'log' && <LogView log={state.log} />}
             {state.tab === 'profile' && (
-              <ProfileView state={state} ascend={ascend} exportProfile={exportProfile} importProfile={importProfile} compact={compact} setCompact={setCompact} manualSave={manualSave} lastSaved={lastSaved} />
+              <ProfileView state={state} ascend={ascend} exportProfile={exportProfile} importProfile={importProfile} compact={compact} setCompact={setCompact} manualSave={manualSave} lastSaved={lastSaved} chooseDoctrine={chooseDoctrine} />
             )}
           </main>
         </div>
@@ -924,7 +1286,9 @@ function ResourceBar({ resources, rates, format }) {
   );
 }
 
-function ProfileView({ state, ascend, exportProfile, importProfile, compact, setCompact, manualSave, lastSaved }) {
+function ProfileView({ state, ascend, exportProfile, importProfile, compact, setCompact, manualSave, lastSaved, chooseDoctrine }) {
+  const doctrine = doctrineById(state.doctrine);
+  const canPrestige = (state.milestonesUnlocked || []).includes("M4_PRESTIGE_UNLOCK");
   return (
     <section className="panel space-y-3">
       <div className="text-lg font-semibold">Profile</div>
@@ -932,8 +1296,33 @@ function ProfileView({ state, ascend, exportProfile, importProfile, compact, set
         <div className="card space-y-2">
           <div className="font-semibold">Prestige</div>
           <div className="text-sm text-muted">Reset for a global production boost. Current boost: {Math.round(((state.prestige?.boost || 1) - 1) * 100)}% · Points: {state.prestige?.points || 0}</div>
-          <button className="btn" onClick={ascend}>Ascend & Reset</button>
-          <div className="text-xs text-muted">Grants prestige based on total value. Progress auto-saves locally; refresh won't wipe.</div>
+          <button className="btn" disabled={!canPrestige} onClick={ascend}>Ascend & Reset</button>
+          <div className="text-xs text-muted">
+            {canPrestige ? "Grants prestige based on total value. Progress auto-saves locally; refresh won't wipe." : "Prestige unlocks after galaxy depth 2, two integrations, and saturation pressure."}
+          </div>
+        </div>
+        <div className="card space-y-2">
+          <div className="font-semibold">Doctrine</div>
+          <div className="text-sm text-muted">Choose a doctrine after your first prestige to define long-term strategy.</div>
+          {state.prestige?.runs > 0 && !doctrine && (
+            <div className="space-y-2">
+              {DOCTRINES.map((doc) => (
+                <div key={doc.id} className="row-item">
+                  <div className="row-details">
+                    <div className="row-title">{doc.name}</div>
+                    <div className="row-meta">{doc.desc}</div>
+                  </div>
+                  <button className="btn" onClick={() => chooseDoctrine(doc.id)}>Adopt</button>
+                </div>
+              ))}
+            </div>
+          )}
+          {doctrine && (
+            <div className="text-sm text-muted">Active doctrine: {doctrine.name}</div>
+          )}
+          {!state.prestige?.runs && (
+            <div className="text-xs text-muted">Prestige once to unlock doctrine selection.</div>
+          )}
         </div>
         <div className="card space-y-2">
           <div className="font-semibold">Save / Import</div>
@@ -964,6 +1353,7 @@ function HubView({ state, onCollect, onPulse, runLabPulse, buildHub, buyHubUpgra
   const pulseCd = Math.max(0, (state.pulseReadyAt || 0) - Date.now());
   const ops = state.hubOps || { autoPulse: false, autoPulseMinSignal: 120, autoLab: false, autoLabMinSignal: 80, autoLabMinMetal: 20, reserveSignal: 50, reserveMetal: 0 };
   const [pane, setPane] = useState("build");
+  const command = commandUsage(state);
   const briefing = [
     "Collect Signal then run a Pulse Scan (ramps 60+ signal, 8s CD) to convert signal into metal/fuel/research.",
     "First launch is fuel-free; Debris missions return early research + fuel.",
@@ -1098,10 +1488,25 @@ function HubView({ state, onCollect, onPulse, runLabPulse, buildHub, buyHubUpgra
               </div>
               <div className="stat-box">
                 <span className="text-muted text-xs">Command Cap</span>
-                <strong>{commandCapacity(state)}</strong>
+                <strong>{command.used}/{command.capacity}</strong>
+              </div>
+              <div className="stat-box">
+                <span className="text-muted text-xs">Signal Cap</span>
+                <strong>{format(signalSaturation(state).cap)}</strong>
+              </div>
+              <div className="stat-box">
+                <span className="text-muted text-xs">Saturation</span>
+                <strong>{Math.round(signalSaturation(state).penalty * 100)}%</strong>
               </div>
             </div>
+            {command.over > 0 && (
+              <div className="text-xs text-muted">Over capacity: mission efficiency reduced, stability drifting.</div>
+            )}
             <div className="text-xs text-muted">Keep power non-negative and food above upkeep ({(state.workers.total * 0.2).toFixed(1)}/tick).</div>
+            <div className="text-xs text-muted">{bottleneckReport(state, state.rates).join(" ")}</div>
+            <div className="text-xs text-muted">
+              Prestige: {(state.milestonesUnlocked || []).includes("M4_PRESTIGE_UNLOCK") ? "Ready" : "Locked"} (Depth 2, 2 integrations, saturation 25%).
+            </div>
           </div>
 
           <div className="card space-y-2">
@@ -1204,7 +1609,9 @@ function LogView({ log }) {
   );
 }
 
-function SystemsView({ state, capabilities, format }) {
+function SystemsView({ state, capabilities, format, formatDuration, startSystemOp, colonizeSystem, startIntegrationProject, resolveSystemEvent, chartNewGalaxy, colonyRoles }) {
+  const [rolePick, setRolePick] = useState({});
+  const [nextGalaxy, setNextGalaxy] = useState("dense");
   if (!capabilities.systems) {
     return (
       <section className="panel space-y-2">
@@ -1214,20 +1621,148 @@ function SystemsView({ state, capabilities, format }) {
     );
   }
   const systems = state.systems || [];
+  const colonies = state.colonies || [];
+  const command = commandUsage(state);
+  const surveySpeed = colonyModifiers(state).surveySpeed || 1;
+  const integration = state.integration || { eventRateMult: 1, travelMult: 1, saturationRelief: 0, signalCapBonus: 0 };
+  const galaxy = activeGalaxy(state);
+  const galaxyRule = galaxyById(galaxy?.rulesetId);
+  const integratedSystems = systems.filter((s) => s.integratedAt).length;
+  const canChartGalaxy = integratedSystems >= 2;
+  const traitName = (id) => SYSTEM_TRAITS.find((t) => t.id === id)?.name || id;
   return (
-    <section className="panel space-y-2">
-      <div className="text-lg font-semibold">Systems</div>
-      <div className="text-muted text-sm">Discovered systems and their traits.</div>
+    <section className="panel space-y-3">
+      <div>
+        <div className="text-lg font-semibold">Systems</div>
+        <div className="text-muted text-sm">Run scan -> probe -> survey chains to unlock colonies.</div>
+      </div>
+      <div className="card space-y-2">
+        <div className="row row-between">
+          <div className="font-semibold">Galaxy Overview</div>
+          <div className="text-sm">{galaxy?.name || "Uncharted"}</div>
+        </div>
+          <div className="text-xs text-muted">Ruleset: {galaxyRule?.name || "Unknown"} | Depth {galaxy?.depth || 0} | Integrations {integratedSystems}</div>
+          <div className="text-xs text-muted">Effects: cargo {Math.round((galaxyRule?.mods?.cargoMult || 1) * 100)}% | hazards {Math.round((galaxyRule?.mods?.hazardMult || 1) * 100)}%</div>
+        <div className="text-xs text-muted">{galaxyRule?.desc || "Reach systems to unlock galaxy options."}</div>
+        <div className="row gap-2">
+          <select className="select bg-slate-800 text-white" value={nextGalaxy} onChange={(e) => setNextGalaxy(e.target.value)}>
+            {GALAXY_RULESETS.map((g) => <option key={g.id} value={g.id}>{g.name}</option>)}
+          </select>
+          <button className="btn" disabled={!canChartGalaxy} onClick={() => chartNewGalaxy(nextGalaxy)}>
+            {canChartGalaxy ? "Chart New Galaxy" : "Integrate 2 systems"}
+          </button>
+        </div>
+      </div>
+      <div className="card space-y-1">
+        <div className="row row-between">
+          <div className="font-semibold">Command Capacity</div>
+          <div className="text-sm">{command.used}/{command.capacity} used</div>
+        </div>
+        <div className="text-xs text-muted">Over-capacity reduces mission efficiency and slowly destabilizes colonies.</div>
+        <div className="text-xs text-muted">Integration effects: travel {Math.round((integration.travelMult || 1) * 100)}% | event rate {Math.round((integration.eventRateMult || 1) * 100)}%</div>
+      </div>
       <div className="list">
-        {systems.map((s) => (
-          <div key={s.id} className="row-item">
-            <div className="row-details">
-              <div className="row-title">{s.name}</div>
-              <div className="row-meta">Distance {format(s.distance || 0)} | Traits {(s.traits || []).join(", ")}</div>
+        {systems.map((system) => {
+          const colony = colonies.find((c) => c.systemId === system.id);
+          const events = (state.systemEvents || []).filter((e) => e.systemId === system.id);
+          const traits = (system.traits || []).map(traitName).join(", ") || "Unstable signals";
+          const stage = system.stage || "scan";
+          const stageLabel = stage === "colonized" ? "Anchored" : stage[0].toUpperCase() + stage.slice(1);
+          const opRemaining = system.op ? Math.max(0, system.op.endsAt - Date.now()) : 0;
+          const step = SYSTEM_SURVEY_STEPS[stage];
+          const roleChoice = rolePick[system.id] || "relay";
+          const roleDef = colony ? colonyRoleById(colony.role) : colonyRoleById(roleChoice);
+          const project = system.project ? INTEGRATION_PROJECTS.find((p) => p.id === system.project.id) : null;
+          const projectRemaining = system.project ? Math.max(0, system.project.endsAt - Date.now()) : 0;
+          const trend = events.length ? "Declining" : "Stable";
+          const activeProjects = systems.filter((s) => s.project).length;
+          const projectCap = Math.max(1, Math.floor(commandCapacity(state) / 2) + 1);
+          const canStartProject = !system.project && activeProjects < projectCap;
+          return (
+            <div key={system.id} className="row-item">
+              <div className="row-details">
+                <div className="row-title">
+                  {system.name} <span className="tag">{stageLabel}</span> {system.integratedAt && <span className="tag">Integrated</span>}
+                </div>
+                <div className="row-meta">Distance {format(system.distance || 0)} AU | Traits {traits}</div>
+                <div className="row-meta text-xs text-muted">Stability {Math.round(system.stability ?? 100)}% | Trend {trend}</div>
+                {system.op && <div className="row-meta text-xs text-muted">{step?.name} running: {formatDuration(opRemaining)} remaining</div>}
+                {!system.op && ["scan", "probe", "survey"].includes(stage) && (
+                  <div className="row-meta text-xs text-muted">
+                    {step?.name} cost: {step ? costText(step.cost, format) : "n/a"} | Duration {step ? formatDuration(step.duration * surveySpeed) : "n/a"}
+                  </div>
+                )}
+                {colony && (
+                  <div className="row-meta text-xs text-muted">Colony: {roleDef.name} | Command cost {colonyCapacityCost(colony)} | Events {events.length}/{MAX_SYSTEM_EVENTS}</div>
+                )}
+                {!colony && stage === "colonize" && (
+                  <div className="row-meta text-xs text-muted">Colony cost: {costText(COLONY_COST, format)}</div>
+                )}
+                {!colony && stage === "colonize" && (
+                  <div className="row-meta text-xs text-muted">{roleDef.desc}</div>
+                )}
+                {project && (
+                  <div className="row-meta text-xs text-muted">Project: {project.name} | {formatDuration(projectRemaining)} remaining</div>
+                )}
+                {!project && colony && (
+                  <div className="row-meta text-xs text-muted">Integration slots {activeProjects}/{projectCap}</div>
+                )}
+              </div>
+              <div className="flex flex-col gap-2 items-end">
+                {["scan", "probe", "survey"].includes(stage) && !system.op && (
+                  <button className="btn" onClick={() => startSystemOp(system.id)}>{step?.name || "Start Survey"}</button>
+                )}
+                {["scan", "probe", "survey"].includes(stage) && system.op && (
+                  <button className="btn" disabled>In Progress</button>
+                )}
+                {stage === "colonize" && !colony && (
+                  <>
+                    <select className="select bg-slate-800 text-white" value={roleChoice} onChange={(e) => setRolePick({ ...rolePick, [system.id]: e.target.value })}>
+                      {colonyRoles.map((role) => <option key={role.id} value={role.id}>{role.name}</option>)}
+                    </select>
+                    <button className="btn btn-primary" onClick={() => colonizeSystem(system.id, roleChoice)}>Establish Colony</button>
+                  </>
+                )}
+                {colony && <span className="tag">Anchored</span>}
+              </div>
+              {colony && (
+                <div className="mt-3 w-full space-y-2">
+                  <div className="text-xs text-muted">Integration Projects</div>
+                  <div className="grid md:grid-cols-3 gap-2">
+                    {INTEGRATION_PROJECTS.map((proj) => (
+                      <div key={proj.id} className="card space-y-1">
+                        <div className="font-semibold text-sm">{proj.name}</div>
+                        <div className="text-xs text-muted">{proj.desc}</div>
+                        <div className="text-xs text-muted">Cost: {costText(proj.cost, format)}</div>
+                        <button className="btn" disabled={!canStartProject} onClick={() => startIntegrationProject(system.id, proj.id)}>
+                          {canStartProject ? "Start" : "Busy"}
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+                  {!!events.length && (
+                    <div className="space-y-2">
+                      <div className="text-xs text-muted">System Events</div>
+                      <div className="list">
+                        {events.map((ev) => (
+                          <div key={ev.id} className="row-item">
+                            <div className="row-details">
+                              <div className="row-title">{ev.name}</div>
+                              <div className="row-meta">{ev.desc}</div>
+                              <div className="row-meta text-xs text-muted">Resolve cost: {costText(ev.cost, format)}</div>
+                            </div>
+                            <button className="btn" onClick={() => resolveSystemEvent(system.id, ev.id)}>Resolve</button>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+                </div>
+              )}
             </div>
-          </div>
-        ))}
-        {!systems.length && <div className="text-muted text-sm">No systems discovered yet. Raise hub range to reveal new targets.</div>}
+          );
+        })}
+        {!systems.length && <div className="text-muted text-sm">No systems detected yet. Raise hub range to reveal new targets.</div>}
       </div>
     </section>
   );
@@ -1398,6 +1933,33 @@ function migrateSave(save) {
     out.colonies = out.colonies || [];
     out.galaxies = out.galaxies || [];
   }
+  if (version < 4) {
+    out.targetDepletion = out.targetDepletion || {};
+    out.milestones = { ...(out.milestones || {}), depletionWarned: out.milestones?.depletionWarned || {} };
+  }
+  if (version < 5) {
+    out.systems = (out.systems || []).map((system) => normalizeSystem(system));
+    out.colonies = (out.colonies || []).map((colony) => ({
+      ...colony,
+      role: colony.role || "relay",
+      distance: Number.isFinite(colony.distance) ? colony.distance : 4,
+      createdAt: colony.createdAt || Date.now(),
+    }));
+  }
+  if (version < 6) {
+    out.systemEvents = out.systemEvents || [];
+    out.integration = out.integration || { eventRateMult: 1, travelMult: 1, saturationRelief: 0, signalCapBonus: 0 };
+    out.systems = (out.systems || []).map((system) => ({
+      ...normalizeSystem(system),
+      nextEventAt: system.nextEventAt || Date.now() + randomBetween(...SYSTEM_EVENT_COOLDOWN_MS),
+      project: system.project || null,
+    }));
+  }
+  if (version < 7) {
+    out.galaxies = out.galaxies || [];
+    out.activeGalaxyId = out.activeGalaxyId || (out.galaxies[0]?.id ?? null);
+    out.doctrine = out.doctrine || null;
+  }
   out.saveVersion = SAVE_VERSION;
   return out;
 }
@@ -1424,6 +1986,42 @@ function withLogisticsCost(cost, body) {
   return { ...cost, fuel: (cost.fuel || 0) + logisticsFuel };
 }
 function reduceCargo(cargo, factor) { const out = {}; Object.entries(cargo).forEach(([k, v]) => out[k] = Math.floor(v * factor)); return out; }
+function scaleCargo(cargo, factor) {
+  const out = {};
+  Object.entries(cargo).forEach(([k, v]) => { out[k] = Math.max(0, Math.floor(v * factor)); });
+  return out;
+}
+function signalSaturation(stateObj) {
+  const galaxyMods = galaxyModifiers(stateObj);
+  const doctrineMods = doctrineModifiers(stateObj);
+  const baseCap = 300 + (stateObj.hubUpgrades.scan_array || 0) * 140 + (stateObj.tech.deep_scan ? 220 : 0) + (stateObj.tech.rift_mapping ? 240 : 0);
+  const integrationBonus = stateObj.integration?.signalCapBonus || 0;
+  const capMult = galaxyMods.signalCapMult || 1;
+  const cap = Math.max(150, Math.floor(baseCap * capMult) + integrationBonus + (doctrineMods.signalCapBonus || 0));
+  const current = stateObj.resources.signal || 0;
+  if (current <= cap) return { factor: 1, cap, penalty: 0 };
+  const relief = clamp((stateObj.integration?.saturationRelief || 0) + (galaxyMods.saturationRelief || 0) + (doctrineMods.saturationRelief || 0), 0, 0.6);
+  const over = (current - cap) / cap;
+  const penalty = clamp(over * 0.45 * (1 - relief), 0, 0.7);
+  return { factor: 1 - penalty, cap, penalty };
+}
+function galaxyDepth(stateObj) {
+  const galaxies = stateObj.galaxies || [];
+  if (!galaxies.length) return 0;
+  return Math.max(...galaxies.map((g) => g.depth || 0));
+}
+function bottleneckReport(stateObj, rates) {
+  const alerts = [];
+  if ((stateObj.resources.power || 0) <= 0 && (rates.power || 0) < 0) alerts.push("Power deficit is gating production.");
+  if ((stateObj.resources.food || 0) <= 0 && (rates.food || 0) <= 0) alerts.push("Food is below upkeep, morale will drop.");
+  if ((stateObj.resources.fuel || 0) <= 0 && (rates.fuel || 0) <= 0) alerts.push("Fuel is scarce, missions and projects may stall.");
+  if (alerts.length) return alerts;
+  const drains = Object.entries(rates || {}).filter(([, v]) => v < 0);
+  if (!drains.length) return ["No immediate bottlenecks detected."];
+  drains.sort((a, b) => a[1] - b[1]);
+  const [key, val] = drains[0];
+  return [`${key} is the tightest drain (${val.toFixed(1)}/tick).`];
+}
 function createEvent(body) {
   const pool = {
     asteroid: [
@@ -1446,12 +2044,13 @@ function createEvent(body) {
   const pick = list[Math.floor(Math.random() * list.length)];
   return { id: `${body.id}-${Date.now()}-${Math.random().toString(16).slice(2, 6)}`, bodyId: body.id, ...pick, status: "active" };
 }
-function missionYield(state, body, modeId, specialist = "none") {
+function missionYield(state, body, modeId, specialist = "none", efficiency = 1) {
   const base = body.resources || {};
   const drone = state.tech?.drone_log ? 0.2 : 0;
   const rareBonus = state.tech?.rift_mapping ? 0.2 : 0;
   const mult = 1 + drone + rareBonus;
   const bonuses = baseBonuses(state, body.id);
+  const colonyMods = colonyModifiers(state);
   const mode = missionModeById(modeId);
   const cargo = {};
   Object.entries(base).forEach(([k, v]) => {
@@ -1460,9 +2059,20 @@ function missionYield(state, body, modeId, specialist = "none") {
     if (specialist === "miner" && (k === "metal" || k === "rare")) specBoost = 1.15;
     if (specialist === "botanist" && (k === "organics" || k === "fuel")) specBoost = 1.15;
     if (specialist === "engineer" && (k === "research")) specBoost = 1.1;
-    cargo[k] = Math.floor(v * mult * modeBoost * specBoost * (bonuses.cargo || 1));
+    cargo[k] = Math.floor(v * mult * modeBoost * specBoost * (bonuses.cargo || 1) * (colonyMods.cargoMult || 1) * efficiency);
   });
   return cargo;
+}
+function targetDepletion(stateObj, bodyId) {
+  return clamp(stateObj.targetDepletion?.[bodyId] || 0, 0, 0.85);
+}
+function depletionFactor(stateObj, bodyId) {
+  return clamp(1 - targetDepletion(stateObj, bodyId), 0.25, 1);
+}
+function depletionRate(body) {
+  const tier = body.tier || 1;
+  const base = 0.06 - (Math.max(0, tier - 1) * 0.005);
+  return Math.max(0.02, base);
 }
 function makeObjective(body) {
   const tables = {
@@ -1492,6 +2102,147 @@ function combineCargo(base, bonus) {
   Object.entries(bonus || {}).forEach(([k, v]) => { out[k] = (out[k] || 0) + v; });
   return out;
 }
+function randomSystemName(existing = []) {
+  const taken = new Set(existing.map((s) => s.name));
+  let name = "";
+  let tries = 0;
+  while (!name || taken.has(name)) {
+    const prefix = SYSTEM_NAME_PARTS.prefix[Math.floor(Math.random() * SYSTEM_NAME_PARTS.prefix.length)];
+    const suffix = SYSTEM_NAME_PARTS.suffix[Math.floor(Math.random() * SYSTEM_NAME_PARTS.suffix.length)];
+    name = `${prefix} ${suffix}`;
+    tries += 1;
+    if (tries > 12) break;
+  }
+  return name;
+}
+function pickSystemTraits() {
+  const picks = [];
+  const pool = [...SYSTEM_TRAITS];
+  const count = 2;
+  while (picks.length < count && pool.length) {
+    const idx = Math.floor(Math.random() * pool.length);
+    const [trait] = pool.splice(idx, 1);
+    if (trait) picks.push(trait.id);
+  }
+  return picks;
+}
+function normalizeSystem(system) {
+  const distance = Number.isFinite(system.distance) ? system.distance : Math.floor(randomBetween(3, 10));
+  const traits = Array.isArray(system.traits) && system.traits.length ? system.traits : pickSystemTraits();
+  const stage = system.stage || (system.colonizedAt ? "colonized" : "scan");
+  return {
+    ...system,
+    id: system.id || `sys-${Date.now()}-${Math.random().toString(16).slice(2, 6)}`,
+    name: system.name || randomSystemName([]),
+    distance,
+    traits,
+    stage,
+    stability: Number.isFinite(system.stability) ? system.stability : 100,
+    op: system.op || null,
+    project: system.project || null,
+    nextEventAt: system.nextEventAt || Date.now() + randomBetween(...SYSTEM_EVENT_COOLDOWN_MS),
+    discoveredAt: system.discoveredAt || Date.now(),
+  };
+}
+function generateSystems(count, existing = []) {
+  const list = [];
+  for (let i = 0; i < count; i += 1) {
+    list.push(normalizeSystem({ name: randomSystemName(existing.concat(list)) }));
+  }
+  return list;
+}
+function targetSystemCount(stateObj) {
+  const range = hubRange(stateObj);
+  if (range < 3) return 0;
+  const extra = Math.max(0, Math.floor(range - 3));
+  const galaxyBonus = galaxyModifiers(stateObj).systemCountBonus || 0;
+  return Math.min(6, Math.max(1, 3 + extra + galaxyBonus));
+}
+function nextSurveyStage(stage) {
+  const idx = SURVEY_SEQUENCE.indexOf(stage);
+  if (idx === -1 || idx >= SURVEY_SEQUENCE.length - 1) return stage;
+  return SURVEY_SEQUENCE[idx + 1];
+}
+function colonyRoleById(id) { return COLONY_ROLES.find((r) => r.id === id) || COLONY_ROLES[0]; }
+function colonyRoleCounts(stateObj) {
+  return (stateObj.colonies || []).reduce((acc, colony) => {
+    acc[colony.role] = (acc[colony.role] || 0) + 1;
+    return acc;
+  }, { relay: 0, survey: 0, logistics: 0 });
+}
+function systemEventModifiers(stateObj) {
+  const mods = { cargoMult: 1, travelMult: 1, scanMult: 1, surveySpeed: 1, hazardMult: 1, stabilityDrain: 0 };
+  (stateObj.systemEvents || []).forEach((ev) => {
+    const effect = ev.effect || {};
+    if (effect.cargoMult) mods.cargoMult *= effect.cargoMult;
+    if (effect.travelMult) mods.travelMult *= effect.travelMult;
+    if (effect.scanMult) mods.scanMult *= effect.scanMult;
+    if (effect.surveySpeed) mods.surveySpeed *= effect.surveySpeed;
+    if (effect.hazardMult) mods.hazardMult *= effect.hazardMult;
+    if (effect.stabilityDrain) mods.stabilityDrain += effect.stabilityDrain;
+  });
+  return mods;
+}
+function galaxyById(id) { return GALAXY_RULESETS.find((g) => g.id === id) || GALAXY_RULESETS[0]; }
+function activeGalaxy(stateObj) {
+  const galaxies = stateObj.galaxies || [];
+  if (!galaxies.length) return null;
+  return galaxies.find((g) => g.id === stateObj.activeGalaxyId) || galaxies[0];
+}
+function doctrineById(id) { return DOCTRINES.find((d) => d.id === id); }
+function doctrineModifiers(stateObj) {
+  if (!stateObj.doctrine) return {};
+  return doctrineById(stateObj.doctrine)?.mods || {};
+}
+function galaxyModifiers(stateObj) {
+  const galaxy = activeGalaxy(stateObj);
+  const ruleset = galaxyById(galaxy?.rulesetId);
+  return ruleset?.mods || {};
+}
+function colonyCapacityCost(colony) {
+  const distance = Number.isFinite(colony.distance) ? colony.distance : 4;
+  return 1 + Math.floor(distance / 4);
+}
+function commandUsage(stateObj) {
+  const capacity = commandCapacity(stateObj);
+  const used = (stateObj.colonies || []).reduce((sum, colony) => sum + colonyCapacityCost(colony), 0);
+  const over = Math.max(0, used - capacity);
+  return { used, capacity, over };
+}
+function colonyModifiers(stateObj) {
+  const counts = colonyRoleCounts(stateObj);
+  const systemMods = systemEventModifiers(stateObj);
+  const integration = stateObj.integration || { eventRateMult: 1, travelMult: 1, saturationRelief: 0, signalCapBonus: 0 };
+  const galaxyMods = galaxyModifiers(stateObj);
+  const doctrineMods = doctrineModifiers(stateObj);
+  const relayRange = counts.relay || 0;
+  const scanMult = (1 + Math.min(0.3, counts.survey * 0.1)) * (systemMods.scanMult || 1) * (galaxyMods.scanMult || 1) * (doctrineMods.scanMult || 1);
+  const surveySpeed = Math.max(0.75, 1 - counts.survey * 0.05) * (systemMods.surveySpeed || 1);
+  const objectiveBonus = Math.min(0.2, counts.survey * 0.05);
+  const travelMult = Math.max(0.8, 1 - counts.logistics * 0.05) * (integration.travelMult || 1) * (systemMods.travelMult || 1) * (galaxyMods.travelMult || 1) * (doctrineMods.travelMult || 1);
+  const fuelMult = Math.max(0.8, 1 - counts.logistics * 0.04);
+  const cargoMult = (1 + Math.min(0.2, counts.logistics * 0.04)) * (systemMods.cargoMult || 1) * (galaxyMods.cargoMult || 1) * (doctrineMods.cargoMult || 1);
+  const command = commandUsage(stateObj);
+  const overCargo = Math.max(0.7, 1 - command.over * 0.07);
+  const overTravel = 1 + command.over * 0.08;
+  const stabilityDrain = command.over > 0 ? command.over * 0.01 : 0;
+  return {
+    relayRange,
+    scanMult,
+    surveySpeed,
+    objectiveBonus,
+    travelMult: travelMult * overTravel,
+    fuelMult,
+    cargoMult: cargoMult * overCargo,
+    command,
+    stabilityDrain: stabilityDrain + (systemMods.stabilityDrain || 0),
+    hazardMult: (systemMods.hazardMult || 1) * (galaxyMods.hazardMult || 1) * (doctrineMods.hazardMult || 1),
+    eventRateMult: (integration.eventRateMult || 1) * (galaxyMods.eventRateMult || 1) * (doctrineMods.eventRateMult || 1),
+    integration,
+    galaxyMods,
+    doctrineMods,
+  };
+}
 function hashStr(str) {
   let h = 0;
   for (let i = 0; i < str.length; i++) { h = (h * 131 + str.charCodeAt(i)) >>> 0; }
@@ -1509,20 +2260,25 @@ function canAffordUI(resources, cost) { return Object.entries(cost).every(([k, v
 function costText(cost, format) { return Object.entries(cost).map(([k, v]) => `${format(v)} ${k}`).join(', '); }
 function formatDuration(ms) { const sec = Math.max(0, Math.ceil(ms / 1000)); const m = Math.floor(sec / 60); const s = sec % 60; return m > 0 ? `${m}m ${s}s` : `${s}s`; }
 function isUnlockedUI(state, body) {
+  if ((body.tier || 1) > hubRange(state)) return false;
   if (body.requireTech && !state.tech[body.requireTech]) return false;
   if (body.requireMissions && (state.milestones?.missionsDone || 0) < body.requireMissions) return false;
   return (state.resources.signal || 0) >= (body.unlock || 0);
 }
 function hubRange(state) {
-  return 1 + (state.hubUpgrades.scan_array || 0) + (state.tech.deep_scan ? 1 : 0) + (state.tech.rift_mapping ? 1 : 0);
+  const relayBonus = colonyRoleCounts(state).relay || 0;
+  return 1 + (state.hubUpgrades.scan_array || 0) + (state.tech.deep_scan ? 1 : 0) + (state.tech.rift_mapping ? 1 : 0) + relayBonus;
 }
 function commandCapacity(state) {
-  return 1 + (state.hubUpgrades.launch_bay || 0) + (state.tech.auto_pilots ? 1 : 0);
+  const galaxyBonus = galaxyModifiers(state).commandCapBonus || 0;
+  const doctrineBonus = doctrineModifiers(state).commandCapBonus || 0;
+  return 1 + (state.hubUpgrades.launch_bay || 0) + (state.tech.auto_pilots ? 1 : 0) + galaxyBonus + doctrineBonus;
 }
 function deriveCapabilities(state) {
   const unlocked = new Set(state.milestonesUnlocked || []);
+  const systemsUnlocked = unlocked.has("M2_SYSTEMS_DISCOVERED") || unlocked.has("M1_SYSTEMS_DISCOVERED");
   return {
-    systems: unlocked.has("M1_SYSTEMS_DISCOVERED"),
+    systems: systemsUnlocked,
     colonies: unlocked.has("M2_FIRST_COLONY"),
     integration: unlocked.has("M3_INTEGRATION_UNLOCK"),
     prestige: unlocked.has("M4_PRESTIGE_UNLOCK"),
