@@ -4,8 +4,8 @@ export default function TechView({ state, buyTech, format, techDefs, hasPrereqs,
   const scaleCost = (cost, mult) => Object.fromEntries(Object.entries(cost || {}).map(([k, v]) => [k, Math.ceil(v * (mult || 1))]));
   return (
     <section className="panel space-y-3">
-      <div className="text-lg font-semibold">Tech & Milestones</div>
-      <div className="text-muted text-sm">Branching tree; unlocks require prior techs.</div>
+      <div className="text-lg font-semibold">R&D Grid</div>
+      <div className="text-muted text-sm">Branching lattice; unlocks require prior nodes.</div>
       <div className="space-y-4">
         {tiers.map((tier) => (
           <div key={tier} className="card space-y-2">
@@ -19,7 +19,7 @@ export default function TechView({ state, buyTech, format, techDefs, hasPrereqs,
                     <div key={t.id} className="row-item opacity-50">
                       <div className="row-details">
                         <div className="row-title">{t.name}</div>
-                        <div className="row-meta">Requires {unlockSignal} signal to reveal.</div>
+                        <div className="row-meta">Requires {unlockSignal} signal to reveal node.</div>
                       </div>
                     </div>
                   );
@@ -32,13 +32,13 @@ export default function TechView({ state, buyTech, format, techDefs, hasPrereqs,
                   <div key={t.id} className="row-item">
                     <div className="row-details">
                       <div className="row-title">
-                        {t.name} {owned ? <span className="tag">Owned</span> : null}
+                        {t.name} {owned ? <span className="tag">Integrated</span> : null}
                       </div>
                       <div className="row-meta">{t.desc}</div>
                       <div className="row-meta text-xs text-muted">{prereqText}</div>
                     </div>
                     <button className="btn" disabled={disabled} onClick={() => buyTech(t.id)}>
-                      {owned ? "Done" : `Research (${costText(cost, format)})`}
+                      {owned ? "Integrated" : `Research (${costText(cost, format)})`}
                     </button>
                   </div>
                 );

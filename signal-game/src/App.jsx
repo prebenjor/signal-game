@@ -120,10 +120,21 @@ export default function App() {
   const [compact, setCompact] = useState(false);
   const [lastSaved, setLastSaved] = useState(null);
   const [supabaseUserId, setSupabaseUserId] = useState(null);
-  const [factionState, setFactionState] = useState({ factions: [], projects: {}, membership: null, loading: false, error: null, leaderboard: [], leaderboardError: null });
+  const [factionState, setFactionState] = useState({
+    factions: [],
+    projects: {},
+    buildings: {},
+    membership: null,
+    loading: false,
+    error: null,
+    leaderboard: [],
+    leaderboardError: null,
+    buildingsError: null,
+  });
   const [profileNameDraft, setProfileNameDraft] = useState(initState.profile?.name || "");
   const stateRef = useRef(state);
   const manualSignalRef = useRef(0);
+  const leaderboardRefreshRef = useRef(0);
   const currentBody = selectedBody();
   const currentBase = useMemo(() => ensureBaseState(state.bases[state.selectedBody], currentBody), [state.bases, state.selectedBody]);
   const currentTraits = baseTraitList(currentBase);
@@ -167,14 +178,28 @@ export default function App() {
     };
   }, []);
 
+  const refreshLeaderboard = async () => {
+    if (!supabaseConfigured || !supabase) return;
+    const now = Date.now();
+    if (now - leaderboardRefreshRef.current < 800) return;
+    leaderboardRefreshRef.current = now;
+    const { data, error } = await supabase.rpc("get_faction_leaderboard", { limit_count: 10 });
+    setFactionState((prev) => ({
+      ...prev,
+      leaderboard: data || prev.leaderboard,
+      leaderboardError: error ? "Leaderboard RPC unavailable." : null,
+    }));
+  };
+
   useEffect(() => {
     if (!supabaseConfigured || !supabase || !supabaseUserId) return;
     let active = true;
     setFactionState((prev) => ({ ...prev, loading: true, error: null }));
     const loadFactionData = async () => {
-      const [factionsRes, projectsRes, memberRes, leaderboardRes] = await Promise.all([
+      const [factionsRes, projectsRes, buildingsRes, memberRes, leaderboardRes] = await Promise.all([
         supabase.from("factions").select("*").order("name"),
         supabase.from("faction_projects").select("*"),
+        supabase.from("faction_building_progress").select("*"),
         supabase.from("faction_members").select("*").eq("user_id", supabaseUserId).maybeSingle(),
         supabase.rpc("get_faction_leaderboard", { limit_count: 10 }),
       ]);
@@ -183,22 +208,32 @@ export default function App() {
       (projectsRes.data || []).forEach((project) => {
         projectsByFaction[project.faction_id] = project;
       });
+      const buildingsByFaction = {};
+      (buildingsRes.data || []).forEach((row) => {
+        if (!row.faction_id || !row.building_id) return;
+        const factionBuildings = buildingsByFaction[row.faction_id] || {};
+        factionBuildings[row.building_id] = row;
+        buildingsByFaction[row.faction_id] = factionBuildings;
+      });
       const error = factionsRes.error?.message || projectsRes.error?.message || memberRes.error?.message || null;
       const leaderboardError = leaderboardRes.error ? "Leaderboard RPC unavailable." : null;
+      const buildingsError = buildingsRes.error ? "Faction buildings unavailable." : null;
       setFactionState((prev) => ({
         ...prev,
         factions: factionsRes.data || prev.factions,
         projects: projectsRes.data ? projectsByFaction : prev.projects,
+        buildings: buildingsRes.data ? buildingsByFaction : prev.buildings,
         membership: memberRes.data || null,
         leaderboard: leaderboardRes.data || prev.leaderboard,
         leaderboardError,
+        buildingsError,
         loading: false,
         error,
       }));
     };
     loadFactionData();
     const channel = supabase
-      .channel("faction_projects")
+      .channel("faction_live")
       .on("postgres_changes", { event: "*", schema: "public", table: "faction_projects" }, (payload) => {
         const record = payload.new || payload.old;
         if (!record?.faction_id) return;
@@ -211,6 +246,29 @@ export default function App() {
           }
           return { ...prev, projects: nextProjects };
         });
+      })
+      .on("postgres_changes", { event: "*", schema: "public", table: "faction_building_progress" }, (payload) => {
+        const record = payload.new || payload.old;
+        if (!record?.faction_id || !record?.building_id) return;
+        setFactionState((prev) => {
+          const nextBuildings = { ...prev.buildings };
+          const factionBuildings = { ...(nextBuildings[record.faction_id] || {}) };
+          if (payload.eventType === "DELETE") {
+            delete factionBuildings[record.building_id];
+          } else {
+            factionBuildings[record.building_id] = record;
+          }
+          nextBuildings[record.faction_id] = factionBuildings;
+          return { ...prev, buildings: nextBuildings };
+        });
+      })
+      .on("postgres_changes", { event: "*", schema: "public", table: "faction_members" }, (payload) => {
+        const record = payload.new || payload.old;
+        if (!record) return;
+        if (record.user_id === supabaseUserId) {
+          setFactionState((prev) => ({ ...prev, membership: payload.eventType === "DELETE" ? null : record }));
+        }
+        refreshLeaderboard();
       })
       .subscribe();
     return () => {
@@ -238,7 +296,7 @@ export default function App() {
 
   async function joinFaction(factionId) {
     if (!supabaseReady || !supabase) return { ok: false, message: "Supabase not configured." };
-    if (!state.profile?.name?.trim()) return { ok: false, message: "Set a callsign in Account first." };
+    if (!state.profile?.name?.trim()) return { ok: false, message: "Set a callsign in Command Profile first." };
     if (!supabaseUserId) return { ok: false, message: "Signing in? try again." };
     const { data, error } = await supabase
       .from("faction_members")
@@ -274,7 +332,45 @@ export default function App() {
       return { ok: false, message: `Donation failed: ${error.message}` };
     }
     log(`Donated ${value} ${resource} to faction project.`);
+    refreshLeaderboard();
     return { ok: true, message: "Donation sent." };
+  }
+
+  async function donateFactionBuilding(buildingId, resource, amount) {
+    const value = Math.floor(Number(amount));
+    if (!supabaseReady || !supabase) return { ok: false, message: "Supabase not configured." };
+    if (!factionState.membership?.faction_id) return { ok: false, message: "Join a faction first." };
+    if (!buildingId) return { ok: false, message: "Choose a building." };
+    if (!resource || !Number.isFinite(value) || value <= 0) return { ok: false, message: "Enter a valid amount." };
+    const cost = { [resource]: value };
+    if (!canAfford(cost)) return { ok: false, message: "Not enough resources." };
+    spend(cost);
+    const { error } = await supabase.rpc("donate_faction_building", {
+      p_faction_id: factionState.membership.faction_id,
+      p_building_id: buildingId,
+      p_resource: resource,
+      p_amount: value,
+    });
+    if (error) {
+      bumpResources(cost);
+      log(`Building donation failed: ${error.message}`);
+      return { ok: false, message: `Donation failed: ${error.message}` };
+    }
+    setFactionState((prev) => {
+      const factionId = prev.membership?.faction_id;
+      if (!factionId) return prev;
+      const nextBuildings = { ...prev.buildings };
+      const factionBuildings = { ...(nextBuildings[factionId] || {}) };
+      const existing = factionBuildings[buildingId] || { faction_id: factionId, building_id: buildingId, progress: {} };
+      const progress = { ...(existing.progress || {}) };
+      progress[resource] = (progress[resource] || 0) + value;
+      factionBuildings[buildingId] = { ...existing, progress, updated_at: new Date().toISOString() };
+      nextBuildings[factionId] = factionBuildings;
+      return { ...prev, buildings: nextBuildings };
+    });
+    log(`Donated ${value} ${resource} to faction construction.`);
+    refreshLeaderboard();
+    return { ok: true, message: "Construction resources delivered." };
   }
 
   useEffect(() => {
@@ -619,7 +715,7 @@ export default function App() {
       const minSignal = Math.max(cost, ops.autoPulseMinSignal || 0, reserve + cost);
       if (Date.now() >= (state.pulseReadyAt || 0) && (state.resources.signal || 0) >= minSignal) {
         const result = pulseScan(true);
-        if (result?.ok) logOps(`Auto Pulse Scan: +${result.amount} ${result.type} (cost ${result.cost})`);
+        if (result?.ok) logOps(`Auto Pulse Sweep: +${result.amount} ${result.type} (cost ${result.cost})`);
       }
     }
     if (ops.autoLab) {
@@ -630,7 +726,7 @@ export default function App() {
       const minMetal = Math.max(labCostValue.metal || 0, ops.autoLabMinMetal || 0, reserveMetal + (labCostValue.metal || 0));
       if (Date.now() >= (state.labReadyAt || 0) && (state.resources.signal || 0) >= minSignal && (state.resources.metal || 0) >= minMetal) {
         const result = runLabPulse(true);
-        if (result?.ok) logOps(`Auto Research Pulse: +${result.research} research`);
+        if (result?.ok) logOps(`Auto Research Cycle: +${result.research} research`);
       }
     }
   }
@@ -764,7 +860,7 @@ export default function App() {
 
   function chooseDoctrine(id) {
     if (state.doctrine) { log("Doctrine already selected."); return; }
-    if ((state.prestige?.runs || 0) < 1) { log("Prestige once to unlock doctrines."); return; }
+    if ((state.prestige?.runs || 0) < 1) { log("Prestige Protocol once to unlock doctrines."); return; }
     const def = doctrineById(id);
     if (!def) return;
     dispatch({ type: "UPDATE", patch: { doctrine: def.id } });
@@ -1016,10 +1112,10 @@ export default function App() {
     return { ok: true, cost, research: gain };
   }
 
-  // Prestige/reset with boost based on total value.
+  // Prestige Protocol/reset with boost based on total value.
   function ascend() {
     if (!(state.milestonesUnlocked || []).includes("M4_PRESTIGE_UNLOCK")) {
-      log("Prestige is locked. Reach galaxy depth 2 and integrate systems first.");
+      log("Prestige Protocol is locked. Reach galaxy depth 2 and integrate systems first.");
       return;
     }
     const totalValue = (state.resources.signal || 0) + (state.resources.metal || 0) + (state.resources.research || 0) * 5 + (state.resources.rare || 0) * 20;
@@ -1268,7 +1364,7 @@ function biomeBuildingById(id) { return Object.values(BIOME_BUILDINGS).flat().fi
                   onChange={(e) => setProfileNameDraft(e.target.value)}
                 />
                 <button className="btn w-full" onClick={saveProfileName} disabled={!profileNameDraft.trim()}>
-                  Save callsign
+                  Commit callsign
                 </button>
               </div>
             </div>
@@ -1288,7 +1384,7 @@ function biomeBuildingById(id) { return Object.values(BIOME_BUILDINGS).flat().fi
                 className={`btn ${state.tab === "profile" ? "btn-primary" : ""}`}
                 onClick={() => dispatch({ type: "SET_TAB", tab: "profile" })}
               >
-                Account
+                Profile
               </button>
             </div>
           </div>
@@ -1438,6 +1534,8 @@ function biomeBuildingById(id) { return Object.values(BIOME_BUILDINGS).flat().fi
                 supabaseReady={supabaseReady}
                 factions={factionState.factions}
                 projects={factionState.projects}
+                buildings={factionState.buildings}
+                buildingsError={factionState.buildingsError}
                 membership={factionState.membership}
                 loading={factionState.loading}
                 error={factionState.error}
@@ -1445,6 +1543,7 @@ function biomeBuildingById(id) { return Object.values(BIOME_BUILDINGS).flat().fi
                 leaderboardError={factionState.leaderboardError}
                 onJoin={joinFaction}
                 onDonate={donateFaction}
+                onDonateBuilding={donateFactionBuilding}
                 resources={state.resources}
                 format={format}
               />
@@ -1528,26 +1627,26 @@ function AccountView({ state, exportProfile, importProfile, compact, setCompact,
   };
   return (
     <section className="panel space-y-3">
-      <div className="text-lg font-semibold">Account</div>
+      <div className="text-lg font-semibold">Command Profile</div>
       <div className="grid md:grid-cols-3 gap-3">
         <div className="card space-y-2">
           <div className="font-semibold">Callsign</div>
-          <div className="text-sm text-muted">Required for multiplayer features and leaderboards.</div>
+          <div className="text-sm text-muted">Required to access the relay network and leaderboards.</div>
           <input
             className="w-full rounded-lg border border-white/10 bg-slate-900 px-3 py-2 text-sm text-white"
             placeholder="Enter callsign"
             value={nameInput}
             onChange={(e) => setNameInput(e.target.value)}
           />
-          <button className="btn" onClick={saveName} disabled={!nameInput.trim()}>Save callsign</button>
+          <button className="btn" onClick={saveName} disabled={!nameInput.trim()}>Commit callsign</button>
         </div>
         <div className="card space-y-2">
           <div className="font-semibold">Multiplayer</div>
-          <div className="text-sm text-muted">Network link: {supabaseReady ? "Online" : "Offline"}</div>
-          <div className="text-xs text-muted">Callsigned pilots can join factions and contribute to projects.</div>
+          <div className="text-sm text-muted">Relay link: {supabaseReady ? "Online" : "Offline"}</div>
+          <div className="text-xs text-muted">Callsigned pilots can join factions and contribute to frontier projects.</div>
         </div>
         <div className="card space-y-2">
-          <div className="font-semibold">Doctrine</div>
+          <div className="font-semibold">Strategic Doctrine</div>
           <div className="text-sm text-muted">Choose a doctrine after your first prestige to define long-term strategy.</div>
           {state.prestige?.runs > 0 && !doctrine && (
             <div className="space-y-2">
@@ -1557,7 +1656,7 @@ function AccountView({ state, exportProfile, importProfile, compact, setCompact,
                     <div className="row-title">{doc.name}</div>
                     <div className="row-meta">{doc.desc}</div>
                   </div>
-                  <button className="btn" onClick={() => chooseDoctrine(doc.id)}>Adopt</button>
+                  <button className="btn" onClick={() => chooseDoctrine(doc.id)}>Enact</button>
                 </div>
               ))}
             </div>
@@ -1566,22 +1665,22 @@ function AccountView({ state, exportProfile, importProfile, compact, setCompact,
             <div className="text-sm text-muted">Active doctrine: {doctrine.name}</div>
           )}
           {!state.prestige?.runs && (
-            <div className="text-xs text-muted">Prestige once to unlock doctrine selection.</div>
+            <div className="text-xs text-muted">Prestige Protocol once to unlock doctrine selection.</div>
           )}
         </div>
         <div className="card space-y-2">
-          <div className="font-semibold">Save / Import</div>
-          <div className="text-sm text-muted">Profiles save locally (storage + cookie). Export/import to move between browsers.</div>
+          <div className="font-semibold">Profile Vault</div>
+          <div className="text-sm text-muted">Profiles cache locally (storage + cookie). Export/import to move between browsers.</div>
           <div className="flex flex-wrap gap-2">
-            <button className="btn" onClick={exportProfile}>Export</button>
-            <button className="btn" onClick={importProfile}>Import</button>
-            <button className="btn" onClick={manualSave}>Save now</button>
+            <button className="btn" onClick={exportProfile}>Export Profile</button>
+            <button className="btn" onClick={importProfile}>Import Profile</button>
+            <button className="btn" onClick={manualSave}>Sync now</button>
           </div>
-          <div className="text-xs text-muted">Export copies a base64 string; import pastes it here. Last saved: {lastSaved ? new Date(lastSaved).toLocaleTimeString() : "never"}</div>
+          <div className="text-xs text-muted">Export copies a sealed code string; import pastes it here. Last sync: {lastSaved ? new Date(lastSaved).toLocaleTimeString() : "never"}</div>
         </div>
         <div className="card space-y-2">
-          <div className="font-semibold">Layout</div>
-          <div className="text-sm text-muted">Toggle compact mode to reduce padding and tighten cards.</div>
+          <div className="font-semibold">Interface</div>
+          <div className="text-sm text-muted">Toggle compact mode to tighten the HUD and reduce padding.</div>
           <label className="row">
             <span className="text-sm">Compact mode</span>
             <input type="checkbox" checked={compact} onChange={(e) => setCompact(e.target.checked)} />
@@ -1598,11 +1697,11 @@ function HubView({ state, buildHub, buyHubUpgrade, crewBonusText, ascend, format
   const command = commandUsage(state);
   const canPrestige = (state.milestonesUnlocked || []).includes("M4_PRESTIGE_UNLOCK");
   const briefing = [
-    "Collect Signal then run a Pulse Scan (ramping signal cost + longer cooldown) to convert signal into metal/fuel/research.",
-    "First launch is fuel-free; Debris missions return early research + fuel.",
-    "Build a Fuel Refinery or Fuel Cracker early to keep missions flowing.",
-    "Keep power >= 0 and food positive to avoid morale drops.",
-    "Use Research Console if fuel is low to bootstrap research.",
+    "Collect Signal, then fire a Pulse Scan (cost ramps, cooldown lengthens) to transmute signal into metal/fuel/research.",
+    "First launch is fuel-free; Debris sorties return early research and fuel.",
+    "Stand up a Fuel Refinery or Fuel Cracker early to keep sorties flowing.",
+    "Keep power >= 0 and food positive to prevent morale slippage.",
+    "Use the Research Console if fuel is low to bootstrap research.",
   ];
 
   const setOps = (patch) => {
@@ -1613,37 +1712,37 @@ function HubView({ state, buildHub, buyHubUpgrade, crewBonusText, ascend, format
     <section className="panel space-y-3">
       <div className="flex flex-wrap gap-2 items-center justify-between">
         <div>
-          <div className="text-lg font-semibold">Main Hub</div>
-          <div className="text-muted text-sm">Command core for operations, automation, and expansion.</div>
+          <div className="text-lg font-semibold">Command Nexus</div>
+          <div className="text-muted text-sm">Primary control node for operations, automation, and expansion.</div>
         </div>
       </div>
 
       <div className="grid lg:grid-cols-[340px,1fr] gap-3">
         <div className="space-y-3">
           <div className="card space-y-2">
-            <div className="font-semibold">Range & Expansion</div>
+            <div className="font-semibold">Range Uplink</div>
             <div className="row-item">
               <div className="row-details">
                 <div className="row-title">Range Tier {hubRange(state)}</div>
-                <div className="row-meta">Unlocks higher mission targets.</div>
+                <div className="row-meta">Unlocks higher-tier targets.</div>
               </div>
             </div>
-            <div className="text-xs text-muted">Increase range via Scan Array (Hub), Deep Scan Arrays + Rift Mapping (Tech), and Relay Anchor colonies.</div>
+            <div className="text-xs text-muted">Extend range via Scan Array (Hub), Deep Scan Arrays + Rift Mapping (Tech), and Relay Anchor colonies.</div>
           </div>
           <div className="card space-y-2">
-            <div className="font-semibold">Prestige</div>
-            <div className="text-sm text-muted">Reset for a global production boost. Current boost: {Math.round(((state.prestige?.boost || 1) - 1) * 100)}% Aú Points: {state.prestige?.points || 0}</div>
-            <button className="btn" disabled={!canPrestige} onClick={ascend}>Ascend & Reset</button>
+            <div className="font-semibold">Prestige Protocol</div>
+            <div className="text-sm text-muted">Recalibrate for a global production boost. Current boost: {Math.round(((state.prestige?.boost || 1) - 1) * 100)}% Aú Points: {state.prestige?.points || 0}</div>
+            <button className="btn" disabled={!canPrestige} onClick={ascend}>Recalibrate</button>
             <div className="text-xs text-muted">
-              {canPrestige ? "Grants prestige based on total value. Progress auto-saves locally; refresh won't wipe." : "Prestige unlocks after galaxy depth 2, two integrations, and saturation pressure."}
+              {canPrestige ? "Grants legacy signal based on total value. Progress auto-saves locally; refresh won't wipe." : "Prestige Protocol unlocks after galaxy depth 2, two integrations, and saturation pressure."}
             </div>
           </div>
           <div className="card space-y-2">
-            <div className="font-semibold">Automation</div>
+            <div className="font-semibold">Automation Matrix</div>
             <div className="row-item">
               <div className="row-details">
-                <div className="row-title">Auto Pulse Scan</div>
-                <div className="row-meta">Run when cooldown ready and signal above threshold.</div>
+                <div className="row-title">Auto Pulse Sweep</div>
+                <div className="row-meta">Runs when cooldown clears and signal exceeds threshold.</div>
               </div>
               <div className="row gap-2">
                 <input
@@ -1661,8 +1760,8 @@ function HubView({ state, buildHub, buyHubUpgrade, crewBonusText, ascend, format
             </div>
             <div className="row-item">
               <div className="row-details">
-                <div className="row-title">Auto Research Pulse</div>
-                <div className="row-meta">Runs when lab ready and resources exceed thresholds.</div>
+                <div className="row-title">Auto Research Cycle</div>
+                <div className="row-meta">Runs when the lab is ready and resources exceed thresholds.</div>
               </div>
               <div className="row gap-2">
                 <input
@@ -1687,8 +1786,8 @@ function HubView({ state, buildHub, buyHubUpgrade, crewBonusText, ascend, format
             </div>
             <div className="row-item">
               <div className="row-details">
-                <div className="row-title">Safety Reserves</div>
-                <div className="row-meta">Automation keeps these minimums in storage.</div>
+                <div className="row-title">Reserve Locks</div>
+                <div className="row-meta">Automation Matrix keeps these minimums in storage.</div>
               </div>
               <div className="row gap-2">
                 <input
@@ -1707,11 +1806,11 @@ function HubView({ state, buildHub, buyHubUpgrade, crewBonusText, ascend, format
                 />
               </div>
             </div>
-            <div className="text-xs text-muted">Thresholds are signal | metal for lab, signal for pulse.</div>
+            <div className="text-xs text-muted">Thresholds: lab uses signal + metal; pulse uses signal.</div>
           </div>
 
           <div className="card space-y-2">
-            <div className="font-semibold">Hub Status</div>
+            <div className="font-semibold">Nexus Status</div>
             <div className="grid grid-cols-2 gap-2">
               <div className="stat-box">
                 <span className="text-muted text-xs">Power</span>
@@ -1752,12 +1851,12 @@ function HubView({ state, buildHub, buyHubUpgrade, crewBonusText, ascend, format
             <div className="text-xs text-muted">Keep power non-negative and food above upkeep ({(state.workers.total * 0.2).toFixed(1)}/tick).</div>
             <div className="text-xs text-muted">{bottleneckReport(state, state.rates).join(" ")}</div>
             <div className="text-xs text-muted">
-              Prestige: {(state.milestonesUnlocked || []).includes("M4_PRESTIGE_UNLOCK") ? "Ready" : "Locked"} (Depth 2, 2 integrations, saturation 25%).
+              Prestige Protocol: {(state.milestonesUnlocked || []).includes("M4_PRESTIGE_UNLOCK") ? "Ready" : "Locked"} (Depth 2, 2 integrations, saturation 25%).
             </div>
           </div>
 
           <div className="card space-y-2">
-            <div className="font-semibold">Ops Feed</div>
+            <div className="font-semibold">Ops Log</div>
             <div className="list max-h-[180px] overflow-y-auto pr-1">
               {(state.hubOpsLog || []).slice().reverse().map((e, i) => (
                 <div key={i} className="row-item">
@@ -1767,14 +1866,14 @@ function HubView({ state, buildHub, buyHubUpgrade, crewBonusText, ascend, format
                   </div>
                 </div>
               ))}
-              {!state.hubOpsLog?.length && <div className="text-muted text-sm">No automated actions yet.</div>}
+              {!state.hubOpsLog?.length && <div className="text-muted text-sm">No automated routines yet.</div>}
             </div>
           </div>
         </div>
 
         <div className="card space-y-3">
           <div className="row row-between">
-            <div className="font-semibold">Hub Workspace</div>
+            <div className="font-semibold">Nexus Workspace</div>
             <div className="flex flex-wrap gap-2">
               {['build', 'upgrades', 'briefing'].map((key) => (
                 <button key={key} className={`tab ${pane === key ? 'active' : ''}`} onClick={() => setPane(key)}>
@@ -2321,7 +2420,7 @@ const MILESTONES = [
   { id: "M3_INTEGRATION_UNLOCK", title: "Integration Projects", codexEntryId: "integration_projects", condition: (state) => (state.systems || []).some((s) => s.integratedAt) },
   { id: "M4_GALAXY_CHARTED", title: "Galaxy Charted", codexEntryId: "galaxy_ops", condition: (state) => galaxyDepth(state) >= 2 },
   { id: "M5_DOCTRINE_SELECTED", title: "Doctrine Selected", codexEntryId: "doctrine_ops", condition: (state) => !!state.doctrine },
-  { id: "M4_PRESTIGE_UNLOCK", title: "Prestige Ready", codexEntryId: "prestige_recalibration", condition: (state) => galaxyDepth(state) >= 2 && (state.systems || []).filter((s) => s.integratedAt).length >= 2 && signalSaturation(state).penalty >= 0.25 },
+  { id: "M4_PRESTIGE_UNLOCK", title: "Prestige Protocol Ready", codexEntryId: "prestige_recalibration", condition: (state) => galaxyDepth(state) >= 2 && (state.systems || []).filter((s) => s.integratedAt).length >= 2 && signalSaturation(state).penalty >= 0.25 },
 ];
 function bottleneckReport(stateObj, rates) {
   const alerts = [];

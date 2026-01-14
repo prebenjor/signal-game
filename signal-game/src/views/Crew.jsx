@@ -77,22 +77,22 @@ export default function CrewView({ state, hire, rollRecruits, changeCrew, format
   const rosterDisplay = showAll ? filteredRoster : filteredRoster.slice(0, 8);
   return (
     <section className="panel space-y-3">
-      <div className="text-lg font-semibold">Crew & Recruits</div>
-      <div className="text-sm text-muted">Roles give +10% per assignment (miners/botanists) or +5% (engineers) to linked buildings. Morale scales all output; keep food/habitat/power stable. Fatigue reduces output, recovery focus helps. Focus choices tailor each role's effect.</div>
+      <div className="text-lg font-semibold">Crew Command</div>
+      <div className="text-sm text-muted">Roles add +10% per assignment (miners/botanists) or +5% (engineers) to linked systems. Cohesion scales all output; keep food/habitat/power stable. Fatigue dulls output, recovery focus restores. Focus choices tune each role's effect.</div>
       <div className="grid lg:grid-cols-3 gap-3">
         <div className="card">
-          <div className="row-title mb-1">Crew Status</div>
+          <div className="row-title mb-1">Crew Readout</div>
           <div className="list">
             <div className="row-item">
               <div className="row-details">
-                <div className="row-title">Roster</div>
+                <div className="row-title">Headcount</div>
                 <div className="row-meta">{state.workers.total} total | {assignedCount} assigned | {unassigned} idle</div>
               </div>
             </div>
             <div className="row-item">
               <div className="row-details">
-                <div className="row-title">Morale</div>
-                <div className="row-meta">Satisfaction {moralePct}% (scales all output)</div>
+                <div className="row-title">Cohesion</div>
+                <div className="row-meta">Stability {moralePct}% (scales all output)</div>
               </div>
             </div>
             <div className="row-item">
@@ -103,14 +103,14 @@ export default function CrewView({ state, hire, rollRecruits, changeCrew, format
             </div>
             <div className="row-item">
               <div className="row-details">
-                <div className="row-title">Upkeep</div>
+                <div className="row-title">Life Support</div>
                 <div className="row-meta">Food upkeep {foodUpkeep.toFixed(1)}/tick</div>
               </div>
             </div>
           </div>
         </div>
         <div className="card">
-          <div className="row-title mb-1">Role Impact</div>
+          <div className="row-title mb-1">Role Uplinks</div>
           <div className="list">
             <div className="row-item">
               <div className="row-details">
@@ -136,7 +136,7 @@ export default function CrewView({ state, hire, rollRecruits, changeCrew, format
           </div>
         </div>
         <div className="card">
-          <div className="row-title mb-1">Crew Notes</div>
+          <div className="row-title mb-1">Crew Advisory</div>
           <div className="text-sm text-muted">
             Idle crew provide rest benefits to morale. Assign specialists when scaling production or dealing with hazards.
           </div>
@@ -147,7 +147,7 @@ export default function CrewView({ state, hire, rollRecruits, changeCrew, format
       </div>
       <div className="grid md:grid-cols-2 gap-3">
         <div className="card">
-          <div className="row-title mb-1">Assignments</div>
+          <div className="row-title mb-1">Role Allocation</div>
           <div className="list">
             {["miner", "botanist", "engineer"].map((r) => (
               <div key={r} className="row-item">
@@ -168,10 +168,10 @@ export default function CrewView({ state, hire, rollRecruits, changeCrew, format
         </div>
         <div className="card">
           <div className="row row-between mb-1">
-            <div className="row-title">Recruitment Hub</div>
-            <button className="btn" onClick={rollRecruits}>Refresh</button>
+            <div className="row-title">Recruitment Bay</div>
+            <button className="btn" onClick={rollRecruits}>Ping</button>
           </div>
-          <div className="text-xs text-muted mb-2">Recruit tier cap: {tierCap}. Unlock higher tiers by reaching new milestones.</div>
+          <div className="text-xs text-muted mb-2">Recruit tier cap: {tierCap}. Unlock higher tiers by pushing deeper milestones.</div>
           <div className="text-xs text-muted mb-2">Refresh cadence: {refreshMs / 1000}s | Next refresh: {refreshLabel}</div>
           <div className="list">
             {state.recruits.map((c) => (
@@ -183,35 +183,35 @@ export default function CrewView({ state, hire, rollRecruits, changeCrew, format
                   <div className="row-meta">{c.trait}</div>
                   <div className="row-meta">Cost {costText(c.cost, format)}</div>
                 </div>
-                <button className="btn" onClick={() => hire(c.id)}>Hire</button>
+                <button className="btn" onClick={() => hire(c.id)}>Enlist</button>
               </div>
             ))}
-            {!state.recruits.length && <div className="text-muted text-sm">No candidates. Refresh to roll new crew.</div>}
+            {!state.recruits.length && <div className="text-muted text-sm">No candidates in the queue. Ping to roll new crew.</div>}
           </div>
         </div>
       </div>
       <div className="grid md:grid-cols-2 gap-3">
         <div className="card space-y-2">
-          <div className="row-title">Crew Actions</div>
+          <div className="row-title">Crew Directives</div>
           <div className="row row-between">
             <div className="text-sm text-muted">Balance roles quickly to match roster size.</div>
-            <button className="btn" disabled={!unlockQuickAssign} onClick={quickAssign}>Quick Balance</button>
+            <button className="btn" disabled={!unlockQuickAssign} onClick={quickAssign}>Auto-balance</button>
           </div>
           {!unlockQuickAssign && <div className="text-xs text-muted">Unlock at Training Tier 1 (3 total program levels).</div>}
           <div className="row row-between">
-            <div className="text-sm text-muted">Shift entire crew focus for short-term pushes.</div>
+            <div className="text-sm text-muted">Shift the whole crew focus for short-term pushes.</div>
             <div className="row gap-2">
-              <button className="btn" disabled={!unlockMassFocus} onClick={() => setAllFocus("production")}>All Production</button>
-              <button className="btn" disabled={!unlockMassFocus} onClick={() => setAllFocus("recovery")}>All Recovery</button>
-              <button className="btn" disabled={!unlockMassFocus} onClick={() => setAllFocus("research")}>All Research</button>
+              <button className="btn" disabled={!unlockMassFocus} onClick={() => setAllFocus("production")}>Production Push</button>
+              <button className="btn" disabled={!unlockMassFocus} onClick={() => setAllFocus("recovery")}>Recovery Cycle</button>
+              <button className="btn" disabled={!unlockMassFocus} onClick={() => setAllFocus("research")}>Research Push</button>
             </div>
           </div>
           {!unlockMassFocus && <div className="text-xs text-muted">Unlock at Training Tier 2 (6 total program levels).</div>}
         </div>
         <div className="card space-y-2">
           <div className="row row-between">
-            <div className="row-title">Specialist Contracts</div>
-            <button className="btn" onClick={rollContracts}>Refresh</button>
+            <div className="row-title">Contracted Specialists</div>
+            <button className="btn" onClick={rollContracts}>Ping</button>
           </div>
           <div className="text-xs text-muted">Next refresh in {contractRefresh ? formatDuration(contractRefresh) : "now"}.</div>
           <div className="list">
@@ -226,18 +226,18 @@ export default function CrewView({ state, hire, rollRecruits, changeCrew, format
                     <div className="row-meta text-xs text-muted">{c.perk}</div>
                     <div className="row-meta text-xs text-muted">Duration {formatDuration(c.durationMs)} | Cost {costText(c.cost, format)}</div>
                   </div>
-                  <button className="btn" disabled={!canHire} onClick={() => acceptContract(c.offerId)}>Contract</button>
+                  <button className="btn" disabled={!canHire} onClick={() => acceptContract(c.offerId)}>Sign</button>
                 </div>
               );
             })}
-            {!(contracts || []).length && <div className="text-muted text-sm">No contracts right now. Check back later.</div>}
+            {!(contracts || []).length && <div className="text-muted text-sm">No contracts in the queue. Check back later.</div>}
           </div>
           {freeHabitat <= 0 && <div className="text-xs text-muted">Need spare habitat to accept contracts.</div>}
         </div>
       </div>
       <div className="card">
         <div className="row row-between mb-1">
-          <div className="row-title">Crew Roster</div>
+          <div className="row-title">Crew Ledger</div>
           <div className="row gap-2">
             <select className="select bg-slate-800 text-white" value={rosterFilter} onChange={(e) => setRosterFilter(e.target.value)}>
               <option value="all">All</option>
@@ -283,20 +283,20 @@ export default function CrewView({ state, hire, rollRecruits, changeCrew, format
         )}
       </div>
       <div className="card space-y-2">
-        <div className="row-title">Training Milestones</div>
+        <div className="row-title">Training Protocols</div>
         <div className="text-sm text-muted">Program levels: {programLevels} | Tier {crewTier}</div>
         <div className="list">
           <div className="row-item">
             <div className="row-details">
               <div className="row-title">Tier 1</div>
-              <div className="row-meta">Unlocks Quick Balance assignments.</div>
+              <div className="row-meta">Unlocks auto-balance assignments.</div>
             </div>
             {crewTier >= 1 ? <span className="tag">Unlocked</span> : <span className="tag">Locked</span>}
           </div>
           <div className="row-item">
             <div className="row-details">
               <div className="row-title">Tier 2</div>
-              <div className="row-meta">Unlocks Focus All actions.</div>
+              <div className="row-meta">Unlocks crew-wide focus actions.</div>
             </div>
             {crewTier >= 2 ? <span className="tag">Unlocked</span> : <span className="tag">Locked</span>}
           </div>

@@ -64,11 +64,12 @@ export default function BasesView({
     ? groupedBuildings
     : groupedBuildings.filter((g) => g.name === buildGroup);
   const focusHelp = {
-    balanced: "Even output across systems.",
+    balanced: "Even output across the grid.",
     production: "Boosts metal, organics, fuel, signal, rare.",
     sustain: "Boosts food, habitat, and power.",
     morale: "Boosts morale generation.",
   };
+  const paneLabels = { build: "Fabrication", events: "Incidents", ops: "Field Ops" };
   const formatMod = (value) => {
     const delta = Math.round((value - 1) * 100);
     if (delta === 0) return "0%";
@@ -79,15 +80,15 @@ export default function BasesView({
     <section className="panel space-y-3">
       <div>
         <div className="text-lg font-semibold">Bases</div>
-        <div className="text-muted text-sm">Manage structures, events, and base-specific ops. Mission targeting lives in Missions.</div>
+        <div className="text-muted text-sm">Coordinate structures, incidents, and site ops. Mission targeting lives in Missions.</div>
       </div>
       <div className="grid lg:grid-cols-[340px,1fr] gap-3">
         <div className="space-y-3">
           <div className="card space-y-3">
             <div className="flex items-center justify-between">
               <div>
-                <div className="font-semibold">Site Control</div>
-                <div className="text-xs text-muted">Base Overview</div>
+                <div className="font-semibold">Site Command</div>
+                <div className="text-xs text-muted">Outpost Overview</div>
               </div>
               <span className="tag">{labelify(body.type)} Site</span>
             </div>
@@ -110,27 +111,27 @@ export default function BasesView({
               <span className="tag">Travel {formatDuration(body.travel * 1000)}</span>
               <span className="tag">Hazard {(body.hazard * 100).toFixed(0)}%</span>
               <span className="tag">Ops {ops.length}</span>
-              <span className="tag">Events {(base.events || []).length}/{4}</span>
+              <span className="tag">Incidents {(base.events || []).length}/{4}</span>
             </div>
-            <div className="text-sm text-muted">Switching focus here does not launch missions; use Missions tab to send expeditions.</div>
+            <div className="text-sm text-muted">Focus shifts here do not launch sorties; use Missions to dispatch expeditions.</div>
           </div>
 
           <div className="card space-y-2">
-            <div className="font-semibold">Maintenance</div>
+            <div className="font-semibold">Stability Grid</div>
             <div className="row-item">
               <div className="row-details">
-                <div className="row-title">Capacity</div>
+                <div className="row-title">Structure Capacity</div>
                 <div className="row-meta">
                   {maintenanceStats.used}/{maintenanceStats.cap} structures {maintenanceStats.over ? "(Over cap)" : ""}
                 </div>
               </div>
               <div className="tag">{maintenanceStats.over ? "Reduced output" : "Stable"}</div>
             </div>
-            <div className="text-xs text-muted">Build Maintenance Bays to raise cap and avoid event acceleration.</div>
+            <div className="text-xs text-muted">Build Maintenance Bays to raise cap and slow incident spikes.</div>
           </div>
 
           <div className="card space-y-2">
-            <div className="font-semibold">Base Summary</div>
+            <div className="font-semibold">Outpost Summary</div>
             <div className="grid grid-cols-2 gap-2">
               <div className="stat-box">
                 <span className="text-muted text-xs">Cargo Bonus</span>
@@ -152,7 +153,7 @@ export default function BasesView({
           </div>
 
           <div className="card space-y-2">
-            <div className="font-semibold">Outpost Focus</div>
+            <div className="font-semibold">Focus Protocol</div>
             <div className="flex flex-wrap gap-2">
               {["balanced", "production", "sustain", "morale"].map((f) => (
                 <button key={f} className={`btn ${base.focus === f ? "btn-primary" : ""}`} onClick={() => setBaseFocus(f)}>
@@ -164,7 +165,7 @@ export default function BasesView({
           </div>
 
           <div className="card space-y-2">
-            <div className="font-semibold">Traits</div>
+            <div className="font-semibold">Site Traits</div>
             <div className="list">
               {baseTraits.map((t) => (
                 <div key={t.id} className="row-item">
@@ -181,11 +182,11 @@ export default function BasesView({
 
         <div className="card space-y-3">
           <div className="row row-between">
-            <div className="font-semibold">Base Workspace</div>
+            <div className="font-semibold">Outpost Console</div>
             <div className="flex flex-wrap gap-2">
               {["build", "events", "ops"].map((key) => (
                 <button key={key} className={`tab ${pane === key ? "active" : ""}`} onClick={() => setPane(key)}>
-                  {key[0].toUpperCase() + key.slice(1)}
+                  {paneLabels[key] || key[0].toUpperCase() + key.slice(1)}
                 </button>
               ))}
             </div>
@@ -227,7 +228,7 @@ export default function BasesView({
                             {groupText && <div className="row-meta text-xs text-muted">{groupText}</div>}
                           </div>
                           <button className="btn" disabled={!reqMet || !canAffordUI(state.resources, cost)} onClick={() => buildBase(b.id)}>
-                            {reqMet ? `Build (${costText(cost, format)})` : "Locked"}
+                            {reqMet ? `Fabricate (${costText(cost, format)})` : "Locked"}
                           </button>
                         </div>
                       );
@@ -240,7 +241,7 @@ export default function BasesView({
 
           {pane === "events" && (
             <div className="space-y-3">
-              <div className="font-semibold">Local Events</div>
+              <div className="font-semibold">Local Incidents</div>
               <div className="list max-h-[520px] overflow-y-auto pr-1">
                 {(base.events || []).map((e, i) => (
                   <div key={e.id || i} className="row-item">
@@ -252,15 +253,15 @@ export default function BasesView({
                     {e.id ? <button className="btn" onClick={() => resolveEvent(body.id, e.id)}>Resolve</button> : null}
                   </div>
                 ))}
-                {!base.events?.length && <div className="text-muted text-sm">No active events.</div>}
+                {!base.events?.length && <div className="text-muted text-sm">No active incidents.</div>}
               </div>
-              <button className="btn" onClick={refreshEvents}>Refresh Events</button>
+              <button className="btn" onClick={refreshEvents}>Rescan Sector</button>
             </div>
           )}
 
           {pane === "ops" && (
             <div className="space-y-3">
-              <div className="font-semibold">Outpost Ops</div>
+              <div className="font-semibold">Field Ops</div>
               <div className="list max-h-[520px] overflow-y-auto pr-1">
                 {ops.map((op) => (
                   <div key={op.id} className="row-item">
@@ -272,7 +273,7 @@ export default function BasesView({
                       </div>
                     </div>
                     <button className="btn" disabled={opsCd > 0 || !canAffordUI(state.resources, op.cost)} onClick={() => runBaseOp(body.id, op.id)}>
-                      {opsCd > 0 ? `Ready in ${formatDuration(opsCd)}` : "Run"}
+                      {opsCd > 0 ? `Ready in ${formatDuration(opsCd)}` : "Execute"}
                     </button>
                   </div>
                 ))}

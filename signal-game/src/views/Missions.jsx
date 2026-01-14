@@ -6,12 +6,12 @@ export default function MissionsView({ state, startMission, setAutoLaunch, setSe
     <section className="panel space-y-3">
       <div>
         <div className="text-lg font-semibold">Missions</div>
-        <div className="text-muted text-sm">Biome-specific hazards and loot. Boost fuel to cut travel time. Debris Field is your early fuel/research drip.</div>
-        <div className="text-xs text-muted mt-1">Range Tier {hubRange} unlocks higher targets. Increase range via Hub Scan Array, Tech (Deep Scan/Rift Mapping), and Relay Anchors.</div>
+        <div className="text-muted text-sm">Biome-specific hazards and salvage. Burn fuel to cut transit time. Debris Field is your early fuel/research trickle.</div>
+        <div className="text-xs text-muted mt-1">Range Tier {hubRange} opens higher targets. Extend range via Hub Scan Array, Tech (Deep Scan/Rift Mapping), and Relay Anchors.</div>
       </div>
       <div className="grid md:grid-cols-2 gap-3">
         <div className="card">
-          <div className="font-semibold mb-1">Targets</div>
+          <div className="font-semibold mb-1">Target Locks</div>
           <div className="list">
             {bodies.map((b) => {
               const locked = !isUnlockedUI(state, b);
@@ -22,13 +22,13 @@ export default function MissionsView({ state, startMission, setAutoLaunch, setSe
                 <div key={b.id} className="row-item">
                   <div className="row-details">
                     <div className="row-title">
-                      {b.name} {!locked && state.selectedBody === b.id && <span className="tag">Selected</span>} {rangeLocked && <span className="tag">Out of Range</span>} {!rangeLocked && locked && <span className="tag">Locked</span>}
+                      {b.name} {!locked && state.selectedBody === b.id && <span className="tag">Selected</span>} {rangeLocked && <span className="tag">Beyond Range</span>} {!rangeLocked && locked && <span className="tag">Locked</span>}
                     </div>
                     <div className="row-meta">{b.type.toUpperCase()} - Travel {formatDuration(b.travel * 1000)} - Hazard {(b.hazard * 100).toFixed(0)}%</div>
                     <div className="row-meta text-xs text-muted">Tier {b.tier} | Efficiency {efficiencyPct}%</div>
                     {rangeLocked && <div className="row-meta text-xs text-muted">Requires Range Tier {b.tier} (current {hubRange}).</div>}
                   </div>
-                  <button className="btn" disabled={locked} onClick={() => setSelected(b.id)}>Target</button>
+                  <button className="btn" disabled={locked} onClick={() => setSelected(b.id)}>Lock</button>
                 </div>
               );
             })}
@@ -36,7 +36,7 @@ export default function MissionsView({ state, startMission, setAutoLaunch, setSe
         </div>
 
         <div className="card">
-          <div className="font-semibold mb-1">Launch</div>
+          <div className="font-semibold mb-1">Deploy</div>
           <MissionLaunch
             state={state}
             startMission={startMission}
@@ -82,7 +82,7 @@ function MissionLaunch({ state, startMission, setAutoLaunch, format, missionMode
       <div className="text-sm text-muted">Slots {active.length}/{slots}</div>
       <div className="row-item">
         <div className="row-details">
-          <div className="row-title">Mission Stance</div>
+          <div className="row-title">Operational Stance</div>
           <div className="row-meta">{mode?.desc}</div>
         </div>
         <select className="select bg-slate-800 text-white" value={modeId} onChange={(e) => setModeId(e.target.value)}>
@@ -95,13 +95,13 @@ function MissionLaunch({ state, startMission, setAutoLaunch, format, missionMode
       </div>
       <div className="row-item">
         <div className="row-details">
-          <div className="row-title">Cargo Forecast</div>
+          <div className="row-title">Cargo Projection</div>
           <div className="row-meta">{Object.entries(forecast).map(([k, v]) => `${format(v)} ${k}`).join(" - ")}</div>
-          <div className="row-meta">Hazard {Math.round(hazard * 100)}% | Fail risk ~{failChance}% | Travel {formatDuration(travelMs)} | Mode {mode?.name}</div>
+          <div className="row-meta">Hazard {Math.round(hazard * 100)}% | Failure risk ~{failChance}% | Travel {formatDuration(travelMs)} | Mode {mode?.name}</div>
           <div className="row-meta text-xs text-muted">Efficiency {efficiencyPct}% | Variance +/-10%</div>
           {command.over > 0 && <div className="row-meta text-xs text-muted">Command over-capacity: -{Math.round(command.over * 7)}% cargo, +{Math.round(command.over * 8)}% travel time.</div>}
         </div>
-        <button className="btn btn-primary" onClick={() => startMission(body.id, fuelBoost, modeId, specialist)}>Launch</button>
+        <button className="btn btn-primary" onClick={() => startMission(body.id, fuelBoost, modeId, specialist)}>Deploy</button>
       </div>
       <div className="row-item">
         <div className="row-details">
@@ -117,15 +117,15 @@ function MissionLaunch({ state, startMission, setAutoLaunch, format, missionMode
       </div>
       <div className="row-item">
         <div className="row-details">
-          <div className="row-title">Auto-launch</div>
-          <div className="row-meta">Launch this target automatically when slots are free.</div>
+          <div className="row-title">Auto-deploy</div>
+          <div className="row-meta">Deploy this target automatically when slots are free.</div>
         </div>
         <div className="flex gap-2 items-center">
           <input type="checkbox" checked={auto.enabled && auto.bodyId === body.id} onChange={(e) => {
             if (e.target.checked) setAutoLaunch({ enabled: true, bodyId: body.id, mode: modeId, specialist });
             else setAutoLaunch({ enabled: false, bodyId: null, mode: "balanced", specialist: "none" });
           }} />
-          <span className="text-sm text-muted">{auto.enabled && auto.bodyId === body.id ? "Enabled" : "Disabled"}</span>
+          <span className="text-sm text-muted">{auto.enabled && auto.bodyId === body.id ? "Armed" : "Idle"}</span>
         </div>
       </div>
       <div className="list">
@@ -135,7 +135,7 @@ function MissionLaunch({ state, startMission, setAutoLaunch, format, missionMode
           return (
             <div key={i} className="row-item">
               <div className="row-details">
-                <div className="row-title">En route to {b?.name || "target"} <span className="tag">{missionModeById(m.mode)?.name || "Balanced"}</span></div>
+                <div className="row-title">In transit to {b?.name || "target"} <span className="tag">{missionModeById(m.mode)?.name || "Balanced"}</span></div>
                 <div className="row-meta">{formatDuration(remaining)} remaining</div>
                 {m.objective && <div className="row-meta text-xs text-muted">Side objective: {m.objective.desc}</div>}
                 {m.specialist && m.specialist !== "none" && <div className="row-meta text-xs text-muted">Specialist: {m.specialist}</div>}
@@ -143,7 +143,7 @@ function MissionLaunch({ state, startMission, setAutoLaunch, format, missionMode
             </div>
           );
         })}
-        {!active.length && <div className="text-muted text-sm">No active missions.</div>}
+        {!active.length && <div className="text-muted text-sm">No active sorties.</div>}
       </div>
     </div>
   );
