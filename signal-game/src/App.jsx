@@ -1125,13 +1125,10 @@ function biomeBuildingById(id) { return Object.values(BIOME_BUILDINGS).flat().fi
               <div className="inline-flex px-3 py-1 rounded-full bg-white/10 border border-white/10 text-xs tracking-[0.1em] font-semibold">Signal Frontier</div>
               <div className="text-muted text-sm mt-1">Scan, settle, and build outposts across the void.</div>
             </div>
-            <div className="flex flex-wrap gap-2">
-              <button className="btn btn-primary w-full sm:w-auto" onClick={collectSignal}>Collect Signal (Space)</button>
-              <button className="btn w-full sm:w-auto" disabled={state.resources.signal < Math.min(180, 60 + (state.pulseCount || 0) * 15) || state.pulseReadyAt > Date.now()} onClick={pulseScan}>Pulse Scan</button>
-            </div>
           </div>
           <ResourceBar resources={state.resources} rates={state.rates} format={format} />
         </header>
+        <ActionBar state={state} onCollect={collectSignal} onPulse={pulseScan} onLab={runLabPulse} format={format} formatDuration={formatDuration} />
 
         <div className="flex flex-col md:flex-row gap-4">
           <nav className="md:w-48 w-full flex md:flex-col flex-wrap gap-2 overflow-x-auto pb-1">
@@ -1160,10 +1157,6 @@ function biomeBuildingById(id) { return Object.values(BIOME_BUILDINGS).flat().fi
             {state.tab === 'hub' && (
               <HubView
                 state={state}
-                selectedBody={selectedBody()}
-                onCollect={collectSignal}
-                onPulse={pulseScan}
-                runLabPulse={runLabPulse}
                 buildHub={buildHub}
                 buyHubUpgrade={buyHubUpgrade}
                 crewBonusText={crewBonusText}
@@ -1286,6 +1279,30 @@ function ResourceBar({ resources, rates, format }) {
   );
 }
 
+function ActionBar({ state, onCollect, onPulse, onLab, format, formatDuration }) {
+  const pulseCost = Math.min(180, 60 + (state.pulseCount || 0) * 15);
+  const pulseCd = Math.max(0, (state.pulseReadyAt || 0) - Date.now());
+  const labCd = Math.max(0, (state.labReadyAt || 0) - Date.now());
+  return (
+    <div className="panel sticky top-3 z-20 flex flex-wrap items-center gap-2 justify-between py-2">
+      <div className="flex flex-wrap gap-2 items-center">
+        <button className="btn btn-primary" onClick={onCollect} title="Collect Signal (Space)">Collect</button>
+        <button className="btn" disabled={state.resources.signal < pulseCost || pulseCd > 0} onClick={onPulse} title="Pulse Scan">
+          Scan {pulseCd > 0 ? `(${formatDuration(pulseCd)})` : ""}
+        </button>
+        <button className="btn" onClick={onLab} disabled={labCd > 0} title="Pulse Lab">
+          Lab {labCd > 0 ? `(${formatDuration(labCd)})` : ""}
+        </button>
+      </div>
+      <div className="text-xs text-muted flex flex-wrap gap-3">
+        <span>Pulse cost {format(pulseCost)} signal</span>
+        <span>Lab cost 60 signal, 20 metal</span>
+        <span>Space: collect</span>
+      </div>
+    </div>
+  );
+}
+
 function ProfileView({ state, ascend, exportProfile, importProfile, compact, setCompact, manualSave, lastSaved, chooseDoctrine }) {
   const doctrine = doctrineById(state.doctrine);
   const canPrestige = (state.milestonesUnlocked || []).includes("M4_PRESTIGE_UNLOCK");
@@ -1347,10 +1364,7 @@ function ProfileView({ state, ascend, exportProfile, importProfile, compact, set
   );
 }
 
-function HubView({ state, onCollect, onPulse, runLabPulse, buildHub, buyHubUpgrade, crewBonusText, ascend, format, setHubOps }) {
-  const labCd = Math.max(0, (state.labReadyAt || 0) - Date.now());
-  const pulseCost = Math.min(180, 60 + (state.pulseCount || 0) * 15);
-  const pulseCd = Math.max(0, (state.pulseReadyAt || 0) - Date.now());
+function HubView({ state, buildHub, buyHubUpgrade, crewBonusText, ascend, format, setHubOps }) {
   const ops = state.hubOps || { autoPulse: false, autoPulseMinSignal: 120, autoLab: false, autoLabMinSignal: 80, autoLabMinMetal: 20, reserveSignal: 50, reserveMetal: 0 };
   const [pane, setPane] = useState("build");
   const command = commandUsage(state);
@@ -1377,20 +1391,6 @@ function HubView({ state, onCollect, onPulse, runLabPulse, buildHub, buyHubUpgra
 
       <div className="grid lg:grid-cols-[340px,1fr] gap-3">
         <div className="space-y-3">
-          <div className="card space-y-2">
-            <div className="font-semibold">Command Console</div>
-            <div className="row">
-              <button className="btn btn-primary" onClick={onCollect}>Collect Signal (Space)</button>
-              <button className="btn" disabled={state.resources.signal < pulseCost || pulseCd > 0} onClick={onPulse}>
-                Pulse Scan {pulseCd > 0 ? `(${formatDuration(pulseCd)})` : ""}
-              </button>
-              <button className="btn" onClick={runLabPulse} disabled={labCd > 0}>
-                Pulse Lab {labCd > 0 ? `(${formatDuration(labCd)})` : ""}
-              </button>
-            </div>
-            <div className="text-xs text-muted">Pulse cost: {format(pulseCost)} signal | Lab cost: 60 signal, 20 metal</div>
-          </div>
-
           <div className="card space-y-2">
             <div className="font-semibold">Automation</div>
             <div className="row-item">
