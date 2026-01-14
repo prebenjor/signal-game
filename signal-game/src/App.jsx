@@ -64,7 +64,7 @@ const BODIES = [
 const HUB_UPGRADES = [
   { id: "launch_bay", name: "Launch Bay", desc: "+1 concurrent mission slot", cost: { metal: 140, fuel: 40 } },
   { id: "fuel_farm", name: "Fuel Farm", desc: "+2 fuel/tick", cost: { metal: 180, organics: 60 } },
-  { id: "scan_array", name: "Scan Array", desc: "+3 signal/tick", cost: { metal: 220, fuel: 20 } },
+  { id: "scan_array", name: "Scan Array", desc: "+3 signal/tick, +1 range tier", cost: { metal: 220, fuel: 20 } },
   { id: "drone_bay", name: "Drone Bay", desc: "+10% mission cargo", cost: { metal: 260, rare: 10 } },
 ];
 
@@ -145,9 +145,9 @@ const TECH = [
   { id: "fuel_synth", tier: 1, name: "Fuel Synthesis", desc: "+1 fuel/tick", cost: { signal: 320, research: 12 }, unlock: 300, requires: [] },
   { id: "hazard_gear", tier: 2, name: "Hazard Gear", desc: "-25% mission hazard", cost: { signal: 1200, research: 60 }, unlock: 900, requires: ["fuel_synth"] },
   { id: "drone_log", tier: 2, name: "Logistics Drones", desc: "+20% mission cargo", cost: { signal: 1600, research: 90 }, unlock: 1400, requires: ["fuel_synth"] },
-  { id: "deep_scan", tier: 2, name: "Deep Scan Arrays", desc: "+1 research/tick and reveals deep targets", cost: { signal: 2000, research: 160 }, unlock: 1600, requires: ["fuel_synth"] },
+  { id: "deep_scan", tier: 2, name: "Deep Scan Arrays", desc: "+1 research/tick, +1 range tier, reveals deep targets", cost: { signal: 2000, research: 160 }, unlock: 1600, requires: ["fuel_synth"] },
   { id: "shielding", tier: 3, name: "Thermal Shielding", desc: "-40% hazard on hot zones; unlocks fallen relay", cost: { signal: 2800, research: 260 }, unlock: 2400, requires: ["deep_scan"] },
-  { id: "rift_mapping", tier: 4, name: "Rift Mapping", desc: "Unlocks anomalous missions and +20% rare cargo", cost: { signal: 4800, research: 360, rare: 12 }, unlock: 4200, requires: ["shielding","drone_log"] },
+  { id: "rift_mapping", tier: 4, name: "Rift Mapping", desc: "Unlocks anomalous missions, +20% rare cargo, +1 range tier", cost: { signal: 4800, research: 360, rare: 12 }, unlock: 4200, requires: ["shielding","drone_log"] },
   { id: "auto_pilots", tier: 3, name: "Autonomous Pilots", desc: "+1 mission slot, -10% travel time", cost: { signal: 5600, research: 520, fuel: 80 }, unlock: 5200, requires: ["drone_log"] },
   { id: "bio_domes", tier: 3, name: "Bio-Domes", desc: "+2 food/tick and +2 habitat passive", cost: { signal: 6000, research: 540, organics: 120 }, unlock: 5200, requires: ["fuel_synth"] },
 ];
@@ -1708,6 +1708,16 @@ function HubView({ state, buildHub, buyHubUpgrade, crewBonusText, ascend, format
 
       <div className="grid lg:grid-cols-[340px,1fr] gap-3">
         <div className="space-y-3">
+          <div className="card space-y-2">
+            <div className="font-semibold">Range & Expansion</div>
+            <div className="row-item">
+              <div className="row-details">
+                <div className="row-title">Range Tier {hubRange(state)}</div>
+                <div className="row-meta">Unlocks higher mission targets.</div>
+              </div>
+            </div>
+            <div className="text-xs text-muted">Increase range via Scan Array (Hub), Deep Scan Arrays + Rift Mapping (Tech), and Relay Anchor colonies.</div>
+          </div>
           <div className="card space-y-2">
             <div className="font-semibold">Automation</div>
             <div className="row-item">

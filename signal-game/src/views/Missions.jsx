@@ -7,6 +7,7 @@ export default function MissionsView({ state, startMission, setAutoLaunch, setSe
       <div>
         <div className="text-lg font-semibold">Missions</div>
         <div className="text-muted text-sm">Biome-specific hazards and loot. Boost fuel to cut travel time. Debris Field is your early fuel/research drip.</div>
+        <div className="text-xs text-muted mt-1">Range Tier {hubRange} unlocks higher targets. Increase range via Hub Scan Array, Tech (Deep Scan/Rift Mapping), and Relay Anchors.</div>
       </div>
       <div className="grid md:grid-cols-2 gap-3">
         <div className="card">
