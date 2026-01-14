@@ -174,17 +174,6 @@ export const CODEX_ENTRIES = [
   { id: "prestige_recalibration", title: "Signal Recalibration", body: "Prestige resets the frontier for legacy perks and faster early cycles." },
 ];
 
-export const MILESTONES = [
-  { id: "M0_FOUNDATIONS", title: "Foundations Online", codexEntryId: "foundations", condition: (state) => true },
-  { id: "M1_LOCAL_OPS", title: "Local Operations", codexEntryId: "local_ops", condition: (state) => (state.milestones?.missionsDone || 0) >= 1 || !!state.milestones?.firstLaunch },
-  { id: "M2_SYSTEMS_DISCOVERED", title: "Systems Unlocked", codexEntryId: "systems_light", condition: (state) => hubRange(state) >= 3 },
-  { id: "M2_FIRST_COLONY", title: "First Colony", codexEntryId: "colonies_anchor", condition: (state) => (state.colonies || []).length >= 1 },
-  { id: "M3_INTEGRATION_UNLOCK", title: "Integration Projects", codexEntryId: "integration_projects", condition: (state) => (state.systems || []).some((s) => s.integratedAt) },
-  { id: "M4_GALAXY_CHARTED", title: "Galaxy Charted", codexEntryId: "galaxy_ops", condition: (state) => galaxyDepth(state) >= 2 },
-  { id: "M5_DOCTRINE_SELECTED", title: "Doctrine Selected", codexEntryId: "doctrine_ops", condition: (state) => !!state.doctrine },
-  { id: "M4_PRESTIGE_UNLOCK", title: "Prestige Ready", codexEntryId: "prestige_recalibration", condition: (state) => galaxyDepth(state) >= 2 && (state.systems || []).filter((s) => s.integratedAt).length >= 2 && signalSaturation(state).penalty >= 0.25 },
-];
-
 export const MISSION_MODES = [
   { id: "balanced", name: "Balanced", desc: "Standard risk and rewards.", hazard: 0, durationMs: 0, reward: {} },
   { id: "survey", name: "Survey", desc: "+60% research, slower travel, lower cargo", hazard: 0.04, durationMs: 8000, reward: { research: 1.6, all: 0.9 } },
@@ -291,6 +280,39 @@ export const DOCTRINES = [
   { id: "automation", name: "Automation Doctrine", desc: "Stronger throughput but higher hazard exposure.", mods: { cargoMult: 1.06, hazardMult: 1.06 } },
   { id: "research", name: "Research Doctrine", desc: "Higher scan efficiency at the cost of slower travel.", mods: { scanMult: 1.12, travelMult: 1.06 } },
 ];
+
+export const FACTION_BUILDINGS = {
+  vanguard: [
+    { id: "signal_spire", name: "Signal Spire", desc: "Amplifies scan fidelity across the network.", goal: { metal: 1400, research: 600 }, unlocks: ["Event: Resonance Surge", "Buff: +5% scan yield"] },
+    { id: "deep_listen_array", name: "Deep Listen Array", desc: "Focuses long-range sweeps into stable corridors.", goal: { metal: 2200, fuel: 800, research: 900 }, unlocks: ["Event: Deep Pulse", "Buff: +1 range tier"] },
+    { id: "catalog_node", name: "Catalog Node", desc: "Archives discoveries for faster mission planning.", goal: { metal: 1800, organics: 500, research: 800 }, unlocks: ["Event: Signal Cache", "Buff: +6% mission cargo"] },
+  ],
+  relay: [
+    { id: "cargo_spine", name: "Cargo Spine", desc: "Standardizes logistics to reduce transit losses.", goal: { metal: 1800, fuel: 900 }, unlocks: ["Event: Convoy Surge", "Buff: -6% travel time"] },
+    { id: "dock_web", name: "Dock Web", desc: "Distributed docking reduces turnaround delays.", goal: { metal: 2400, fuel: 1200, organics: 400 }, unlocks: ["Event: Fleet Overwatch", "Buff: +8% cargo"] },
+    { id: "supply_foundry", name: "Supply Foundry", desc: "Turns salvage into usable parts for operations.", goal: { metal: 2600, fuel: 700, research: 500 }, unlocks: ["Event: Salvage Windfall", "Buff: -8% fuel overhead"] },
+  ],
+  aegis: [
+    { id: "stability_core", name: "Stability Core", desc: "Reinforces hazard shields and morale protocols.", goal: { metal: 1600, organics: 800, research: 600 }, unlocks: ["Event: Shield Harmonization", "Buff: -8% hazard"] },
+    { id: "morale_arc", name: "Morale Arc", desc: "Improves crew recovery across frontier outposts.", goal: { metal: 2000, organics: 900, research: 500 }, unlocks: ["Event: Crew Uplift", "Buff: +6% morale stability"] },
+    { id: "containment_grid", name: "Containment Grid", desc: "Stabilizes volatile systems and reduces event spikes.", goal: { metal: 2400, fuel: 1000, research: 700 }, unlocks: ["Event: Calm Window", "Buff: -10% event rate"] },
+  ],
+};
+
+export const FACTION_DIRECTIVES = {
+  vanguard: [
+    { id: "directive_scan", name: "Deep Listening", desc: "Prioritize scan throughput and research yields.", requires: { building: "signal_spire" }, effect: "Scan yields +4% while active." },
+    { id: "directive_range", name: "Outer Reach", desc: "Extend range to unlock higher-tier targets sooner.", requires: { building: "deep_listen_array" }, effect: "Range tier +1 while active." },
+  ],
+  relay: [
+    { id: "directive_logistics", name: "Fleetline", desc: "Reduce travel time and improve cargo throughput.", requires: { building: "cargo_spine" }, effect: "Travel time -4% while active." },
+    { id: "directive_convoy", name: "Convoy Protocol", desc: "Stabilize cargo flows during hazardous runs.", requires: { building: "dock_web" }, effect: "Cargo +5% while active." },
+  ],
+  aegis: [
+    { id: "directive_shield", name: "Shield Watch", desc: "Reduce hazard spikes during missions.", requires: { building: "stability_core" }, effect: "Hazard -5% while active." },
+    { id: "directive_morale", name: "Care Cadence", desc: "Boost morale stability and recovery.", requires: { building: "morale_arc" }, effect: "Morale stability +4% while active." },
+  ],
+};
 function defaultBaseState(body) {
   return {
     buildings: {},

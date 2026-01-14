@@ -19,7 +19,7 @@ import CrewView from "./views/Crew";
 import TechView from "./views/Tech";
 import FactionView from "./views/Faction";
 import { supabase, supabaseConfigured } from "./lib/supabase";
-import { STORAGE_KEY, LEGACY_KEY, TICK_MS, SAVE_MS, MAX_EVENTS_PER_BASE, SAVE_VERSION, TAB_ORDER, EVENT_COOLDOWN_MS, PACE, CREW_FATIGUE, CONTRACT_REFRESH_MS, COST_EXP, SYSTEM_EVENT_COOLDOWN_MS, MAX_SYSTEM_EVENTS, BODIES, HUB_UPGRADES, HUB_BUILDINGS, BIOME_BUILDINGS, BASE_TRAITS, TECH, BASE_OPS, STARTER_TOUR, CODEX_ENTRIES, MILESTONES, MISSION_MODES, SYSTEM_NAME_PARTS, SYSTEM_TRAITS, SYSTEM_SURVEY_STEPS, SURVEY_SEQUENCE, COLONY_ROLES, COLONY_COST, CREW_PROGRAMS, CREW_CONTRACTS, SYSTEM_EVENTS, INTEGRATION_PROJECTS, GALAXY_RULESETS, DOCTRINES } from "./game/data";
+import { STORAGE_KEY, LEGACY_KEY, TICK_MS, SAVE_MS, MAX_EVENTS_PER_BASE, SAVE_VERSION, TAB_ORDER, EVENT_COOLDOWN_MS, PACE, CREW_FATIGUE, CONTRACT_REFRESH_MS, COST_EXP, SYSTEM_EVENT_COOLDOWN_MS, MAX_SYSTEM_EVENTS, BODIES, HUB_UPGRADES, HUB_BUILDINGS, BIOME_BUILDINGS, BASE_TRAITS, TECH, BASE_OPS, STARTER_TOUR, CODEX_ENTRIES, MISSION_MODES, SYSTEM_NAME_PARTS, SYSTEM_TRAITS, SYSTEM_SURVEY_STEPS, SURVEY_SEQUENCE, COLONY_ROLES, COLONY_COST, CREW_PROGRAMS, CREW_CONTRACTS, SYSTEM_EVENTS, INTEGRATION_PROJECTS, GALAXY_RULESETS, DOCTRINES } from "./game/data";
 
 function seedCrewRoster(workers) {
   const assigned = workers?.assigned || { miner: 0, botanist: 0, engineer: 0 };
@@ -76,7 +76,6 @@ const initialState = {
   autoLaunch: { enabled: false, bodyId: null, mode: "balanced", specialist: "none" },
   selectedBody: "debris",
   recruits: [],
-  crewRoster: [],
   lastRecruitRoll: 0,
   log: [],
   milestones: {},
@@ -1882,7 +1881,7 @@ function SystemsView({ state, capabilities, format, formatDuration, startSystemO
     <section className="panel space-y-3">
       <div>
         <div className="text-lg font-semibold">Systems</div>
-        <div className="text-muted text-sm">Run scan -> probe -> survey chains to unlock colonies.</div>
+          <div className="text-muted text-sm">Run scan to probe to survey chains to unlock colonies.</div>
       </div>
       <div className="card space-y-2">
         <div className="row row-between">
@@ -2310,6 +2309,20 @@ function galaxyDepth(stateObj) {
   if (!galaxies.length) return 0;
   return Math.max(...galaxies.map((g) => g.depth || 0));
 }
+function hubRange(state) {
+  const relayBonus = colonyRoleCounts(state).relay || 0;
+  return 1 + (state.hubUpgrades.scan_array || 0) + (state.tech.deep_scan ? 1 : 0) + (state.tech.rift_mapping ? 1 : 0) + relayBonus;
+}
+const MILESTONES = [
+  { id: "M0_FOUNDATIONS", title: "Foundations Online", codexEntryId: "foundations", condition: (state) => true },
+  { id: "M1_LOCAL_OPS", title: "Local Operations", codexEntryId: "local_ops", condition: (state) => (state.milestones?.missionsDone || 0) >= 1 || !!state.milestones?.firstLaunch },
+  { id: "M2_SYSTEMS_DISCOVERED", title: "Systems Unlocked", codexEntryId: "systems_light", condition: (state) => hubRange(state) >= 3 },
+  { id: "M2_FIRST_COLONY", title: "First Colony", codexEntryId: "colonies_anchor", condition: (state) => (state.colonies || []).length >= 1 },
+  { id: "M3_INTEGRATION_UNLOCK", title: "Integration Projects", codexEntryId: "integration_projects", condition: (state) => (state.systems || []).some((s) => s.integratedAt) },
+  { id: "M4_GALAXY_CHARTED", title: "Galaxy Charted", codexEntryId: "galaxy_ops", condition: (state) => galaxyDepth(state) >= 2 },
+  { id: "M5_DOCTRINE_SELECTED", title: "Doctrine Selected", codexEntryId: "doctrine_ops", condition: (state) => !!state.doctrine },
+  { id: "M4_PRESTIGE_UNLOCK", title: "Prestige Ready", codexEntryId: "prestige_recalibration", condition: (state) => galaxyDepth(state) >= 2 && (state.systems || []).filter((s) => s.integratedAt).length >= 2 && signalSaturation(state).penalty >= 0.25 },
+];
 function bottleneckReport(stateObj, rates) {
   const alerts = [];
   if ((stateObj.resources.power || 0) <= 0 && (rates.power || 0) < 0) alerts.push("Power deficit is gating production.");
@@ -2743,10 +2756,6 @@ function isUnlockedUI(state, body) {
   if (body.requireTech && !state.tech[body.requireTech]) return false;
   if (body.requireMissions && (state.milestones?.missionsDone || 0) < body.requireMissions) return false;
   return (state.resources.signal || 0) >= Math.ceil((body.unlock || 0) * PACE.bodyUnlockMult);
-}
-function hubRange(state) {
-  const relayBonus = colonyRoleCounts(state).relay || 0;
-  return 1 + (state.hubUpgrades.scan_array || 0) + (state.tech.deep_scan ? 1 : 0) + (state.tech.rift_mapping ? 1 : 0) + relayBonus;
 }
 function commandCapacity(state) {
   const galaxyBonus = galaxyModifiers(state).commandCapBonus || 0;
