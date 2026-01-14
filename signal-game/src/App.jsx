@@ -23,10 +23,31 @@ const LEGACY_KEY = "signalFrontierState";
 const TICK_MS = 500;
 const SAVE_MS = 5000;
 const MAX_EVENTS_PER_BASE = 4;
-const SAVE_VERSION = 7;
+const SAVE_VERSION = 10;
 const TAB_ORDER = ["hub", "missions", "bases", "crew", "tech", "systems", "codex", "log", "profile"];
 const EVENT_COOLDOWN_MS = [45000, 90000];
-const COST_EXP = { hub: 1.12, base: 1.14 };
+const PACE = {
+  costExp: { hub: 1.18, base: 1.22, crew: 1.25 },
+  techCostMult: 1.4,
+  techUnlockMult: 1.5,
+  bodyUnlockMult: 1.5,
+  missionDurationMult: 1.6,
+  missionYieldMult: 0.85,
+  pulseCostBase: 100,
+  pulseCostStep: 25,
+  pulseCostCap: 300,
+  pulseCooldownMs: 12000,
+  pulseYieldMult: 0.75,
+  labCooldownMs: 30000,
+  labCostMult: 1.4,
+  labYieldMult: 0.85,
+  manualSignalCooldownMs: 350,
+  surveyDurationMult: 1.5,
+  integrationDurationMult: 1.6,
+};
+const CREW_FATIGUE = { gain: 0.00006, recovery: 0.0001 };
+const CONTRACT_REFRESH_MS = 180000;
+const COST_EXP = PACE.costExp;
 const SYSTEM_EVENT_COOLDOWN_MS = [90000, 180000];
 const MAX_SYSTEM_EVENTS = 3;
 
@@ -214,6 +235,59 @@ const COLONY_ROLES = [
   { id: "logistics", name: "Logistics Anchor", desc: "Improves mission throughput and travel efficiency." },
 ];
 const COLONY_COST = { metal: 180, fuel: 60, food: 20, organics: 12 };
+const CREW_PROGRAMS = [
+  { id: "mission_corps", name: "Mission Corps", desc: "Standardized mission playbooks: higher cargo, more objectives, lower hazard.", unlock: { milestone: "M1_LOCAL_OPS" }, cost: { research: 20, metal: 60, food: 10 } },
+  { id: "base_command", name: "Base Command", desc: "Outpost command training reduces event frequency and steadies recovery.", unlock: { milestone: "M2_FIRST_COLONY" }, cost: { research: 30, metal: 80, organics: 20 } },
+  { id: "science_guild", name: "Science Guild", desc: "Research mentorship improves scans and mission research yields.", unlock: { tech: "deep_scan" }, cost: { research: 35, signal: 120, organics: 24 } },
+  { id: "logistics_wing", name: "Logistics Wing", desc: "Improves travel efficiency and lowers fuel overhead.", unlock: { milestone: "M2_SYSTEMS_DISCOVERED" }, cost: { metal: 90, fuel: 30, food: 12 } },
+  { id: "morale_office", name: "Morale Office", desc: "Crew counseling boosts morale stability across hubs and outposts.", unlock: { milestone: "M3_INTEGRATION_UNLOCK" }, cost: { food: 30, organics: 30, research: 20 } },
+];
+const CREW_CONTRACTS = [
+  {
+    id: "salvage_ace",
+    name: "Salvage Ace",
+    role: "miner",
+    trait: "+20% to miner output",
+    perk: "Improves metal/rare salvage from missions.",
+    bonus: 0.2,
+    durationMs: 21600000,
+    cost: { metal: 120, fuel: 18, food: 10 },
+    mods: { cargoMult: 1.06, missionMult: { metal: 1.08, rare: 1.06 } },
+  },
+  {
+    id: "hydro_grower",
+    name: "Hydroponics Grower",
+    role: "botanist",
+    trait: "+18% to botanist output",
+    perk: "Food and organics output improved.",
+    bonus: 0.18,
+    durationMs: 21600000,
+    cost: { organics: 40, food: 20, metal: 60 },
+    mods: { prodMult: { food: 1.12, organics: 1.08 }, moraleBonus: 0.01 },
+  },
+  {
+    id: "systems_artisan",
+    name: "Systems Artisan",
+    role: "engineer",
+    trait: "+22% to engineer output",
+    perk: "Base incidents slow down and hazards ease.",
+    bonus: 0.22,
+    durationMs: 21600000,
+    cost: { metal: 140, fuel: 24, research: 14 },
+    mods: { baseEventRateMult: 0.9, systemEventRateMult: 0.92, hazardMult: 0.95 },
+  },
+  {
+    id: "relay_tactician",
+    name: "Relay Tactician",
+    role: "engineer",
+    trait: "+16% engineer output, mission hazard eased",
+    perk: "Travel improves and scans get sharper.",
+    bonus: 0.16,
+    durationMs: 18000000,
+    cost: { metal: 110, fuel: 20, research: 10 },
+    mods: { travelMult: 0.92, hazardMult: 0.94, scanMult: 1.05 },
+  },
+];
 const SYSTEM_EVENTS = [
   { id: "supply_shortage", name: "Supply Shortage", desc: "Cargo throughput reduced until resupplied.", effect: { cargoMult: 0.85 }, cost: { food: 12, fuel: 10 } },
   { id: "crew_friction", name: "Crew Friction", desc: "Survey pace slowed; scans feel noisy.", effect: { surveySpeed: 1.1, scanMult: 0.9 }, cost: { food: 8, organics: 8 } },
@@ -247,6 +321,32 @@ function defaultBaseState(body) {
   };
 }
 
+function seedCrewRoster(workers) {
+  const assigned = workers?.assigned || { miner: 0, botanist: 0, engineer: 0 };
+  const names = ["Kade", "Mira", "Orion", "Tala", "Nyx", "Rin", "Vega", "Ash"];
+  const roles = [
+    ...Array.from({ length: assigned.miner || 0 }, () => "miner"),
+    ...Array.from({ length: assigned.botanist || 0 }, () => "botanist"),
+    ...Array.from({ length: assigned.engineer || 0 }, () => "engineer"),
+  ];
+  while (roles.length < (workers?.total || 0)) roles.push("engineer");
+  return roles.map((role, idx) => {
+    const bonus = 0.05;
+    const name = names[idx % names.length];
+    return {
+      id: `core-${role}-${idx}`,
+      name,
+      role,
+      trait: `+${Math.round(bonus * 100)}% to ${role}`,
+      bonus,
+      focus: "production",
+      fatigue: 0,
+      temp: false,
+      hiredAt: 0,
+    };
+  });
+}
+
 const initialState = {
   saveVersion: SAVE_VERSION,
   tab: "hub",
@@ -266,11 +366,16 @@ const initialState = {
   targetDepletion: {},
   systemEvents: [],
   integration: { eventRateMult: 1, travelMult: 1, saturationRelief: 0, signalCapBonus: 0 },
-  hubOps: { autoPulse: false, autoPulseMinSignal: 120, autoLab: false, autoLabMinSignal: 80, autoLabMinMetal: 20, reserveSignal: 50, reserveMetal: 0 },
+  crewPrograms: {},
+  crewRoster: seedCrewRoster({ total: 3, assigned: { miner: 1, botanist: 1, engineer: 1 } }),
+  crewContracts: [],
+  nextContractAt: 0,
+  hubOps: { autoPulse: false, autoPulseMinSignal: 150, autoLab: false, autoLabMinSignal: 120, autoLabMinMetal: 40, reserveSignal: 70, reserveMetal: 0 },
   hubOpsLog: [],
   autoLaunch: { enabled: false, bodyId: null, mode: "balanced", specialist: "none" },
   selectedBody: "debris",
   recruits: [],
+  crewRoster: [],
   lastRecruitRoll: 0,
   log: [],
   milestones: {},
@@ -315,6 +420,7 @@ export default function App() {
   const [compact, setCompact] = useState(false);
   const [lastSaved, setLastSaved] = useState(null);
   const stateRef = useRef(state);
+  const manualSignalRef = useRef(0);
   const currentBody = selectedBody();
   const currentBase = useMemo(() => ensureBaseState(state.bases[state.selectedBody], currentBody), [state.bases, state.selectedBody]);
   const currentTraits = baseTraitList(currentBase);
@@ -363,7 +469,7 @@ export default function App() {
   }, []);
 
   useEffect(() => { const id = setInterval(() => setTick((t) => t + 1), TICK_MS); return () => clearInterval(id); }, []);
-  useEffect(() => { applyProduction(); resolveMissions(); processSystems(); processEvents(); processHubOps(); processMilestones(); ensureSystems(); }, [tick]);
+  useEffect(() => { applyProduction(); resolveMissions(); processSystems(); processEvents(); processCrew(); processHubOps(); processMilestones(); ensureSystems(); }, [tick]);
   useEffect(() => { ensureGalaxy(); }, [state.systems.length, state.milestonesUnlocked]);
 
   useEffect(() => {
@@ -382,14 +488,17 @@ export default function App() {
 
   // Primary click action; scales later via upgrades/bonuses.
   function collectSignal() {
+    const now = Date.now();
+    if (now - manualSignalRef.current < PACE.manualSignalCooldownMs) return;
+    manualSignalRef.current = now;
     bumpResources({ signal: 1 });
     unlockCodex("scan_ops");
     log("Manual signal calibration.");
   }
 
   function pulseScan(silent = false) {
-    const cost = Math.min(180, 60 + (state.pulseCount || 0) * 15);
-    const cdMs = 8000;
+    const cost = pulseCost(state);
+    const cdMs = PACE.pulseCooldownMs;
     if (Date.now() < (state.pulseReadyAt || 0)) { if (!silent) log("Pulse scanner cooling down."); return { ok: false, reason: "cooldown" }; }
     if (state.resources.signal < cost) { if (!silent) log("Not enough signal for pulse scan."); return { ok: false, reason: "signal" }; }
     bumpResources({ signal: -cost });
@@ -397,8 +506,11 @@ export default function App() {
     const rewardPool = ["metal","fuel","research"];
     const type = rewardPool[Math.floor(Math.random() * rewardPool.length)];
     const baseAmount = type === "research" ? 5 : type === "fuel" ? 12 : 18;
-    const scanMult = colonyModifiers(state).scanMult || 1;
-    const amount = Math.floor(baseAmount * scanMult);
+    const crewMods = crewProgramModifiers(state);
+    const focusMods = crewFocusModifiers(state);
+    const contractMods = crewContractModifiers(state);
+    const scanMult = (colonyModifiers(state).scanMult || 1) * (crewMods.scanMult || 1) * (focusMods.scanMult || 1) * (contractMods.scanMult || 1);
+    const amount = Math.floor(baseAmount * scanMult * PACE.pulseYieldMult);
     bumpResources({ [type]: amount });
     dispatch({ type: "UPDATE", patch: { pulseReadyAt: Date.now() + cdMs, pulseCount: (state.pulseCount || 0) + 1 } });
     if (!silent) log(`Pulse scan recovered ${amount} ${type} (cost ${cost}).`);
@@ -427,19 +539,21 @@ export default function App() {
     const eventMods = aggregateEventMods(currentBase);
     const traitMods = traitEffects(currentBase.traits);
     const maintenance = baseMaintenanceStats(currentBase);
+    const focusMods = crewFocusModifiers(state);
+    const contractMods = crewContractModifiers(state);
 
     const addContribution = (prod, cons, requiresPower) => contributions.push({ prod, cons, requiresPower });
 
     Object.entries(state.hubBuildings).forEach(([id, lvl]) => {
       const def = HUB_BUILDINGS.find((b) => b.id === id); if (!def) return; const mult = workerMult(def.id);
       const prod = {}; Object.entries(def.prod || {}).forEach(([k, v]) => prod[k] = v * lvl * mult);
-      addContribution(prod, scaleCons(def.cons, lvl), !!def.cons?.power);
+      addContribution(applyProdMult(prod, focusMods, contractMods), scaleCons(def.cons, lvl), !!def.cons?.power);
     });
-    if (state.hubUpgrades.fuel_farm) addContribution({ fuel: 2 * state.hubUpgrades.fuel_farm }, {}, false);
-    if (state.hubUpgrades.scan_array) addContribution({ signal: 3 * state.hubUpgrades.scan_array }, {}, false);
-    if (state.tech.fuel_synth) addContribution({ fuel: 1 * state.tech.fuel_synth }, {}, false);
-    if (state.tech.deep_scan) addContribution({ research: 1 * state.tech.deep_scan }, {}, false);
-    if (state.tech.bio_domes) addContribution({ food: 2 * state.tech.bio_domes, habitat: 2 * state.tech.bio_domes }, {}, false);
+    if (state.hubUpgrades.fuel_farm) addContribution(applyProdMult({ fuel: 2 * state.hubUpgrades.fuel_farm }, focusMods, contractMods), {}, false);
+    if (state.hubUpgrades.scan_array) addContribution(applyProdMult({ signal: 3 * state.hubUpgrades.scan_array }, focusMods, contractMods), {}, false);
+    if (state.tech.fuel_synth) addContribution(applyProdMult({ fuel: 1 * state.tech.fuel_synth }, focusMods, contractMods), {}, false);
+    if (state.tech.deep_scan) addContribution(applyProdMult({ research: 1 * state.tech.deep_scan }, focusMods, contractMods), {}, false);
+    if (state.tech.bio_domes) addContribution(applyProdMult({ food: 2 * state.tech.bio_domes, habitat: 2 * state.tech.bio_domes }, focusMods, contractMods), {}, false);
 
     const focus = currentBase.focus || "balanced";
     Object.entries(currentBase.buildings || {}).forEach(([id, lvl]) => {
@@ -449,7 +563,7 @@ export default function App() {
         const traitMult = traitMods.prod[k] || 1;
         prod[k] = v * lvl * workerMult(id) * focusBoost(focus, k) * (eventMods.mult[k] || 1) * traitMult * (maintenance.factor || 1);
       });
-      addContribution(prod, scaleCons(def.cons, lvl), !!def.cons?.power);
+      addContribution(applyProdMult(prod, focusMods, contractMods), scaleCons(def.cons, lvl), !!def.cons?.power);
     });
 
     const sumRates = (powerGate) => {
@@ -481,9 +595,23 @@ export default function App() {
   function workerMult(buildingId) {
     const bonus = state.workers.bonus || {};
     const moraleBoost = 0.6 + (state.workers.satisfaction || 1) * 0.6;
-    if (["ore_rig","fuel_cracker"].includes(buildingId)) return (1 + (state.workers.assigned.miner || 0) * 0.1 + (bonus.miner || 0)) * moraleBoost;
-    if (["algae_farm"].includes(buildingId)) return (1 + (state.workers.assigned.botanist || 0) * 0.1 + (bonus.botanist || 0)) * moraleBoost;
-    return (1 + (state.workers.assigned.engineer || 0) * 0.05 + (bonus.engineer || 0)) * moraleBoost;
+    const fatigueStats = crewFatigueStats(state);
+    const focusMods = crewFocusModifiers(state);
+    if (["ore_rig","fuel_cracker","core_rig","core_tap"].includes(buildingId)) {
+      const fatigueMult = 1 - (fatigueStats.byRole.miner || 0) * 0.2;
+      const focusBonus = focusMods.roleProdBonus.miner || 0;
+      const oreFocus = (["ore_rig","core_rig","core_tap"].includes(buildingId)) ? (focusMods.minerOreMult || 1) : 1;
+      return (1 + (state.workers.assigned.miner || 0) * 0.1 + (bonus.miner || 0)) * (1 + focusBonus) * oreFocus * fatigueMult * moraleBoost;
+    }
+    if (["algae_farm","protein_farm","bio_reactor"].includes(buildingId)) {
+      const fatigueMult = 1 - (fatigueStats.byRole.botanist || 0) * 0.2;
+      const focusBonus = focusMods.roleProdBonus.botanist || 0;
+      const nutritionFocus = focusMods.botanistNutritionMult || 1;
+      return (1 + (state.workers.assigned.botanist || 0) * 0.1 + (bonus.botanist || 0)) * (1 + focusBonus) * nutritionFocus * fatigueMult * moraleBoost;
+    }
+    const fatigueMult = 1 - (fatigueStats.byRole.engineer || 0) * 0.2;
+    const focusBonus = focusMods.roleProdBonus.engineer || 0;
+    return (1 + (state.workers.assigned.engineer || 0) * 0.05 + (bonus.engineer || 0)) * (1 + focusBonus) * fatigueMult * moraleBoost;
   }
 
   const crewBonusText = (buildingId) => {
@@ -569,6 +697,9 @@ export default function App() {
     const now = Date.now();
     const bases = { ...state.bases };
     let changed = false;
+    const crewMods = crewProgramModifiers(state);
+    const focusMods = crewFocusModifiers(state);
+    const contractMods = crewContractModifiers(state);
     BODIES.forEach((body) => {
       if (!isUnlocked(body)) return;
       const base = ensureBaseState(bases[body.id], body);
@@ -581,7 +712,7 @@ export default function App() {
           base.events = [...(base.events || []), createEvent(body)];
           log(`Event at ${body.name}: ${base.events[base.events.length - 1].name}`);
         }
-        const eventMult = (traitMods.eventMult || 1) * (maintenance.over ? 0.7 : 1);
+        const eventMult = (traitMods.eventMult || 1) * (maintenance.over ? 0.7 : 1) * (crewMods.baseEventRateMult || 1) * (focusMods.baseEventRateMult || 1) * (contractMods.baseEventRateMult || 1);
         base.nextEventAt = now + randomBetween(...EVENT_COOLDOWN_MS) * eventMult;
         bases[body.id] = base; changed = true;
       }
@@ -589,10 +720,74 @@ export default function App() {
     if (changed) dispatch({ type: "UPDATE", patch: { bases } });
   }
 
+  function processCrew() {
+    const now = Date.now();
+    let crewRoster = state.crewRoster || [];
+    let workers = state.workers;
+    let changed = false;
+    const expired = [];
+
+    if (!crewRoster.length && workers?.total) {
+      crewRoster = seedCrewRoster(workers);
+      changed = true;
+    }
+
+    crewRoster = crewRoster.filter((crew) => {
+      if (crew.temp && crew.expiresAt && now >= crew.expiresAt) {
+        expired.push(crew);
+        return false;
+      }
+      return true;
+    });
+
+    const assignedRoster = assignCrewRoster({ ...state, crewRoster });
+    const assignedIds = new Set(assignedRoster.filter((c) => c.assigned).map((c) => c.id));
+    const focusMods = crewFocusModifiers({ ...state, crewRoster });
+    const gainBase = CREW_FATIGUE.gain * (focusMods.fatigueGainMult || 1);
+    const recoveryBase = CREW_FATIGUE.recovery * (focusMods.fatigueRecoveryMult || 1);
+
+    crewRoster = crewRoster.map((crew) => {
+      const assigned = assignedIds.has(crew.id);
+      const focus = crew.focus || "production";
+      let delta = assigned ? gainBase : -recoveryBase;
+      if (focus === "recovery") delta *= assigned ? 0.7 : 1.4;
+      const nextFatigue = clamp((crew.fatigue || 0) + delta, 0, 1);
+      if (nextFatigue !== crew.fatigue || crew.focus !== focus) changed = true;
+      return nextFatigue !== crew.fatigue || crew.focus !== focus ? { ...crew, fatigue: nextFatigue, focus } : crew;
+    });
+
+    if (expired.length) {
+      const assigned = { ...workers.assigned };
+      const bonus = { ...workers.bonus };
+      expired.forEach((crew) => {
+        assigned[crew.role] = Math.max(0, (assigned[crew.role] || 0) - 1);
+        bonus[crew.role] = Math.max(0, (bonus[crew.role] || 0) - (crew.bonus || 0));
+      });
+      const assignedSum = Object.values(assigned).reduce((sum, v) => sum + v, 0);
+      const total = Math.max(assignedSum, Math.max(0, workers.total - expired.length));
+      workers = { ...workers, total, assigned, bonus };
+      changed = true;
+      log("Contract crew rotated out.");
+    }
+
+    let crewContracts = state.crewContracts || [];
+    let nextContractAt = state.nextContractAt || 0;
+    if (now >= nextContractAt && crewContracts.length === 0) {
+      const pool = [...CREW_CONTRACTS].sort(() => Math.random() - 0.5).slice(0, 2);
+      crewContracts = pool.map((c) => ({ ...c, offerId: `${c.id}-${now}-${Math.random().toString(16).slice(2, 6)}` }));
+      const refreshMs = Math.floor(CONTRACT_REFRESH_MS * (crewTrainingTier(state) >= 3 ? 0.7 : 1));
+      nextContractAt = now + refreshMs;
+      changed = true;
+      log("Specialist contracts posted.");
+    }
+
+    if (changed) dispatch({ type: "UPDATE", patch: { crewRoster, workers, crewContracts, nextContractAt } });
+  }
+
   function processHubOps() {
     const ops = state.hubOps || {};
     if (ops.autoPulse) {
-      const cost = Math.min(180, 60 + (state.pulseCount || 0) * 15);
+      const cost = pulseCost(state);
       const reserve = ops.reserveSignal || 0;
       const minSignal = Math.max(cost, ops.autoPulseMinSignal || 0, reserve + cost);
       if (Date.now() >= (state.pulseReadyAt || 0) && (state.resources.signal || 0) >= minSignal) {
@@ -603,11 +798,12 @@ export default function App() {
     if (ops.autoLab) {
       const reserveSignal = ops.reserveSignal || 0;
       const reserveMetal = ops.reserveMetal || 0;
-      const minSignal = Math.max(60, ops.autoLabMinSignal || 0, reserveSignal + 60);
-      const minMetal = Math.max(20, ops.autoLabMinMetal || 0, reserveMetal + 20);
+      const labCostValue = labCost();
+      const minSignal = Math.max(labCostValue.signal || 0, ops.autoLabMinSignal || 0, reserveSignal + (labCostValue.signal || 0));
+      const minMetal = Math.max(labCostValue.metal || 0, ops.autoLabMinMetal || 0, reserveMetal + (labCostValue.metal || 0));
       if (Date.now() >= (state.labReadyAt || 0) && (state.resources.signal || 0) >= minSignal && (state.resources.metal || 0) >= minMetal) {
         const result = runLabPulse(true);
-        if (result?.ok) logOps("Auto Research Pulse: +6 research");
+        if (result?.ok) logOps(`Auto Research Pulse: +${result.research} research`);
       }
     }
   }
@@ -619,6 +815,7 @@ export default function App() {
     let updated = systems;
     let changed = false;
     const modifiers = colonyModifiers(state);
+    const crewMods = crewProgramModifiers(state);
     const systemEvents = [...(state.systemEvents || [])];
     let eventsChanged = false;
     let integrationPatch = null;
@@ -656,7 +853,7 @@ export default function App() {
       const isColonized = (state.colonies || []).some((c) => c.systemId === system.id);
       if (!isColonized) return system;
       const relatedEvents = systemEvents.filter((e) => e.systemId === system.id);
-      const regen = relatedEvents.length ? 0 : 0.005;
+      const regen = (relatedEvents.length ? 0 : 0.005) + (crewMods.stabilityRecovery || 0);
       const nextStability = clamp((system.stability ?? 100) + regen, 35, 100);
       if (nextStability !== system.stability) {
         changed = true;
@@ -767,7 +964,7 @@ export default function App() {
     if (!canAfford(step.cost)) { log("Not enough resources for that survey operation."); return; }
     spend(step.cost);
     const speed = colonyModifiers(state).surveySpeed || 1;
-    const endsAt = Date.now() + Math.floor(step.duration * speed);
+    const endsAt = Date.now() + Math.floor(step.duration * speed * PACE.surveyDurationMult);
     const systems = (state.systems || []).map((s) => s.id === systemId ? { ...s, op: { type: step.id, endsAt } } : s);
     dispatch({ type: "UPDATE", patch: { systems } });
     log(`${step.name} started in ${system.name}.`);
@@ -805,7 +1002,7 @@ export default function App() {
     if (activeProjects >= capacity) { log("Hub attention maxed. Finish an active integration project first."); return; }
     if (!canAfford(project.cost)) { log("Not enough resources to start this project."); return; }
     spend(project.cost);
-    const systems = (state.systems || []).map((s) => s.id === systemId ? { ...s, project: { id: project.id, endsAt: Date.now() + project.duration } } : s);
+    const systems = (state.systems || []).map((s) => s.id === systemId ? { ...s, project: { id: project.id, endsAt: Date.now() + Math.floor(project.duration * PACE.integrationDurationMult) } } : s);
     dispatch({ type: "UPDATE", patch: { systems } });
     log(`Integration project started in ${system.name}: ${project.name}.`);
   }
@@ -841,18 +1038,19 @@ export default function App() {
     if (!body) { log("Target locked."); return; }
     const slots = 1 + (state.hubUpgrades.launch_bay || 0) + (state.tech.auto_pilots ? 1 : 0);
     if ((state.missions.active || []).length >= slots) { log("All mission slots busy."); return; }
+    const crewMods = crewProgramModifiers(state);
     const missionMods = colonyModifiers(state);
     let fuelCost = Math.max(5, Math.floor(body.travel / 3)) + fuelBoost;
-    fuelCost = Math.ceil(fuelCost * (missionMods.fuelMult || 1));
+    fuelCost = Math.ceil(fuelCost * (missionMods.fuelMult || 1) * (crewMods.fuelMult || 1));
     if (!state.milestones?.firstLaunch) fuelCost = 0;
     if (state.resources.fuel < fuelCost) { log("Not enough fuel."); return; }
     bumpResources({ fuel: -fuelCost });
     const mode = missionModeById(modeId);
     const bonuses = baseBonuses(state, body.id);
     const hazardBase = body.hazard - (state.tech.hazard_gear ? 0.25 : 0) - (state.tech.shielding ? 0.2 : 0) + (mode?.hazard || 0) + (specialist === "engineer" ? -0.1 : 0);
-    const hazard = Math.max(0, hazardBase * (bonuses.hazard || 1) * (missionMods.hazardMult || 1));
-    const duration = Math.max(15000, ((body.travel * 1000 * (bonuses.travel || 1) * (missionMods.travelMult || 1)) - fuelBoost * 3000 + (mode?.durationMs || 0)) * (state.tech.auto_pilots ? 0.9 : 1));
-    const objectiveChance = Math.min(0.55, 0.3 + (missionMods.objectiveBonus || 0));
+    const hazard = Math.max(0, hazardBase * (bonuses.hazard || 1) * (missionMods.hazardMult || 1) * (crewMods.hazardMult || 1));
+    const duration = Math.max(15000, ((body.travel * 1000 * (bonuses.travel || 1) * (missionMods.travelMult || 1) * (crewMods.travelMult || 1)) - fuelBoost * 3000 + (mode?.durationMs || 0)) * (state.tech.auto_pilots ? 0.9 : 1) * PACE.missionDurationMult);
+    const objectiveChance = Math.min(0.55, 0.3 + (missionMods.objectiveBonus || 0) + (crewMods.objectiveBonus || 0));
     const objective = Math.random() < objectiveChance ? makeObjective(body) : null;
     const efficiency = depletionFactor(state, body.id);
     const variance = Number(randomBetween(0.9, 1.1).toFixed(2));
@@ -901,7 +1099,7 @@ export default function App() {
     if ((body.tier || 1) > hubRange(state)) return false;
     if (body.requireTech && !state.tech[body.requireTech]) return false;
     if (body.requireMissions && (state.milestones.missionsDone || 0) < body.requireMissions) return false;
-    return state.resources.signal >= (body.unlock || 0);
+    return state.resources.signal >= Math.ceil((body.unlock || 0) * PACE.bodyUnlockMult);
   }
 
   function bodyEvents(body) { return [createEvent(body)]; }
@@ -966,23 +1164,29 @@ export default function App() {
   function buyTech(id) {
     const def = TECH.find((t) => t.id === id); if (!def || state.tech[id]) return;
     if (!hasPrereqs(state, def)) { log("Complete prerequisite tech first."); return; }
-    if (state.resources.signal < def.unlock) { log("Need more signal to access this tech."); return; }
-    if (!canAfford(def.cost)) { log("Not enough resources."); return; }
-    spend(def.cost); dispatch({ type: "UPDATE", patch: { tech: { ...state.tech, [id]: 1 } } });
+    const unlockSignal = Math.ceil(def.unlock * PACE.techUnlockMult);
+    const cost = scaleCost(def.cost, PACE.techCostMult);
+    if (state.resources.signal < unlockSignal) { log("Need more signal to access this tech."); return; }
+    if (!canAfford(cost)) { log("Not enough resources."); return; }
+    spend(cost); dispatch({ type: "UPDATE", patch: { tech: { ...state.tech, [id]: 1 } } });
     unlockCodex("tech_ops");
     log(`Tech unlocked: ${def.name}.`);
   }
 
   function runLabPulse(silent = false) {
-    const cooldownMs = 20000;
+    const cooldownMs = PACE.labCooldownMs;
     if (Date.now() < (state.labReadyAt || 0)) { if (!silent) log("Research lab recalibrating."); return { ok: false, reason: "cooldown" }; }
-    const cost = { signal: 60, metal: 20 };
+    const cost = labCost();
     if (!canAfford(cost)) { if (!silent) log("Need signal + metal for research pulse."); return { ok: false, reason: "resources" }; }
     spend(cost);
-    bumpResources({ research: 6 });
+    const crewMods = crewProgramModifiers(state);
+    const focusMods = crewFocusModifiers(state);
+    const contractMods = crewContractModifiers(state);
+    const gain = Math.floor(6 * (crewMods.researchMult || 1) * (focusMods.researchMult || 1) * (contractMods.researchMult || 1) * PACE.labYieldMult);
+    bumpResources({ research: gain });
     dispatch({ type: "UPDATE", patch: { labReadyAt: Date.now() + cooldownMs } });
     if (!silent) log("Research pulse completed. New data archived.");
-    return { ok: true, cost, research: 6 };
+    return { ok: true, cost, research: gain };
   }
 
   // Prestige/reset with boost based on total value.
@@ -1051,6 +1255,32 @@ export default function App() {
     dispatch({ type: "SET_RECRUITS", recruits: candidates });
   }
 
+  function maxRecruitTier(stateObj) {
+    const unlocked = new Set(stateObj.milestonesUnlocked || []);
+    if (unlocked.has("M3_INTEGRATION_UNLOCK")) return 3;
+    if (unlocked.has("M2_SYSTEMS_DISCOVERED")) return 2;
+    return 1;
+  }
+
+  function isCrewProgramUnlocked(stateObj, program) {
+    const unlock = program?.unlock || {};
+    if (unlock.milestone && !(stateObj.milestonesUnlocked || []).includes(unlock.milestone)) return false;
+    if (unlock.tech && !stateObj.tech?.[unlock.tech]) return false;
+    return true;
+  }
+
+  function buyCrewProgram(id) {
+    const def = CREW_PROGRAMS.find((p) => p.id === id);
+    if (!def) return;
+    if (!isCrewProgramUnlocked(state, def)) { log("Training program is still locked."); return; }
+    const level = state.crewPrograms?.[id] || 0;
+    const cost = scaledCost(def.cost, level, COST_EXP.crew);
+    if (!canAfford(cost)) { log("Not enough resources for training."); return; }
+    spend(cost);
+    dispatch({ type: "UPDATE", patch: { crewPrograms: { ...state.crewPrograms, [id]: level + 1 } } });
+    log(`Crew program advanced: ${def.name} Lv ${level + 1}.`);
+  }
+
   function resolveEvent(bodyId, eventId) {
     const base = ensureBaseState(state.bases[bodyId], bodyById(bodyId));
     const ev = (base.events || []).find((e) => e.id === eventId);
@@ -1081,7 +1311,8 @@ export default function App() {
   function makeCandidate(seed) {
     const roles = ["miner","botanist","engineer"];
     const role = roles[Math.floor(Math.random() * roles.length)];
-    const tier = 1 + (seed % 3);
+    const tierCap = maxRecruitTier(state);
+    const tier = 1 + Math.floor(Math.random() * tierCap);
     const bonus = tier === 1 ? 0.05 : tier === 2 ? 0.12 : 0.2;
     const names = ["Nyx","Orion","Vega","Rin","Tala","Kade","Mira","Ash"];
     const name = names[Math.floor(Math.random() * names.length)];
@@ -1094,8 +1325,9 @@ export default function App() {
     if (!canAfford(cand.cost)) { log("Not enough resources to hire."); return; }
     spend(cand.cost);
     const workers = { ...state.workers, total: state.workers.total + 1, assigned: { ...state.workers.assigned, [cand.role]: (state.workers.assigned[cand.role] || 0) + 1 }, bonus: { ...state.workers.bonus, [cand.role]: (state.workers.bonus[cand.role] || 0) + cand.bonus } };
+    const crewRoster = [...(state.crewRoster || []), { id: cand.id, name: cand.name, role: cand.role, trait: cand.trait, bonus: cand.bonus, focus: "production", fatigue: 0, temp: false, hiredAt: Date.now() }];
     const recruits = state.recruits.filter((c) => c.id !== id);
-    dispatch({ type: "UPDATE", patch: { workers, recruits } });
+    dispatch({ type: "UPDATE", patch: { workers, recruits, crewRoster } });
     log(`Hired ${cand.name} (${cand.role}).`);
   }
 
@@ -1104,6 +1336,71 @@ export default function App() {
     const totalAssigned = Object.values(state.workers.assigned).reduce((a, b) => a + b, 0); if (delta > 0 && totalAssigned >= state.workers.total) return;
     const assigned = { ...state.workers.assigned, [role]: target };
     dispatch({ type: "UPDATE", patch: { workers: { ...state.workers, assigned } } });
+  }
+
+  function setCrewFocus(id, focus) {
+    const roster = (state.crewRoster || []).map((crew) => crew.id === id ? { ...crew, focus } : crew);
+    dispatch({ type: "UPDATE", patch: { crewRoster: roster } });
+  }
+
+  function setAllFocus(focus) {
+    const roster = (state.crewRoster || []).map((crew) => ({ ...crew, focus }));
+    dispatch({ type: "UPDATE", patch: { crewRoster: roster } });
+    log(`Crew focus shifted to ${focus}.`);
+  }
+
+  function quickAssign() {
+    const total = state.workers.total || 0;
+    const base = Math.floor(total / 3);
+    const remainder = total % 3;
+    const assigned = { miner: base, botanist: base, engineer: base };
+    if (remainder > 0) assigned.miner += 1;
+    if (remainder > 1) assigned.engineer += 1;
+    dispatch({ type: "UPDATE", patch: { workers: { ...state.workers, assigned } } });
+    log("Crew assignments balanced.");
+  }
+
+  function rollContracts(force) {
+    const now = Date.now();
+    if (!force && now < (state.nextContractAt || 0) && (state.crewContracts || []).length) return;
+    const pool = [...CREW_CONTRACTS].sort(() => Math.random() - 0.5).slice(0, 2);
+    const offers = pool.map((c) => ({ ...c, offerId: `${c.id}-${now}-${Math.random().toString(16).slice(2, 6)}` }));
+    const refreshMs = Math.floor(CONTRACT_REFRESH_MS * (crewTrainingTier(state) >= 3 ? 0.7 : 1));
+    dispatch({ type: "UPDATE", patch: { crewContracts: offers, nextContractAt: now + refreshMs } });
+    log("New specialist contracts available.");
+  }
+
+  function acceptContract(offerId) {
+    const offer = (state.crewContracts || []).find((c) => c.offerId === offerId);
+    if (!offer) return;
+    if (state.resources.habitat <= state.workers.total) { log("Need spare habitat for contract crew."); return; }
+    if (!canAfford(offer.cost)) { log("Not enough resources for this contract."); return; }
+    spend(offer.cost);
+    const contract = {
+      id: `contract-${offer.id}-${Date.now()}`,
+      contractId: offer.id,
+      name: offer.name,
+      role: offer.role,
+      trait: offer.trait,
+      perk: offer.perk,
+      bonus: offer.bonus,
+      mods: offer.mods,
+      focus: "production",
+      fatigue: 0,
+      temp: true,
+      hiredAt: Date.now(),
+      expiresAt: Date.now() + offer.durationMs,
+    };
+    const crewRoster = [...(state.crewRoster || []), contract];
+    const workers = {
+      ...state.workers,
+      total: state.workers.total + 1,
+      assigned: { ...state.workers.assigned, [offer.role]: (state.workers.assigned[offer.role] || 0) + 1 },
+      bonus: { ...state.workers.bonus, [offer.role]: (state.workers.bonus[offer.role] || 0) + offer.bonus },
+    };
+    const crewContracts = (state.crewContracts || []).filter((c) => c.offerId !== offerId);
+    dispatch({ type: "UPDATE", patch: { crewRoster, crewContracts, workers } });
+    log(`Contract accepted: ${offer.name}.`);
   }
 
   function format(n) {
@@ -1182,6 +1479,7 @@ function biomeBuildingById(id) { return Object.values(BIOME_BUILDINGS).flat().fi
                 depletionFactor={(id) => depletionFactor(state, id)}
                 missionMods={missionMods}
                 baseBonuses={(id) => baseBonuses(state, id)}
+                missionDurationMult={PACE.missionDurationMult}
               />
             )}
             {state.tab === 'bases' && (
@@ -1220,6 +1518,22 @@ function biomeBuildingById(id) { return Object.values(BIOME_BUILDINGS).flat().fi
                 changeCrew={changeCrew}
                 format={format}
                 costText={costText}
+                crewProgramDefs={CREW_PROGRAMS}
+                buyCrewProgram={buyCrewProgram}
+                isCrewProgramUnlocked={isCrewProgramUnlocked}
+                scaledCost={scaledCost}
+                canAffordUI={canAffordUI}
+                costExpCrew={COST_EXP.crew}
+                milestones={MILESTONES}
+                techDefs={TECH}
+                setCrewFocus={setCrewFocus}
+                setAllFocus={setAllFocus}
+                quickAssign={quickAssign}
+                crewContracts={state.crewContracts || []}
+                acceptContract={acceptContract}
+                rollContracts={() => rollContracts(true)}
+                formatDuration={formatDuration}
+                nextContractAt={state.nextContractAt || 0}
               />
             )}
             {state.tab === 'tech' && (
@@ -1231,6 +1545,8 @@ function biomeBuildingById(id) { return Object.values(BIOME_BUILDINGS).flat().fi
                 hasPrereqs={hasPrereqs}
                 canAffordUI={canAffordUI}
                 costText={costText}
+                techUnlockMult={PACE.techUnlockMult}
+                techCostMult={PACE.techCostMult}
               />
             )}
             {state.tab === 'systems' && (
@@ -1280,14 +1596,15 @@ function ResourceBar({ resources, rates, format }) {
 }
 
 function ActionBar({ state, onCollect, onPulse, onLab, format, formatDuration }) {
-  const pulseCost = Math.min(180, 60 + (state.pulseCount || 0) * 15);
+  const pulseCostValue = pulseCost(state);
+  const labCostValue = labCost();
   const pulseCd = Math.max(0, (state.pulseReadyAt || 0) - Date.now());
   const labCd = Math.max(0, (state.labReadyAt || 0) - Date.now());
   return (
     <div className="panel sticky top-3 z-20 flex flex-wrap items-center gap-2 justify-between py-2">
       <div className="flex flex-wrap gap-2 items-center">
         <button className="btn btn-primary" onClick={onCollect} title="Collect Signal (Space)">Collect</button>
-        <button className="btn" disabled={state.resources.signal < pulseCost || pulseCd > 0} onClick={onPulse} title="Pulse Scan">
+        <button className="btn" disabled={state.resources.signal < pulseCostValue || pulseCd > 0} onClick={onPulse} title="Pulse Scan">
           Scan {pulseCd > 0 ? `(${formatDuration(pulseCd)})` : ""}
         </button>
         <button className="btn" onClick={onLab} disabled={labCd > 0} title="Pulse Lab">
@@ -1295,8 +1612,8 @@ function ActionBar({ state, onCollect, onPulse, onLab, format, formatDuration })
         </button>
       </div>
       <div className="text-xs text-muted flex flex-wrap gap-3">
-        <span>Pulse cost {format(pulseCost)} signal</span>
-        <span>Lab cost 60 signal, 20 metal</span>
+        <span>Pulse cost {format(pulseCostValue)} signal</span>
+        <span>Lab cost {costText(labCostValue, format)}</span>
         <span>Space: collect</span>
       </div>
     </div>
@@ -1365,11 +1682,11 @@ function ProfileView({ state, ascend, exportProfile, importProfile, compact, set
 }
 
 function HubView({ state, buildHub, buyHubUpgrade, crewBonusText, ascend, format, setHubOps }) {
-  const ops = state.hubOps || { autoPulse: false, autoPulseMinSignal: 120, autoLab: false, autoLabMinSignal: 80, autoLabMinMetal: 20, reserveSignal: 50, reserveMetal: 0 };
+  const ops = state.hubOps || { autoPulse: false, autoPulseMinSignal: 150, autoLab: false, autoLabMinSignal: 120, autoLabMinMetal: 40, reserveSignal: 70, reserveMetal: 0 };
   const [pane, setPane] = useState("build");
   const command = commandUsage(state);
   const briefing = [
-    "Collect Signal then run a Pulse Scan (ramps 60+ signal, 8s CD) to convert signal into metal/fuel/research.",
+    "Collect Signal then run a Pulse Scan (ramping signal cost + longer cooldown) to convert signal into metal/fuel/research.",
     "First launch is fuel-free; Debris missions return early research + fuel.",
     "Build a Fuel Refinery or Fuel Cracker early to keep missions flowing.",
     "Keep power >= 0 and food positive to avoid morale drops.",
@@ -1689,7 +2006,7 @@ function SystemsView({ state, capabilities, format, formatDuration, startSystemO
                 {system.op && <div className="row-meta text-xs text-muted">{step?.name} running: {formatDuration(opRemaining)} remaining</div>}
                 {!system.op && ["scan", "probe", "survey"].includes(stage) && (
                   <div className="row-meta text-xs text-muted">
-                    {step?.name} cost: {step ? costText(step.cost, format) : "n/a"} | Duration {step ? formatDuration(step.duration * surveySpeed) : "n/a"}
+                    {step?.name} cost: {step ? costText(step.cost, format) : "n/a"} | Duration {step ? formatDuration(step.duration * surveySpeed * PACE.surveyDurationMult) : "n/a"}
                   </div>
                 )}
                 {colony && (
@@ -1840,6 +2157,19 @@ function scaledCost(baseCost, level, exp) {
   });
   return out;
 }
+function scaleCost(baseCost, mult = 1) {
+  const out = {};
+  Object.entries(baseCost || {}).forEach(([k, v]) => {
+    out[k] = Math.ceil(v * (mult || 1));
+  });
+  return out;
+}
+function pulseCost(stateObj) {
+  return Math.min(PACE.pulseCostCap, PACE.pulseCostBase + (stateObj.pulseCount || 0) * PACE.pulseCostStep);
+}
+function labCost() {
+  return scaleCost({ signal: 60, metal: 20 }, PACE.labCostMult);
+}
 function requirementsMet(base, building) {
   const prereqs = building.requires ? building.requires.every((req) => (base.buildings?.[req.id] || 0) >= (req.level || 1)) : true;
   const groupOk = building.group ? !Object.entries(base.buildings || {}).some(([id, lvl]) => {
@@ -1850,6 +2180,17 @@ function requirementsMet(base, building) {
   return prereqs && groupOk;
 }
 function scaleCons(cons = {}, lvl = 1) { const out = {}; Object.entries(cons || {}).forEach(([k, v]) => out[k] = v * lvl); return out; }
+function applyProdMult(prod = {}, focusMods = {}, contractMods = {}) {
+  const out = { ...prod };
+  Object.keys(out).forEach((k) => {
+    let mult = 1;
+    if (k === "food" && focusMods.botanistNutritionMult) mult *= focusMods.botanistNutritionMult;
+    if (k === "fuel" && focusMods.fuelProdMult) mult *= focusMods.fuelProdMult;
+    if (contractMods.prodMult?.[k]) mult *= contractMods.prodMult[k];
+    out[k] = out[k] * mult;
+  });
+  return out;
+}
 function aggregateEventMods(base) {
   const mult = {};
   let moralePenalty = 0;
@@ -1870,8 +2211,12 @@ function computeMorale(resources, rates, state, currentBase, eventMods, powerGat
   const missionHazard = (state.missions.active || []).reduce((acc, m) => acc + (m.hazard || 0), 0) / Math.max(1, (state.missions.active || []).length);
   const hazardPenalty = missionHazard * 0.3;
   const eventPenalty = (currentBase.events || []).length * 0.04 + (eventMods.moralePenalty || 0);
-  const baseMorale = (foodFactor * 0.4) + (habitatFactor * 0.2) + (powerFactor * 0.15) + (restFactor * 0.15) - hazardPenalty - eventPenalty;
-  return clamp(baseMorale + (rates.morale || 0), 0.35, 1.25);
+  const fatiguePenalty = (crewFatigueStats(state).avgAssigned || 0) * 0.08;
+  const crewMods = crewProgramModifiers(state);
+  const contractMods = crewContractModifiers(state);
+  const crewBonus = (crewMods.moraleBonus || 0) + (contractMods.moraleBonus || 0);
+  const baseMorale = (foodFactor * 0.4) + (habitatFactor * 0.2) + (powerFactor * 0.15) + (restFactor * 0.15) - hazardPenalty - eventPenalty - fatiguePenalty;
+  return clamp(baseMorale + (rates.morale || 0) + crewBonus, 0.35, 1.3);
 }
 function randomBetween(min, max) { return min + Math.random() * (max - min); }
 function traitById(id) {
@@ -1925,7 +2270,7 @@ function migrateSave(save) {
   let out = { ...save };
   const version = Number.isFinite(out.saveVersion) ? out.saveVersion : 0;
   if (version < 1) {
-    out.hubOps = out.hubOps || { autoPulse: false, autoPulseMinSignal: 120, autoLab: false, autoLabMinSignal: 80, autoLabMinMetal: 20, reserveSignal: 50, reserveMetal: 0 };
+    out.hubOps = out.hubOps || { autoPulse: false, autoPulseMinSignal: 150, autoLab: false, autoLabMinSignal: 120, autoLabMinMetal: 40, reserveSignal: 70, reserveMetal: 0 };
     out.hubOpsLog = out.hubOpsLog || [];
     out.milestonesUnlocked = out.milestonesUnlocked || [];
     out.codexUnlocked = out.codexUnlocked || [];
@@ -1960,6 +2305,27 @@ function migrateSave(save) {
     out.activeGalaxyId = out.activeGalaxyId || (out.galaxies[0]?.id ?? null);
     out.doctrine = out.doctrine || null;
   }
+  if (version < 8) {
+    out.crewPrograms = out.crewPrograms || {};
+  }
+  if (version < 9) {
+    out.crewRoster = out.crewRoster || [];
+  }
+  if (version < 10) {
+    out.crewContracts = out.crewContracts || [];
+    out.nextContractAt = out.nextContractAt || 0;
+  }
+  if (!out.crewRoster?.length && out.workers?.total) {
+    out.crewRoster = seedCrewRoster(out.workers);
+  }
+  out.crewRoster = (out.crewRoster || []).map((crew, idx) => ({
+    ...crew,
+    id: crew.id || `crew-${idx}-${Date.now()}`,
+    focus: crew.focus || "production",
+    fatigue: Number.isFinite(crew.fatigue) ? crew.fatigue : 0,
+    temp: !!crew.temp,
+    hiredAt: crew.hiredAt || 0,
+  }));
   out.saveVersion = SAVE_VERSION;
   return out;
 }
@@ -2050,6 +2416,9 @@ function missionYield(state, body, modeId, specialist = "none", efficiency = 1) 
   const rareBonus = state.tech?.rift_mapping ? 0.2 : 0;
   const mult = 1 + drone + rareBonus;
   const bonuses = baseBonuses(state, body.id);
+  const crewMods = crewProgramModifiers(state);
+  const focusMods = crewFocusModifiers(state);
+  const contractMods = crewContractModifiers(state);
   const colonyMods = colonyModifiers(state);
   const mode = missionModeById(modeId);
   const cargo = {};
@@ -2059,7 +2428,11 @@ function missionYield(state, body, modeId, specialist = "none", efficiency = 1) 
     if (specialist === "miner" && (k === "metal" || k === "rare")) specBoost = 1.15;
     if (specialist === "botanist" && (k === "organics" || k === "fuel")) specBoost = 1.15;
     if (specialist === "engineer" && (k === "research")) specBoost = 1.1;
-    cargo[k] = Math.floor(v * mult * modeBoost * specBoost * (bonuses.cargo || 1) * (colonyMods.cargoMult || 1) * efficiency);
+    const crewMult = k === "research" ? (crewMods.researchMult || 1) * (focusMods.researchMult || 1) : 1;
+    const focusMission = focusMods.missionMult?.[k] || 1;
+    const contractMission = contractMods.missionMult?.[k] || 1;
+    const contractCargo = contractMods.cargoMult || 1;
+    cargo[k] = Math.floor(v * mult * modeBoost * specBoost * (bonuses.cargo || 1) * (colonyMods.cargoMult || 1) * contractCargo * crewMult * focusMission * contractMission * efficiency * PACE.missionYieldMult);
   });
   return cargo;
 }
@@ -2183,6 +2556,172 @@ function systemEventModifiers(stateObj) {
   });
   return mods;
 }
+function crewProgramModifiers(stateObj) {
+  const levels = stateObj.crewPrograms || {};
+  const mods = {
+    cargoMult: 1,
+    objectiveBonus: 0,
+    hazardMult: 1,
+    travelMult: 1,
+    fuelMult: 1,
+    scanMult: 1,
+    researchMult: 1,
+    baseEventRateMult: 1,
+    systemEventRateMult: 1,
+    moraleBonus: 0,
+    stabilityRecovery: 0,
+  };
+  const missionLvl = levels.mission_corps || 0;
+  if (missionLvl) {
+    mods.cargoMult *= 1 + missionLvl * 0.03;
+    mods.objectiveBonus += missionLvl * 0.02;
+    mods.hazardMult *= Math.max(0.88, 1 - missionLvl * 0.01);
+  }
+  const baseLvl = levels.base_command || 0;
+  if (baseLvl) {
+    mods.baseEventRateMult *= 1 + baseLvl * 0.08;
+    mods.systemEventRateMult *= 1 + baseLvl * 0.06;
+    mods.stabilityRecovery += baseLvl * 0.0015;
+  }
+  const scienceLvl = levels.science_guild || 0;
+  if (scienceLvl) {
+    mods.scanMult *= 1 + scienceLvl * 0.06;
+    mods.researchMult *= 1 + scienceLvl * 0.05;
+  }
+  const logisticsLvl = levels.logistics_wing || 0;
+  if (logisticsLvl) {
+    mods.travelMult *= Math.max(0.84, 1 - logisticsLvl * 0.03);
+    mods.fuelMult *= Math.max(0.82, 1 - logisticsLvl * 0.03);
+  }
+  const moraleLvl = levels.morale_office || 0;
+  if (moraleLvl) {
+    mods.moraleBonus += moraleLvl * 0.02;
+  }
+  return mods;
+}
+function assignCrewRoster(stateObj) {
+  const roster = [...(stateObj.crewRoster || [])].sort((a, b) => (a.hiredAt || 0) - (b.hiredAt || 0));
+  const assignedLeft = {
+    miner: stateObj.workers?.assigned?.miner || 0,
+    botanist: stateObj.workers?.assigned?.botanist || 0,
+    engineer: stateObj.workers?.assigned?.engineer || 0,
+  };
+  return roster.map((crew) => {
+    const assigned = (assignedLeft[crew.role] || 0) > 0;
+    if (assigned) assignedLeft[crew.role] -= 1;
+    return { ...crew, assigned };
+  });
+}
+function crewFatigueStats(stateObj) {
+  const assigned = assignCrewRoster(stateObj);
+  const totals = { miner: 0, botanist: 0, engineer: 0 };
+  const counts = { miner: 0, botanist: 0, engineer: 0 };
+  let allFatigue = 0;
+  let allCount = 0;
+  assigned.forEach((crew) => {
+    if (!crew.assigned) return;
+    const fatigue = Number.isFinite(crew.fatigue) ? crew.fatigue : 0;
+    totals[crew.role] += fatigue;
+    counts[crew.role] += 1;
+    allFatigue += fatigue;
+    allCount += 1;
+  });
+  const byRole = {
+    miner: counts.miner ? totals.miner / counts.miner : 0,
+    botanist: counts.botanist ? totals.botanist / counts.botanist : 0,
+    engineer: counts.engineer ? totals.engineer / counts.engineer : 0,
+  };
+  const avgAssigned = allCount ? allFatigue / allCount : 0;
+  return { byRole, avgAssigned };
+}
+function crewFocusModifiers(stateObj) {
+  const assigned = assignCrewRoster(stateObj);
+  const prodCounts = { miner: 0, botanist: 0, engineer: 0 };
+  let researchCount = 0;
+  let recoveryCount = 0;
+  let minerOre = 0;
+  let minerSalvage = 0;
+  let botanistNutrition = 0;
+  let botanistBiofuel = 0;
+  let engineerStability = 0;
+  let engineerAutomation = 0;
+  assigned.forEach((crew) => {
+    if (!crew.assigned) return;
+    const focus = crew.focus || "production";
+    if (focus === "production") prodCounts[crew.role] += 1;
+    if (focus === "research") researchCount += 1;
+    if (focus === "recovery") recoveryCount += 1;
+    if (crew.role === "miner" && focus === "ore") minerOre += 1;
+    if (crew.role === "miner" && focus === "salvage") minerSalvage += 1;
+    if (crew.role === "botanist" && focus === "nutrition") botanistNutrition += 1;
+    if (crew.role === "botanist" && focus === "biofuel") botanistBiofuel += 1;
+    if (crew.role === "engineer" && focus === "stability") engineerStability += 1;
+    if (crew.role === "engineer" && focus === "automation") engineerAutomation += 1;
+  });
+  return {
+    roleProdBonus: {
+      miner: Math.min(0.12, prodCounts.miner * 0.02),
+      botanist: Math.min(0.12, prodCounts.botanist * 0.02),
+      engineer: Math.min(0.12, prodCounts.engineer * 0.02),
+    },
+    minerOreMult: 1 + Math.min(0.18, minerOre * 0.03),
+    missionMult: {
+      metal: 1 + Math.min(0.12, minerOre * 0.02),
+      rare: 1 + Math.min(0.08, minerOre * 0.02),
+    },
+    cargoMult: 1 + Math.min(0.12, minerSalvage * 0.02),
+    botanistNutritionMult: 1 + Math.min(0.15, botanistNutrition * 0.03),
+    fuelProdMult: 1 + Math.min(0.15, botanistBiofuel * 0.03),
+    hazardMult: Math.max(0.85, 1 - engineerStability * 0.02),
+    baseEventRateMult: Math.max(0.85, 1 - engineerStability * 0.03),
+    systemEventRateMult: Math.max(0.85, 1 - engineerStability * 0.03),
+    travelMult: Math.max(0.85, 1 - engineerAutomation * 0.02),
+    scanMult: 1 + Math.min(0.2, researchCount * 0.02),
+    researchMult: 1 + Math.min(0.2, researchCount * 0.02),
+    fatigueGainMult: Math.max(0.7, 1 - recoveryCount * 0.05),
+    fatigueRecoveryMult: 1 + Math.min(0.5, recoveryCount * 0.05),
+  };
+}
+function crewContractModifiers(stateObj) {
+  const mods = {
+    cargoMult: 1,
+    travelMult: 1,
+    hazardMult: 1,
+    scanMult: 1,
+    researchMult: 1,
+    baseEventRateMult: 1,
+    systemEventRateMult: 1,
+    moraleBonus: 0,
+    prodMult: {},
+    missionMult: {},
+  };
+  (stateObj.crewRoster || []).forEach((crew) => {
+    if (!crew.temp || !crew.mods) return;
+    const m = crew.mods || {};
+    if (m.cargoMult) mods.cargoMult *= m.cargoMult;
+    if (m.travelMult) mods.travelMult *= m.travelMult;
+    if (m.hazardMult) mods.hazardMult *= m.hazardMult;
+    if (m.scanMult) mods.scanMult *= m.scanMult;
+    if (m.researchMult) mods.researchMult *= m.researchMult;
+    if (m.baseEventRateMult) mods.baseEventRateMult *= m.baseEventRateMult;
+    if (m.systemEventRateMult) mods.systemEventRateMult *= m.systemEventRateMult;
+    if (m.moraleBonus) mods.moraleBonus += m.moraleBonus;
+    Object.entries(m.prodMult || {}).forEach(([k, v]) => {
+      mods.prodMult[k] = (mods.prodMult[k] || 1) * v;
+    });
+    Object.entries(m.missionMult || {}).forEach(([k, v]) => {
+      mods.missionMult[k] = (mods.missionMult[k] || 1) * v;
+    });
+  });
+  return mods;
+}
+function crewTrainingTier(stateObj) {
+  const levels = Object.values(stateObj.crewPrograms || {}).reduce((sum, level) => sum + level, 0);
+  if (levels >= 9) return 3;
+  if (levels >= 6) return 2;
+  if (levels >= 3) return 1;
+  return 0;
+}
 function galaxyById(id) { return GALAXY_RULESETS.find((g) => g.id === id) || GALAXY_RULESETS[0]; }
 function activeGalaxy(stateObj) {
   const galaxies = stateObj.galaxies || [];
@@ -2215,13 +2754,16 @@ function colonyModifiers(stateObj) {
   const integration = stateObj.integration || { eventRateMult: 1, travelMult: 1, saturationRelief: 0, signalCapBonus: 0 };
   const galaxyMods = galaxyModifiers(stateObj);
   const doctrineMods = doctrineModifiers(stateObj);
+  const crewMods = crewProgramModifiers(stateObj);
+  const focusMods = crewFocusModifiers(stateObj);
+  const contractMods = crewContractModifiers(stateObj);
   const relayRange = counts.relay || 0;
-  const scanMult = (1 + Math.min(0.3, counts.survey * 0.1)) * (systemMods.scanMult || 1) * (galaxyMods.scanMult || 1) * (doctrineMods.scanMult || 1);
+  const scanMult = (1 + Math.min(0.3, counts.survey * 0.1)) * (systemMods.scanMult || 1) * (galaxyMods.scanMult || 1) * (doctrineMods.scanMult || 1) * (crewMods.scanMult || 1) * (focusMods.scanMult || 1) * (contractMods.scanMult || 1);
   const surveySpeed = Math.max(0.75, 1 - counts.survey * 0.05) * (systemMods.surveySpeed || 1);
   const objectiveBonus = Math.min(0.2, counts.survey * 0.05);
-  const travelMult = Math.max(0.8, 1 - counts.logistics * 0.05) * (integration.travelMult || 1) * (systemMods.travelMult || 1) * (galaxyMods.travelMult || 1) * (doctrineMods.travelMult || 1);
+  const travelMult = Math.max(0.8, 1 - counts.logistics * 0.05) * (integration.travelMult || 1) * (systemMods.travelMult || 1) * (galaxyMods.travelMult || 1) * (doctrineMods.travelMult || 1) * (crewMods.travelMult || 1) * (focusMods.travelMult || 1) * (contractMods.travelMult || 1);
   const fuelMult = Math.max(0.8, 1 - counts.logistics * 0.04);
-  const cargoMult = (1 + Math.min(0.2, counts.logistics * 0.04)) * (systemMods.cargoMult || 1) * (galaxyMods.cargoMult || 1) * (doctrineMods.cargoMult || 1);
+  const cargoMult = (1 + Math.min(0.2, counts.logistics * 0.04)) * (systemMods.cargoMult || 1) * (galaxyMods.cargoMult || 1) * (doctrineMods.cargoMult || 1) * (crewMods.cargoMult || 1) * (focusMods.cargoMult || 1) * (contractMods.cargoMult || 1);
   const command = commandUsage(stateObj);
   const overCargo = Math.max(0.7, 1 - command.over * 0.07);
   const overTravel = 1 + command.over * 0.08;
@@ -2232,15 +2774,18 @@ function colonyModifiers(stateObj) {
     surveySpeed,
     objectiveBonus,
     travelMult: travelMult * overTravel,
-    fuelMult,
+    fuelMult: fuelMult * (crewMods.fuelMult || 1),
     cargoMult: cargoMult * overCargo,
     command,
     stabilityDrain: stabilityDrain + (systemMods.stabilityDrain || 0),
-    hazardMult: (systemMods.hazardMult || 1) * (galaxyMods.hazardMult || 1) * (doctrineMods.hazardMult || 1),
-    eventRateMult: (integration.eventRateMult || 1) * (galaxyMods.eventRateMult || 1) * (doctrineMods.eventRateMult || 1),
+    hazardMult: (systemMods.hazardMult || 1) * (galaxyMods.hazardMult || 1) * (doctrineMods.hazardMult || 1) * (focusMods.hazardMult || 1) * (contractMods.hazardMult || 1),
+    eventRateMult: (integration.eventRateMult || 1) * (galaxyMods.eventRateMult || 1) * (doctrineMods.eventRateMult || 1) * (crewMods.systemEventRateMult || 1) * (focusMods.systemEventRateMult || 1) * (contractMods.systemEventRateMult || 1),
     integration,
     galaxyMods,
     doctrineMods,
+    crewMods,
+    focusMods,
+    contractMods,
   };
 }
 function hashStr(str) {
@@ -2263,7 +2808,7 @@ function isUnlockedUI(state, body) {
   if ((body.tier || 1) > hubRange(state)) return false;
   if (body.requireTech && !state.tech[body.requireTech]) return false;
   if (body.requireMissions && (state.milestones?.missionsDone || 0) < body.requireMissions) return false;
-  return (state.resources.signal || 0) >= (body.unlock || 0);
+  return (state.resources.signal || 0) >= Math.ceil((body.unlock || 0) * PACE.bodyUnlockMult);
 }
 function hubRange(state) {
   const relayBonus = colonyRoleCounts(state).relay || 0;

@@ -1,7 +1,7 @@
 // Missions view: handles target selection, launch config, specialists, auto-launch, and showing active missions.
 import { useState } from "react";
 
-export default function MissionsView({ state, startMission, setAutoLaunch, setSelected, format, missionModeById, missionYield, formatDuration, bodies, missionModes, isUnlockedUI, baseBonuses, hubRange, depletionFactor, missionMods }) {
+export default function MissionsView({ state, startMission, setAutoLaunch, setSelected, format, missionModeById, missionYield, formatDuration, bodies, missionModes, isUnlockedUI, baseBonuses, hubRange, depletionFactor, missionMods, missionDurationMult }) {
   return (
     <section className="panel space-y-3">
       <div>
@@ -49,6 +49,7 @@ export default function MissionsView({ state, startMission, setAutoLaunch, setSe
             baseBonuses={baseBonuses}
             depletionFactor={depletionFactor}
             missionMods={missionMods}
+            missionDurationMult={missionDurationMult}
           />
         </div>
       </div>
@@ -56,7 +57,7 @@ export default function MissionsView({ state, startMission, setAutoLaunch, setSe
   );
 }
 
-function MissionLaunch({ state, startMission, setAutoLaunch, format, missionModeById, missionYield, formatDuration, bodies, missionModes, baseBonuses, depletionFactor, missionMods }) {
+function MissionLaunch({ state, startMission, setAutoLaunch, format, missionModeById, missionYield, formatDuration, bodies, missionModes, baseBonuses, depletionFactor, missionMods, missionDurationMult }) {
   const [fuelBoost, setFuelBoost] = useState(0);
   const [modeId, setModeId] = useState("balanced");
   const [specialist, setSpecialist] = useState("none");
@@ -72,7 +73,7 @@ function MissionLaunch({ state, startMission, setAutoLaunch, format, missionMode
   const failChance = Math.min(80, Math.max(5, Math.round(((hazard || 0) * 60 + 5))));
   const auto = state.autoLaunch || {};
   const travelMult = missionMods?.travelMult || 1;
-  const travelMs = Math.max(15000, (body.travel * 1000 * (bonuses.travel || 1) * travelMult) - fuelBoost * 3000 + (mode?.durationMs || 0));
+  const travelMs = Math.max(15000, ((body.travel * 1000 * (bonuses.travel || 1) * travelMult) - fuelBoost * 3000 + (mode?.durationMs || 0)) * (missionDurationMult || 1) * (state.tech.auto_pilots ? 0.9 : 1));
   const efficiencyPct = Math.round(efficiency * 100);
   const command = missionMods?.command || { used: 0, capacity: 0, over: 0 };
   return (
