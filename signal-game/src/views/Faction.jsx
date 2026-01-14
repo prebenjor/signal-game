@@ -150,7 +150,7 @@ export default function FactionView({
               <div className="text-xs text-muted">{activeFaction.tagline}</div>
               {buffs.length > 0 && (
                 <div className="text-xs text-muted">
-                  Buffs: {buffs.join(" • ")}
+                  Buffs: {buffs.join(" | ")}
                 </div>
               )}
             </div>
@@ -162,7 +162,7 @@ export default function FactionView({
       <div className="grid lg:grid-cols-[1.1fr,0.9fr] gap-3">
         <div className="card space-y-3">
           <div className="font-semibold">Frontier Project</div>
-          {loading && <div className="text-sm text-muted">Loading project data…</div>}
+          {loading && <div className="text-sm text-muted">Loading project data...</div>}
           {!loading && !activeProject && <div className="text-sm text-muted">No active project yet.</div>}
           {activeProject && (
             <div className="space-y-3">
@@ -242,7 +242,7 @@ export default function FactionView({
             <div key={faction.id} className="rounded-xl border border-white/10 bg-slate-950/60 p-3 space-y-2">
               <div className="text-sm font-semibold">{faction.name}</div>
               <div className="text-xs text-muted">{faction.tagline}</div>
-              <div className="text-xs text-muted">{formatBuffs(faction.buffs || {}).join(" • ") || "No listed buffs."}</div>
+              <div className="text-xs text-muted">{formatBuffs(faction.buffs || {}).join(" | ") || "No listed buffs."}</div>
               <button
                 className="btn w-full"
                 disabled={!supabaseReady || needsName}
