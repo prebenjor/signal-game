@@ -126,11 +126,13 @@ export default function App() {
     buildings: {},
     activity: [],
     donations: [],
+    chat: [],
     membership: null,
     loading: false,
     error: null,
     activityError: null,
     donationsError: null,
+    chatError: null,
     leaderboard: [],
     leaderboardError: null,
     buildingsError: null,
@@ -146,6 +148,7 @@ export default function App() {
   const capabilities = deriveCapabilities(state);
   const missionMods = colonyModifiers(state);
   const supabaseReady = supabaseConfigured && !!supabase;
+  const CHAT_RETENTION_MS = 4 * 60 * 60 * 1000;
 
   useEffect(() => {
     if (!state.bases[state.selectedBody]) {
@@ -285,14 +288,28 @@ export default function App() {
     if (!supabaseConfigured || !supabase || !supabaseUserId) return;
     const factionId = factionState.membership?.faction_id;
     if (!factionId) {
-      setFactionState((prev) => ({ ...prev, activity: [], donations: [], activityError: null, donationsError: null }));
+      setFactionState((prev) => ({
+        ...prev,
+        activity: [],
+        donations: [],
+        chat: [],
+        activityError: null,
+        donationsError: null,
+        chatError: null,
+      }));
       return;
     }
     let active = true;
+    const isFreshChat = (row) => {
+      const stamp = Date.parse(row?.created_at);
+      return Number.isFinite(stamp) && (Date.now() - stamp) <= CHAT_RETENTION_MS;
+    };
+    const trimChat = (rows) => rows.filter(isFreshChat).slice(0, 50);
     const loadLogs = async () => {
-      const [activityRes, donationsRes] = await Promise.all([
+      const [activityRes, donationsRes, chatRes] = await Promise.all([
         supabase.from("faction_activity_log").select("*").eq("faction_id", factionId).order("created_at", { ascending: false }).limit(25),
         supabase.from("faction_donations_log").select("*").eq("faction_id", factionId).order("created_at", { ascending: false }).limit(25),
+        supabase.from("faction_chat_log").select("*").eq("faction_id", factionId).order("created_at", { ascending: false }).limit(50),
       ]);
       if (!active) return;
       setFactionState((prev) => ({
@@ -301,6 +318,8 @@ export default function App() {
         donations: donationsRes.data || [],
         activityError: activityRes.error?.message || null,
         donationsError: donationsRes.error?.message || null,
+        chat: trimChat(chatRes.data || []),
+        chatError: chatRes.error?.message || null,
       }));
     };
     loadLogs();
@@ -309,6 +328,11 @@ export default function App() {
       const next = list.filter((row) => row.id !== record.id);
       next.unshift(record);
       return next.slice(0, 25);
+    };
+    const upsertChat = (list, record) => {
+      const next = list.filter((row) => row.id !== record.id);
+      next.unshift(record);
+      return trimChat(next);
     };
 
     const channel = supabase
@@ -334,10 +358,24 @@ export default function App() {
         });
         refreshLeaderboard();
       })
+      .on("postgres_changes", { event: "*", schema: "public", table: "faction_chat_log", filter: `faction_id=eq.${factionId}` }, (payload) => {
+        const record = payload.new || payload.old;
+        if (!record?.id) return;
+        setFactionState((prev) => {
+          const next = payload.eventType === "DELETE"
+            ? prev.chat.filter((row) => row.id !== record.id)
+            : upsertChat(prev.chat, record);
+          return { ...prev, chat: next };
+        });
+      })
       .subscribe();
+    const pruneId = setInterval(() => {
+      setFactionState((prev) => ({ ...prev, chat: trimChat(prev.chat || []) }));
+    }, 60 * 1000);
 
     return () => {
       active = false;
+      clearInterval(pruneId);
       supabase.removeChannel(channel);
     };
   }, [supabaseUserId, factionState.membership?.faction_id]);
@@ -361,7 +399,7 @@ export default function App() {
 
   async function joinFaction(factionId) {
     if (!supabaseReady || !supabase) return { ok: false, message: "Supabase not configured." };
-    if (!state.profile?.name?.trim()) return { ok: false, message: "Set a callsign in Command Profile first." };
+    if (!state.profile?.name?.trim()) return { ok: false, message: "Set a callsign in Command Account first." };
     if (!supabaseUserId) return { ok: false, message: "Signing in? try again." };
     const { data, error } = await supabase
       .from("faction_members")
@@ -457,6 +495,24 @@ export default function App() {
     log(`Donated ${value} ${resource} to faction construction.`);
     refreshLeaderboard();
     return { ok: true, message: "Construction resources delivered." };
+  }
+
+  async function sendFactionChat(message) {
+    const content = message?.trim().slice(0, 240);
+    if (!supabaseReady || !supabase) return { ok: false, message: "Supabase not configured." };
+    if (!factionState.membership?.faction_id) return { ok: false, message: "Align with a faction first." };
+    if (!state.profile?.name?.trim()) return { ok: false, message: "Set a callsign in Command Account first." };
+    if (!supabaseUserId) return { ok: false, message: "Signing in? try again." };
+    if (!content) return { ok: false, message: "Enter a message." };
+    const payload = {
+      faction_id: factionState.membership.faction_id,
+      user_id: supabaseUserId,
+      callsign: state.profile.name.trim(),
+      message: content,
+    };
+    const { error } = await supabase.from("faction_chat_log").insert(payload);
+    if (error) return { ok: false, message: `Transmission failed: ${error.message}` };
+    return { ok: true, message: "Transmission sent." };
   }
 
   useEffect(() => {
@@ -1224,11 +1280,11 @@ export default function App() {
       const copyPromise = navigator.clipboard?.writeText ? navigator.clipboard.writeText(bundle) : Promise.reject();
       copyPromise
         .then(() => {
-          log("Profile exported. Copied to clipboard; keep the string safe.");
+          log("Account exported. Copied to clipboard; keep the string safe.");
           window.alert("Export copied to clipboard. Keep it safe.");
         })
         .catch(() => {
-          log("Profile exported. Copy the shown string to import elsewhere.");
+          log("Account exported. Copy the shown string to import elsewhere.");
           window.prompt("Copy your export string", bundle);
         });
     } catch (e) {
@@ -1249,8 +1305,8 @@ export default function App() {
       if (hashStr(raw) !== hash) throw new Error("Checksum mismatch");
       const parsed = JSON.parse(raw);
       dispatch({ type: "LOAD", payload: { ...initialState, ...parsed } });
-      log("Profile imported.");
-      alert("Profile import successful.");
+      log("Account imported.");
+      alert("Account import successful.");
     } catch (e) {
       console.error(e);
       alert("Import failed: invalid string.");
@@ -1441,7 +1497,7 @@ function biomeBuildingById(id) { return Object.values(BIOME_BUILDINGS).flat().fi
           >
             <div className="w-full max-w-md rounded-2xl border border-white/10 bg-slate-950 p-5 shadow-xl">
               <div className="text-lg font-semibold">Choose a callsign</div>
-              <div className="text-sm text-muted mt-1">Anonymous profiles need a name before joining multiplayer features.</div>
+              <div className="text-sm text-muted mt-1">Anonymous accounts need a callsign before joining multiplayer features.</div>
               <div className="mt-3 space-y-2">
                 <input
                   className="w-full rounded-lg border border-white/10 bg-slate-900 px-3 py-2 text-sm text-white"
@@ -1470,7 +1526,7 @@ function biomeBuildingById(id) { return Object.values(BIOME_BUILDINGS).flat().fi
                 className={`btn ${state.tab === "profile" ? "btn-primary" : ""}`}
                 onClick={() => dispatch({ type: "SET_TAB", tab: "profile" })}
               >
-                Profile
+                Account
               </button>
             </div>
           </div>
@@ -1625,8 +1681,10 @@ function biomeBuildingById(id) { return Object.values(BIOME_BUILDINGS).flat().fi
                 buildingsError={factionState.buildingsError}
                 activity={factionState.activity}
                 donations={factionState.donations}
+                chat={factionState.chat}
                 activityError={factionState.activityError}
                 donationsError={factionState.donationsError}
+                chatError={factionState.chatError}
                 membership={factionState.membership}
                 loading={factionState.loading}
                 error={factionState.error}
@@ -1635,6 +1693,7 @@ function biomeBuildingById(id) { return Object.values(BIOME_BUILDINGS).flat().fi
                 onJoin={joinFaction}
                 onDonate={donateFaction}
                 onDonateBuilding={donateFactionBuilding}
+                onSendChat={sendFactionChat}
                 resources={state.resources}
                 format={format}
               />
@@ -1718,7 +1777,7 @@ function AccountView({ state, exportProfile, importProfile, compact, setCompact,
   };
   return (
     <section className="panel space-y-3">
-      <div className="text-lg font-semibold">Command Profile</div>
+      <div className="text-lg font-semibold">Command Account</div>
       <div className="grid md:grid-cols-3 gap-3">
         <div className="card space-y-2">
           <div className="font-semibold">Callsign</div>
@@ -1760,11 +1819,11 @@ function AccountView({ state, exportProfile, importProfile, compact, setCompact,
           )}
         </div>
         <div className="card space-y-2">
-          <div className="font-semibold">Profile Vault</div>
-          <div className="text-sm text-muted">Profiles cache locally (storage + cookie). Export/import to move between browsers.</div>
+        <div className="font-semibold">Account Vault</div>
+          <div className="text-sm text-muted">Accounts cache locally (storage + cookie). Export/import to move between browsers.</div>
           <div className="flex flex-wrap gap-2">
-            <button className="btn" onClick={exportProfile}>Export Profile</button>
-            <button className="btn" onClick={importProfile}>Import Profile</button>
+            <button className="btn" onClick={exportProfile}>Export Account</button>
+            <button className="btn" onClick={importProfile}>Import Account</button>
             <button className="btn" onClick={manualSave}>Sync now</button>
           </div>
           <div className="text-xs text-muted">Export copies a sealed code string; import pastes it here. Last sync: {lastSaved ? new Date(lastSaved).toLocaleTimeString() : "never"}</div>

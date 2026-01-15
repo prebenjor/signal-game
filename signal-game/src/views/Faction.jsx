@@ -121,8 +121,10 @@ export default function FactionView({
   buildingsError,
   activity,
   donations,
+  chat,
   activityError,
   donationsError,
+  chatError,
   membership,
   loading,
   error,
@@ -131,6 +133,7 @@ export default function FactionView({
   onJoin,
   onDonate,
   onDonateBuilding,
+  onSendChat,
   resources,
   format,
 }) {
@@ -140,6 +143,8 @@ export default function FactionView({
   const [donateAmount, setDonateAmount] = useState(100);
   const [buildResource, setBuildResource] = useState("metal");
   const [buildAmount, setBuildAmount] = useState(100);
+  const [chatDraft, setChatDraft] = useState("");
+  const [chatStatus, setChatStatus] = useState(null);
   const [status, setStatus] = useState(null);
 
   const activeFaction = useMemo(() => factions.find((f) => f.id === membership?.faction_id), [factions, membership]);
@@ -180,6 +185,13 @@ export default function FactionView({
     buildAmount > 0 &&
     (resources?.[buildResource] || 0) >= buildAmount;
 
+  const canSendChat =
+    supabaseReady &&
+    !!onSendChat &&
+    !needsName &&
+    !!membership?.faction_id &&
+    !!chatDraft.trim();
+
   const handleJoin = async (id) => {
     if (!onJoin) return;
     setStatus(null);
@@ -199,6 +211,16 @@ export default function FactionView({
     setStatus(null);
     const result = await onDonateBuilding(buildingId, buildResource, buildAmount);
     if (result?.message) setStatus(result.message);
+  };
+
+  const handleSendChat = async () => {
+    if (!onSendChat) return;
+    const message = chatDraft.trim();
+    if (!message) return;
+    setChatStatus(null);
+    const result = await onSendChat(message);
+    if (result?.ok) setChatDraft("");
+    if (result?.message) setChatStatus(result.message);
   };
 
   const standings = useMemo(() => {
@@ -228,6 +250,7 @@ export default function FactionView({
 
   const activityRows = useMemo(() => activity || [], [activity]);
   const donationRows = useMemo(() => donations || [], [donations]);
+  const chatRows = useMemo(() => chat || [], [chat]);
   const formatLogTime = (value) => {
     if (!value) return "";
     const stamp = new Date(value);
@@ -286,7 +309,7 @@ export default function FactionView({
             <div className="card space-y-2">
               <div className="font-semibold">Status</div>
               <div className="text-sm text-muted">{supabaseReady ? "Relay link online." : "Relay link offline."}</div>
-              {needsName && <div className="text-xs text-muted">Set a callsign in Command Profile to unlock faction features.</div>}
+              {needsName && <div className="text-xs text-muted">Set a callsign in Command Account to unlock faction features.</div>}
               {!needsName && supabaseReady && !membership && <div className="text-xs text-muted">Choose a faction in Allegiance to start contributing.</div>}
               {supabaseReady && !factions.length && (
                 <div className="text-xs text-muted">No factions found in the database. Seed them in Supabase.</div>
@@ -561,7 +584,7 @@ export default function FactionView({
           <div className="card space-y-2">
             <div className="font-semibold">Allegiance Console</div>
             <div className="text-sm text-muted">Choose a faction to align with their doctrine and shared bonuses.</div>
-            {needsName && <div className="text-xs text-muted">Set a callsign in Command Profile before aligning.</div>}
+            {needsName && <div className="text-xs text-muted">Set a callsign in Command Account before aligning.</div>}
             {!factions.length && <div className="text-xs text-muted">No factions found. Seed them in Supabase.</div>}
           </div>
           <div className="grid md:grid-cols-3 gap-2">
@@ -628,6 +651,40 @@ export default function FactionView({
                 ))}
               </div>
             </div>
+          </div>
+          <div className="card space-y-2">
+            <div className="font-semibold">Relay Chat</div>
+            <div className="text-sm text-muted">Faction transmissions clear after a few hours.</div>
+            {chatError && <div className="text-xs text-amber-300">{chatError}</div>}
+            {!activeFaction && <div className="text-xs text-muted">Align with a faction to use relay chat.</div>}
+            {!!activeFaction && !chatRows.length && !chatError && (
+              <div className="text-xs text-muted">No transmissions yet.</div>
+            )}
+            <div className="list max-h-64 overflow-y-auto">
+              {chatRows.map((row) => (
+                <div key={row.id} className="row-item">
+                  <div className="row-details">
+                    <div className="row-title">{row.message || ""}</div>
+                    <div className="row-meta">{formatPilot(row)} · {formatLogTime(row.created_at)}</div>
+                  </div>
+                </div>
+              ))}
+            </div>
+            <div className="row">
+              <input
+                className="flex-1 rounded-lg border border-white/10 bg-slate-900 px-3 py-2 text-sm text-white"
+                placeholder={needsName ? "Set callsign to transmit" : "Type transmission"}
+                value={chatDraft}
+                onChange={(e) => setChatDraft(e.target.value)}
+                onKeyDown={(e) => { if (e.key === "Enter") handleSendChat(); }}
+                disabled={!supabaseReady || !membership?.faction_id || needsName}
+                maxLength={240}
+              />
+              <button className="btn" onClick={handleSendChat} disabled={!canSendChat}>
+                Transmit
+              </button>
+            </div>
+            {chatStatus && <div className="text-xs text-muted">{chatStatus}</div>}
           </div>
           <div className="card space-y-2">
             <div className="font-semibold">Network Horizons</div>
