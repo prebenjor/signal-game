@@ -19,15 +19,34 @@ export default function TechView({ state, buyTech, format, techDefs, hasPrereqs,
   const tiers = Array.from(new Set(techDefs.map((t) => t.tier))).sort((a, b) => a - b);
   const ownedTech = techDefs.filter((t) => state.tech[t.id]);
   const scaleCost = (cost, mult) => Object.fromEntries(Object.entries(cost || {}).map(([k, v]) => [k, Math.ceil(v * (mult || 1))]));
+  const nextUnlock = techDefs
+    .filter((t) => !state.tech[t.id])
+    .map((t) => Math.ceil(t.unlock * (techUnlockMult || 1)))
+    .sort((a, b) => a - b)[0];
   return (
-    <section className="panel space-y-3">
-      <div>
-        <div className="text-lg font-semibold">R&D Grid</div>
-        <div className="text-muted text-sm">Branching lattice; unlocks require prior nodes.</div>
+    <section className="panel space-y-4 tech-command">
+      <div className="relative overflow-hidden rounded-2xl border border-lime-400/20 bg-slate-950/80 p-4 tech-banner">
+        <div className="absolute inset-0 bg-[radial-gradient(circle_at_top,_rgba(163,230,53,0.18),transparent_60%)]" />
+        <div className="absolute inset-x-0 bottom-0 h-12 bg-gradient-to-t from-slate-950/90 to-transparent" />
+        <div className="relative z-10 flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
+          <div>
+            <div className="text-xs uppercase tracking-[0.2em] text-lime-200/70">Research Command</div>
+            <div className="text-2xl font-semibold">R&D Grid</div>
+            <div className="text-sm text-muted mt-1">Branching lattice; unlocks require prior nodes.</div>
+          </div>
+          <div className="flex flex-wrap gap-2 text-xs">
+            <span className="tag">Integrated {ownedTech.length}/{techDefs.length}</span>
+            <span className="tag">Signal {format(state.resources.signal || 0)}</span>
+            <span className="tag">Next Reveal {nextUnlock ? format(nextUnlock) : "Complete"}</span>
+          </div>
+        </div>
       </div>
-      <div className="card space-y-3">
+      <div className="rounded-2xl border border-white/10 bg-slate-950/70 p-4 space-y-3 tech-deck">
         <div className="row row-between">
-          <div className="font-semibold">Research Matrix</div>
+          <div>
+            <div className="font-semibold">Research Matrix</div>
+            <div className="text-xs text-muted">Unlock routes, review integrations, and archive lab notes.</div>
+          </div>
           <div className="flex flex-wrap gap-2">
             {techTabs.map((tab) => (
               <button key={tab.id} className={`tab ${pane === tab.id ? "active" : ""}`} onClick={() => setPane(tab.id)}>
@@ -40,7 +59,7 @@ export default function TechView({ state, buyTech, format, techDefs, hasPrereqs,
         {pane === "lattice" && (
           <div className="space-y-4 max-h-[520px] overflow-y-auto pr-1">
             {tiers.map((tier) => (
-              <div key={tier} className="card space-y-2">
+              <div key={tier} className="card space-y-2 tech-panel">
                 <div className="font-semibold">Tier {tier}</div>
                 <div className="list">
                   {techDefs.filter((t) => t.tier === tier).map((t) => {
@@ -85,7 +104,7 @@ export default function TechView({ state, buyTech, format, techDefs, hasPrereqs,
           <div className="space-y-2">
             <div className="font-semibold">Integrated Tech</div>
             <div className="text-xs text-muted">{ownedTech.length} nodes integrated.</div>
-            <div className="list max-h-[420px] overflow-y-auto pr-1">
+            <div className="list max-h-[420px] overflow-y-auto pr-1 tech-panel">
               {ownedTech.map((t) => (
                 <div key={t.id} className="row-item">
                   <div className="row-details">
@@ -102,11 +121,13 @@ export default function TechView({ state, buyTech, format, techDefs, hasPrereqs,
         {pane === "briefing" && (
           <div className="space-y-2">
             <div className="font-semibold">Lab Notes</div>
-            <ul className="text-sm text-muted list-disc list-inside space-y-1">
-              <li>Signal thresholds reveal deeper tiers. Keep scanning to surface new nodes.</li>
-              <li>Some branches require multiple prerequisites, plan your routes.</li>
-              <li>Tech multipliers scale costs; prioritize core unlocks before wide expansion.</li>
-            </ul>
+            <div className="tech-panel card">
+              <ul className="text-sm text-muted list-disc list-inside space-y-1">
+                <li>Signal thresholds reveal deeper tiers. Keep scanning to surface new nodes.</li>
+                <li>Some branches require multiple prerequisites, plan your routes.</li>
+                <li>Tech multipliers scale costs; prioritize core unlocks before wide expansion.</li>
+              </ul>
+            </div>
           </div>
         )}
       </div>

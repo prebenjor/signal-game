@@ -88,14 +88,30 @@ export default function CrewView({ state, hire, rollRecruits, changeCrew, format
   });
   const rosterDisplay = showAll ? filteredRoster : filteredRoster.slice(0, 8);
   return (
-    <section className="panel space-y-3">
-      <div>
-        <div className="text-lg font-semibold">Crew Command</div>
-        <div className="text-sm text-muted">Roles add +10% per assignment (miners/botanists) or +5% (engineers) to linked systems. Cohesion scales all output; keep food/habitat/power stable. Fatigue dulls output, recovery focus restores. Focus choices tune each role's effect.</div>
+    <section className="panel space-y-4 crew-command">
+      <div className="relative overflow-hidden rounded-2xl border border-rose-400/20 bg-slate-950/80 p-4 crew-banner">
+        <div className="absolute inset-0 bg-[radial-gradient(circle_at_top,_rgba(248,113,113,0.18),transparent_60%)]" />
+        <div className="absolute inset-x-0 bottom-0 h-12 bg-gradient-to-t from-slate-950/90 to-transparent" />
+        <div className="relative z-10 flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
+          <div>
+            <div className="text-xs uppercase tracking-[0.2em] text-rose-200/70">Personnel Command</div>
+            <div className="text-2xl font-semibold">Crew Command</div>
+            <div className="text-sm text-muted mt-1">Roles add +10% per assignment (miners/botanists) or +5% (engineers) to linked systems. Cohesion scales all output; keep food/habitat/power stable. Fatigue dulls output, recovery focus restores. Focus choices tune each role's effect.</div>
+          </div>
+          <div className="flex flex-wrap gap-2 text-xs">
+            <span className="tag">Headcount {state.workers.total}</span>
+            <span className="tag">Cohesion {moralePct}%</span>
+            <span className="tag">Tier Cap {tierCap}</span>
+            <span className="tag">Contracts {contracts.length}</span>
+          </div>
+        </div>
       </div>
-      <div className="card space-y-3">
+      <div className="rounded-2xl border border-white/10 bg-slate-950/70 p-4 space-y-3 crew-deck">
         <div className="row row-between">
-          <div className="font-semibold">Crew Operations Deck</div>
+          <div>
+            <div className="font-semibold">Crew Operations Deck</div>
+            <div className="text-xs text-muted">Assignments, recruitment, and training protocols.</div>
+          </div>
           <div className="flex flex-wrap gap-2">
             {crewTabs.map((tab) => (
               <button key={tab.id} className={`tab ${pane === tab.id ? "active" : ""}`} onClick={() => setPane(tab.id)}>
@@ -107,7 +123,7 @@ export default function CrewView({ state, hire, rollRecruits, changeCrew, format
 
         {pane === "overview" && (
           <div className="grid lg:grid-cols-3 gap-3">
-            <div className="card">
+            <div className="card crew-panel">
               <div className="row-title mb-1">Crew Readout</div>
               <div className="list">
                 <div className="row-item">
@@ -136,7 +152,7 @@ export default function CrewView({ state, hire, rollRecruits, changeCrew, format
                 </div>
               </div>
             </div>
-            <div className="card">
+            <div className="card crew-panel">
               <div className="row-title mb-1">Role Uplinks</div>
               <div className="list">
                 <div className="row-item">
@@ -162,7 +178,7 @@ export default function CrewView({ state, hire, rollRecruits, changeCrew, format
                 </div>
               </div>
             </div>
-            <div className="card">
+            <div className="card crew-panel">
               <div className="row-title mb-1">Crew Advisory</div>
               <div className="text-sm text-muted">
                 Idle crew provide rest benefits to morale. Assign specialists when scaling production or dealing with hazards.
@@ -176,7 +192,7 @@ export default function CrewView({ state, hire, rollRecruits, changeCrew, format
 
         {pane === "assignments" && (
           <div className="grid md:grid-cols-2 gap-3">
-            <div className="card">
+            <div className="card crew-panel">
               <div className="row-title mb-1">Role Allocation</div>
               <div className="list">
                 {['miner', 'botanist', 'engineer'].map((r) => (
@@ -196,7 +212,7 @@ export default function CrewView({ state, hire, rollRecruits, changeCrew, format
               </div>
               <div className="text-sm text-muted mt-2">Unassigned: {unassigned}</div>
             </div>
-            <div className="card space-y-2">
+            <div className="card space-y-2 crew-panel">
               <div className="row-title">Crew Directives</div>
               <div className="row row-between">
                 <div className="text-sm text-muted">Balance roles quickly to match roster size.</div>
@@ -218,7 +234,7 @@ export default function CrewView({ state, hire, rollRecruits, changeCrew, format
 
         {pane === "recruitment" && (
           <div className="grid md:grid-cols-2 gap-3">
-            <div className="card">
+            <div className="card crew-panel">
               <div className="row row-between mb-1">
                 <div className="row-title">Recruitment Bay</div>
                 <button className="btn" onClick={rollRecruits}>Ping</button>
@@ -241,7 +257,7 @@ export default function CrewView({ state, hire, rollRecruits, changeCrew, format
                 {!state.recruits.length && <div className="text-muted text-sm">No candidates in the queue. Ping to roll new crew.</div>}
               </div>
             </div>
-            <div className="card space-y-2">
+            <div className="card space-y-2 crew-panel">
               <div className="row row-between">
                 <div className="row-title">Contracted Specialists</div>
                 <button className="btn" onClick={rollContracts}>Ping</button>
@@ -271,7 +287,7 @@ export default function CrewView({ state, hire, rollRecruits, changeCrew, format
         )}
 
         {pane === "roster" && (
-          <div className="card">
+          <div className="card crew-panel">
             <div className="row row-between mb-1">
               <div className="row-title">Roster Ledger</div>
               <div className="row gap-2">
@@ -334,7 +350,7 @@ export default function CrewView({ state, hire, rollRecruits, changeCrew, format
 
         {pane === "training" && (
           <div className="space-y-3">
-            <div className="card space-y-2">
+            <div className="card space-y-2 crew-panel">
               <div className="row-title">Training Protocols</div>
               <div className="text-sm text-muted">Program levels: {programLevels} | Tier {crewTier}</div>
             <div className="list max-h-[420px] overflow-y-auto pr-1">
@@ -361,7 +377,7 @@ export default function CrewView({ state, hire, rollRecruits, changeCrew, format
                 </div>
               </div>
             </div>
-            <div className="card">
+            <div className="card crew-panel">
               <div className="row-title mb-1">Training Programs</div>
               <div className="text-sm text-muted mb-2">Invest in formal crew programs to boost missions, stabilize outposts, and improve scan output as the frontier grows.</div>
               <div className="list">
