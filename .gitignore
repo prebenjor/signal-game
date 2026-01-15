@@ -18,3 +18,9 @@ ms-playwright/
 .DS_Store
 Thumbs.db
 .vscode/
+
+# Local backups
+signal-frontier-backup-*.zip
+signal-frontier-backup-*.tar
+signal-game-backup.zip
+signal-game-backup.tar
