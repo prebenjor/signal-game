@@ -20,6 +20,8 @@ export default function CrewView({ state, hire, rollRecruits, changeCrew, format
   const [rosterFilter, setRosterFilter] = useState("all");
   const [showAll, setShowAll] = useState(false);
   const [pane, setPane] = useState("overview");
+  const [roleFilter, setRoleFilter] = useState("all");
+  const [fatigueFilter, setFatigueFilter] = useState("all");
   const programLevels = Object.values(state.crewPrograms || {}).reduce((sum, level) => sum + level, 0);
   const crewTier = programLevels >= 9 ? 3 : programLevels >= 6 ? 2 : programLevels >= 3 ? 1 : 0;
   const unlockQuickAssign = crewTier >= 1;
@@ -77,9 +79,11 @@ export default function CrewView({ state, hire, rollRecruits, changeCrew, format
       return { ...crew, status: assigned ? "Assigned" : "Reserve", fatigue, fatigueLabel, contract };
     });
   const filteredRoster = rosterWithStatus.filter((crew) => {
-    if (rosterFilter === "assigned") return crew.status === "Assigned";
-    if (rosterFilter === "reserve") return crew.status === "Reserve";
-    if (rosterFilter === "contract") return crew.contract;
+    if (rosterFilter === "assigned" && crew.status !== "Assigned") return false;
+    if (rosterFilter === "reserve" && crew.status !== "Reserve") return false;
+    if (rosterFilter === "contract" && !crew.contract) return false;
+    if (roleFilter !== "all" && crew.role !== roleFilter) return false;
+    if (fatigueFilter !== "all" && crew.fatigueLabel.toLowerCase() !== fatigueFilter) return false;
     return true;
   });
   const rosterDisplay = showAll ? filteredRoster : filteredRoster.slice(0, 8);
@@ -276,6 +280,18 @@ export default function CrewView({ state, hire, rollRecruits, changeCrew, format
                   <option value="assigned">Assigned</option>
                   <option value="reserve">Reserve</option>
                   <option value="contract">Contract</option>
+                </select>
+                <select className="select bg-slate-800 text-white" value={roleFilter} onChange={(e) => setRoleFilter(e.target.value)}>
+                  <option value="all">All roles</option>
+                  <option value="miner">Miner</option>
+                  <option value="botanist">Botanist</option>
+                  <option value="engineer">Engineer</option>
+                </select>
+                <select className="select bg-slate-800 text-white" value={fatigueFilter} onChange={(e) => setFatigueFilter(e.target.value)}>
+                  <option value="all">All fatigue</option>
+                  <option value="rested">Rested</option>
+                  <option value="steady">Steady</option>
+                  <option value="overworked">Overworked</option>
                 </select>
                 <label className="row text-xs">
                   <span>Show all</span>

@@ -8,6 +8,14 @@ export default function TechView({ state, buyTech, format, techDefs, hasPrereqs,
     { id: "catalog", label: "Tech Archive" },
     { id: "briefing", label: "Lab Notes" },
   ];
+  const techTrack = (tech) => {
+    const id = tech.id || "";
+    if (id.includes("scan") || id.includes("rift")) return "Scan Track";
+    if (id.includes("hazard") || id.includes("shield")) return "Safety Track";
+    if (id.includes("drone") || id.includes("auto") || id.includes("log")) return "Logistics Track";
+    if (id.includes("bio") || id.includes("hab")) return "Habitat Track";
+    return "Core Track";
+  };
   const tiers = Array.from(new Set(techDefs.map((t) => t.tier))).sort((a, b) => a - b);
   const ownedTech = techDefs.filter((t) => state.tech[t.id]);
   const scaleCost = (cost, mult) => Object.fromEntries(Object.entries(cost || {}).map(([k, v]) => [k, Math.ceil(v * (mult || 1))]));
@@ -59,7 +67,7 @@ export default function TechView({ state, buyTech, format, techDefs, hasPrereqs,
                             {t.name} {owned ? <span className="tag">Integrated</span> : null}
                           </div>
                           <div className="row-meta">{t.desc}</div>
-                          <div className="row-meta text-xs text-muted">{prereqText}</div>
+                          <div className="row-meta text-xs text-muted">Track: {techTrack(t)} | {prereqText}</div>
                         </div>
                         <button className="btn" disabled={disabled} onClick={() => buyTech(t.id)}>
                           {owned ? "Integrated" : `Research (${costText(cost, format)})`}

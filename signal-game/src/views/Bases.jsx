@@ -34,6 +34,7 @@ export default function BasesView({
   const opsCd = Math.max(0, (base.opsReadyAt || 0) - Date.now());
   const [pane, setPane] = useState("overview");
   const [buildGroup, setBuildGroup] = useState("All");
+  const [buildSearch, setBuildSearch] = useState("");
   const bonuses = baseBonuses ? baseBonuses(body.id) : { cargo: 1, travel: 1, hazard: 1 };
   const groupedBuildings = useMemo(() => {
     const classify = (b) => {
@@ -63,6 +64,7 @@ export default function BasesView({
   const visibleGroups = buildGroup === "All"
     ? groupedBuildings
     : groupedBuildings.filter((g) => g.name === buildGroup);
+  const buildQuery = buildSearch.trim().toLowerCase();
   const focusHelp = {
     balanced: "Even output across the grid.",
     production: "Boosts metal, organics, fuel, signal, rare.",
@@ -220,11 +222,24 @@ export default function BasesView({
                 ))}
               </div>
             )}
+            <input
+              className="w-full rounded-lg border border-white/10 bg-slate-900 px-3 py-2 text-sm text-white"
+              placeholder="Search facilities"
+              value={buildSearch}
+              onChange={(e) => setBuildSearch(e.target.value)}
+            />
             {visibleGroups.map((group) => (
               <div key={group.name} className="space-y-2">
                 <div className="font-semibold">{group.name}</div>
                 <div className="list max-h-[420px] overflow-y-auto pr-1">
-                  {group.items.map((b) => {
+                  {(buildQuery
+                    ? group.items.filter((b) => {
+                        const name = (b.name || "").toLowerCase();
+                        const desc = (b.desc || "").toLowerCase();
+                        return name.includes(buildQuery) || desc.includes(buildQuery);
+                      })
+                    : group.items
+                  ).map((b) => {
                     const lvl = base.buildings[b.id] || 0;
                     const cost = withLogisticsCost(scaledCost(b.cost, lvl, costExpBase), body);
                     const logistics = Math.max(2, Math.floor((body.travel || 0) / 25));
@@ -250,6 +265,13 @@ export default function BasesView({
                       </div>
                     );
                   })}
+                  {buildQuery && !group.items.some((b) => {
+                    const name = (b.name || "").toLowerCase();
+                    const desc = (b.desc || "").toLowerCase();
+                    return name.includes(buildQuery) || desc.includes(buildQuery);
+                  }) && (
+                    <div className="text-muted text-sm">No facilities match this filter.</div>
+                  )}
                 </div>
               </div>
             ))}

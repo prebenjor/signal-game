@@ -1867,6 +1867,7 @@ function HubView({ state, buildHub, buyHubUpgrade, crewBonusText, ascend, format
     { id: "range", label: "Range Uplink" },
     { id: "prestige", label: "Prestige Protocols" },
     { id: "automation", label: "Automation Matrix" },
+    { id: "opslog", label: "Ops Log" },
     { id: "briefing", label: "Briefing" },
   ];
   const activeDoctrine = doctrineById(state.doctrine);
@@ -1932,20 +1933,6 @@ function HubView({ state, buildHub, buyHubUpgrade, crewBonusText, ascend, format
             </div>
           </div>
 
-          <div className="card space-y-2">
-            <div className="font-semibold">Ops Log</div>
-            <div className="list max-h-[180px] overflow-y-auto pr-1">
-              {(state.hubOpsLog || []).slice().reverse().map((e, i) => (
-                <div key={i} className="row-item">
-                  <div className="row-details">
-                    <div className="row-title">{e.text}</div>
-                    <div className="row-meta">{new Date(e.time).toLocaleTimeString()}</div>
-                  </div>
-                </div>
-              ))}
-              {!state.hubOpsLog?.length && <div className="text-muted text-sm">No automated routines yet.</div>}
-            </div>
-          </div>
         </div>
 
         <div className="card space-y-3">
@@ -2119,6 +2106,23 @@ function HubView({ state, buildHub, buyHubUpgrade, crewBonusText, ascend, format
             </div>
           )}
 
+          {pane === "opslog" && (
+            <div className="space-y-2">
+              <div className="font-semibold">Operations Log</div>
+              <div className="list max-h-[520px] overflow-y-auto pr-1">
+                {(state.hubOpsLog || []).slice().reverse().map((e, i) => (
+                  <div key={i} className="row-item">
+                    <div className="row-details">
+                      <div className="row-title">{e.text}</div>
+                      <div className="row-meta">{new Date(e.time).toLocaleTimeString()}</div>
+                    </div>
+                  </div>
+                ))}
+                {!state.hubOpsLog?.length && <div className="text-muted text-sm">No automated routines yet.</div>}
+              </div>
+            </div>
+          )}
+
           {pane === "briefing" && (
             <div className="space-y-3">
               <div className="font-semibold">Briefing & Controls</div>
@@ -2133,11 +2137,32 @@ function HubView({ state, buildHub, buyHubUpgrade, crewBonusText, ascend, format
   );
 }
 function LogView({ log }) {
+  const [query, setQuery] = useState("");
+  const normalized = query.trim().toLowerCase();
+  const rows = useMemo(() => {
+    const entries = [...(log || [])].reverse();
+    if (!normalized) return entries;
+    return entries.filter((e) => (e.text || "").toLowerCase().includes(normalized));
+  }, [log, normalized]);
   return (
-    <section className="panel space-y-2">
-      <div className="text-lg font-semibold">Log</div>
+    <section className="panel space-y-3">
+      <div className="row row-between">
+        <div>
+          <div className="text-lg font-semibold">Operations Log</div>
+          <div className="text-sm text-muted">Telemetry and player actions, archived in real-time.</div>
+        </div>
+        <div className="text-xs text-muted">{rows.length} entries</div>
+      </div>
+      <div className="card">
+        <input
+          className="w-full rounded-lg border border-white/10 bg-slate-900 px-3 py-2 text-sm text-white"
+          placeholder="Filter by keyword"
+          value={query}
+          onChange={(e) => setQuery(e.target.value)}
+        />
+      </div>
       <div className="list">
-        {[...log].reverse().map((e, i) => (
+        {rows.map((e, i) => (
           <div key={i} className="row-item">
             <div className="row-details">
               <div className="row-title">{e.text}</div>
@@ -2145,7 +2170,7 @@ function LogView({ log }) {
             </div>
           </div>
         ))}
-        {!log.length && <div className="text-muted text-sm">No events yet.</div>}
+        {!rows.length && <div className="text-muted text-sm">No matching entries.</div>}
       </div>
     </section>
   );
@@ -2154,6 +2179,9 @@ function LogView({ log }) {
 function SystemsView({ state, capabilities, format, formatDuration, startSystemOp, colonizeSystem, startIntegrationProject, resolveSystemEvent, chartNewGalaxy, colonyRoles }) {
   const [rolePick, setRolePick] = useState({});
   const [nextGalaxy, setNextGalaxy] = useState("dense");
+  const [pane, setPane] = useState("overview");
+  const [filter, setFilter] = useState("all");
+  const [query, setQuery] = useState("");
   if (!capabilities.systems) {
     return (
       <section className="panel space-y-2">
@@ -2164,6 +2192,22 @@ function SystemsView({ state, capabilities, format, formatDuration, startSystemO
   }
   const systems = state.systems || [];
   const colonies = state.colonies || [];
+  const systemEvents = state.systemEvents || [];
+  const colonyBySystem = useMemo(() => {
+    const map = new Map();
+    colonies.forEach((colony) => {
+      if (colony?.systemId) map.set(colony.systemId, colony);
+    });
+    return map;
+  }, [colonies]);
+  const eventsBySystem = useMemo(() => {
+    const map = {};
+    systemEvents.forEach((ev) => {
+      if (!ev?.systemId) return;
+      map[ev.systemId] = [...(map[ev.systemId] || []), ev];
+    });
+    return map;
+  }, [systemEvents]);
   const command = commandUsage(state);
   const surveySpeed = colonyModifiers(state).surveySpeed || 1;
   const integration = state.integration || { eventRateMult: 1, travelMult: 1, saturationRelief: 0, signalCapBonus: 0 };
@@ -2172,41 +2216,160 @@ function SystemsView({ state, capabilities, format, formatDuration, startSystemO
   const integratedSystems = systems.filter((s) => s.integratedAt).length;
   const canChartGalaxy = integratedSystems >= 2;
   const traitName = (id) => SYSTEM_TRAITS.find((t) => t.id === id)?.name || id;
+  const activeProjects = systems.filter((s) => s.project).length;
+  const projectCap = Math.max(1, Math.floor(commandCapacity(state) / 2) + 1);
+  const activeOps = systems.filter((s) => s.op);
+  const allEvents = systemEvents.map((ev) => ({ ...ev, system: systems.find((s) => s.id === ev.systemId) }));
+  const normalized = query.trim().toLowerCase();
+  const stageBucket = (system, colony) => {
+    if (system.integratedAt) return "integrated";
+    if (colony) return "anchored";
+    if (system.stage === "colonize") return "colonize";
+    return "survey";
+  };
+  const filteredSystems = systems.filter((system) => {
+    const colony = colonyBySystem.get(system.id);
+    const bucket = stageBucket(system, colony);
+    if (filter === "active" && !system.op) return false;
+    if (filter !== "all" && filter !== "active" && bucket !== filter) return false;
+    if (!normalized) return true;
+    const traits = (system.traits || []).map(traitName).join(" ").toLowerCase();
+    const name = (system.name || "").toLowerCase();
+    return name.includes(normalized) || traits.includes(normalized);
+  });
+  const deckTabs = [
+    { id: "overview", label: "Overview" },
+    { id: "ops", label: "Survey Ops" },
+    { id: "integration", label: "Integration" },
+    { id: "events", label: "Events" },
+  ];
+  const filters = [
+    { id: "all", label: "All" },
+    { id: "survey", label: "Survey Chain" },
+    { id: "colonize", label: "Colonize" },
+    { id: "anchored", label: "Anchored" },
+    { id: "integrated", label: "Integrated" },
+    { id: "active", label: "Active Ops" },
+  ];
   return (
     <section className="panel space-y-3">
       <div>
         <div className="text-lg font-semibold">Systems</div>
-          <div className="text-muted text-sm">Run scan to probe to survey chains to unlock colonies.</div>
+        <div className="text-muted text-sm">Run scan to probe to survey chains to unlock colonies.</div>
       </div>
+
+      <div className="card space-y-3">
+        <div className="row row-between">
+          <div className="font-semibold">System Command Deck</div>
+          <div className="flex flex-wrap gap-2">
+            {deckTabs.map((tab) => (
+              <button key={tab.id} className={`tab ${pane === tab.id ? "active" : ""}`} onClick={() => setPane(tab.id)}>
+                {tab.label}
+              </button>
+            ))}
+          </div>
+        </div>
+        {pane === "overview" && (
+          <div className="grid md:grid-cols-2 gap-3">
+            <div className="rounded-xl border border-white/10 bg-slate-950/60 p-3 space-y-1">
+              <div className="text-xs text-muted">Galaxy Overview</div>
+              <div className="text-sm font-semibold">{galaxy?.name || "Uncharted"}</div>
+              <div className="text-xs text-muted">Ruleset: {galaxyRule?.name || "Unknown"} | Depth {galaxy?.depth || 0}</div>
+              <div className="text-xs text-muted">Integrations: {integratedSystems}</div>
+              <div className="text-xs text-muted">Effects: cargo {Math.round((galaxyRule?.mods?.cargoMult || 1) * 100)}% | hazards {Math.round((galaxyRule?.mods?.hazardMult || 1) * 100)}%</div>
+              <div className="text-xs text-muted">{galaxyRule?.desc || "Reach systems to unlock galaxy options."}</div>
+            </div>
+            <div className="rounded-xl border border-white/10 bg-slate-950/60 p-3 space-y-1">
+              <div className="text-xs text-muted">Command Capacity</div>
+              <div className="text-sm font-semibold">{command.used}/{command.capacity} slots in use</div>
+              <div className="text-xs text-muted">Over-capacity reduces mission efficiency and destabilizes colonies.</div>
+              <div className="text-xs text-muted">Integration effects: travel {Math.round((integration.travelMult || 1) * 100)}% | event rate {Math.round((integration.eventRateMult || 1) * 100)}%</div>
+            </div>
+          </div>
+        )}
+        {pane === "ops" && (
+          <div className="space-y-2">
+            {!activeOps.length && <div className="text-sm text-muted">No active survey chains.</div>}
+            {activeOps.map((system) => {
+              const step = SYSTEM_SURVEY_STEPS[system.stage];
+              const remaining = system.op ? Math.max(0, system.op.endsAt - Date.now()) : 0;
+              return (
+                <div key={system.id} className="rounded-xl border border-white/10 bg-slate-950/60 p-3 space-y-1">
+                  <div className="text-sm font-semibold">{system.name}</div>
+                  <div className="text-xs text-muted">{step?.name || "Survey"} running • {formatDuration(remaining)} remaining</div>
+                </div>
+              );
+            })}
+          </div>
+        )}
+        {pane === "integration" && (
+          <div className="grid md:grid-cols-2 gap-3">
+            <div className="rounded-xl border border-white/10 bg-slate-950/60 p-3 space-y-2">
+              <div className="font-semibold text-sm">Galaxy Controls</div>
+              <div className="text-xs text-muted">Chart a new galaxy once two systems are integrated.</div>
+              <div className="row gap-2">
+                <select className="select bg-slate-800 text-white" value={nextGalaxy} onChange={(e) => setNextGalaxy(e.target.value)}>
+                  {GALAXY_RULESETS.map((g) => <option key={g.id} value={g.id}>{g.name}</option>)}
+                </select>
+                <button className="btn" disabled={!canChartGalaxy} onClick={() => chartNewGalaxy(nextGalaxy)}>
+                  {canChartGalaxy ? "Chart New Galaxy" : "Integrate 2 systems"}
+                </button>
+              </div>
+            </div>
+            <div className="rounded-xl border border-white/10 bg-slate-950/60 p-3 space-y-1">
+              <div className="font-semibold text-sm">Integration Status</div>
+              <div className="text-xs text-muted">Integrated systems: {integratedSystems}</div>
+              <div className="text-xs text-muted">Active projects: {activeProjects}/{projectCap}</div>
+              <div className="text-xs text-muted">Travel efficiency: {Math.round((integration.travelMult || 1) * 100)}%</div>
+              <div className="text-xs text-muted">Event rate: {Math.round((integration.eventRateMult || 1) * 100)}%</div>
+            </div>
+          </div>
+        )}
+        {pane === "events" && (
+          <div className="space-y-2">
+            {!allEvents.length && <div className="text-sm text-muted">No active system events.</div>}
+            {allEvents.length > 0 && (
+              <div className="list">
+                {allEvents.map((ev) => (
+                  <div key={ev.id} className="row-item">
+                    <div className="row-details">
+                      <div className="row-title">{ev.name}</div>
+                      <div className="row-meta">{ev.system?.name || "Unknown system"} • {ev.desc}</div>
+                      <div className="row-meta text-xs text-muted">Resolve cost: {costText(ev.cost, format)}</div>
+                    </div>
+                    <button className="btn" onClick={() => resolveSystemEvent(ev.systemId, ev.id)}>Resolve</button>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        )}
+      </div>
+
       <div className="card space-y-2">
         <div className="row row-between">
-          <div className="font-semibold">Galaxy Overview</div>
-          <div className="text-sm">{galaxy?.name || "Uncharted"}</div>
+          <div className="font-semibold">System Registry</div>
+          <div className="text-xs text-muted">{filteredSystems.length}/{systems.length} visible</div>
         </div>
-          <div className="text-xs text-muted">Ruleset: {galaxyRule?.name || "Unknown"} | Depth {galaxy?.depth || 0} | Integrations {integratedSystems}</div>
-          <div className="text-xs text-muted">Effects: cargo {Math.round((galaxyRule?.mods?.cargoMult || 1) * 100)}% | hazards {Math.round((galaxyRule?.mods?.hazardMult || 1) * 100)}%</div>
-        <div className="text-xs text-muted">{galaxyRule?.desc || "Reach systems to unlock galaxy options."}</div>
-        <div className="row gap-2">
-          <select className="select bg-slate-800 text-white" value={nextGalaxy} onChange={(e) => setNextGalaxy(e.target.value)}>
-            {GALAXY_RULESETS.map((g) => <option key={g.id} value={g.id}>{g.name}</option>)}
-          </select>
-          <button className="btn" disabled={!canChartGalaxy} onClick={() => chartNewGalaxy(nextGalaxy)}>
-            {canChartGalaxy ? "Chart New Galaxy" : "Integrate 2 systems"}
-          </button>
+        <div className="flex flex-wrap gap-2 items-center">
+          {filters.map((tab) => (
+            <button key={tab.id} className={`tab ${filter === tab.id ? "active" : ""}`} onClick={() => setFilter(tab.id)}>
+              {tab.label}
+            </button>
+          ))}
+          <input
+            className="min-w-[180px] flex-1 rounded-lg border border-white/10 bg-slate-900 px-3 py-2 text-sm text-white"
+            placeholder="Search systems"
+            value={query}
+            onChange={(e) => setQuery(e.target.value)}
+          />
         </div>
       </div>
-      <div className="card space-y-1">
-        <div className="row row-between">
-          <div className="font-semibold">Command Capacity</div>
-          <div className="text-sm">{command.used}/{command.capacity} used</div>
-        </div>
-        <div className="text-xs text-muted">Over-capacity reduces mission efficiency and slowly destabilizes colonies.</div>
-        <div className="text-xs text-muted">Integration effects: travel {Math.round((integration.travelMult || 1) * 100)}% | event rate {Math.round((integration.eventRateMult || 1) * 100)}%</div>
-      </div>
+
       <div className="list">
-        {systems.map((system) => {
-          const colony = colonies.find((c) => c.systemId === system.id);
-          const events = (state.systemEvents || []).filter((e) => e.systemId === system.id);
+        {filteredSystems.map((system) => {
+          const colony = colonyBySystem.get(system.id);
+          const events = eventsBySystem[system.id] || [];
           const traits = (system.traits || []).map(traitName).join(", ") || "Unstable signals";
           const stage = system.stage || "scan";
           const stageLabel = stage === "colonized" ? "Anchored" : stage[0].toUpperCase() + stage.slice(1);
@@ -2217,8 +2380,6 @@ function SystemsView({ state, capabilities, format, formatDuration, startSystemO
           const project = system.project ? INTEGRATION_PROJECTS.find((p) => p.id === system.project.id) : null;
           const projectRemaining = system.project ? Math.max(0, system.project.endsAt - Date.now()) : 0;
           const trend = events.length ? "Declining" : "Stable";
-          const activeProjects = systems.filter((s) => s.project).length;
-          const projectCap = Math.max(1, Math.floor(commandCapacity(state) / 2) + 1);
           const canStartProject = !system.project && activeProjects < projectCap;
           return (
             <div key={system.id} className="row-item">
@@ -2305,6 +2466,7 @@ function SystemsView({ state, capabilities, format, formatDuration, startSystemO
           );
         })}
         {!systems.length && <div className="text-muted text-sm">No systems detected yet. Raise hub range to reveal new targets.</div>}
+        {!!systems.length && !filteredSystems.length && <div className="text-muted text-sm">No systems match the current filters.</div>}
       </div>
     </section>
   );
@@ -2312,20 +2474,70 @@ function SystemsView({ state, capabilities, format, formatDuration, startSystemO
 
 function CodexView({ state }) {
   const unlocked = new Set(state.codexUnlocked || []);
+  const [filter, setFilter] = useState("all");
+  const [query, setQuery] = useState("");
+  const normalized = query.trim().toLowerCase();
+  const totalCount = CODEX_ENTRIES.length;
+  const unlockedCount = CODEX_ENTRIES.filter((entry) => unlocked.has(entry.id)).length;
+  const entries = useMemo(() => {
+    return CODEX_ENTRIES.filter((entry) => {
+      const isUnlocked = unlocked.has(entry.id);
+      if (filter === "unlocked" && !isUnlocked) return false;
+      if (filter === "locked" && isUnlocked) return false;
+      if (!normalized) return true;
+      const text = `${entry.title} ${entry.body}`.toLowerCase();
+      return text.includes(normalized);
+    });
+  }, [filter, normalized, unlocked]);
   return (
-    <section className="panel space-y-2">
-      <div className="text-lg font-semibold">Codex</div>
-      <div className="text-muted text-sm">Operational knowledge unlocks as milestones are reached.</div>
-      <div className="list">
-        {CODEX_ENTRIES.map((entry) => (
-          <div key={entry.id} className="row-item">
-            <div className="row-details">
-              <div className="row-title">{entry.title}</div>
-              <div className="row-meta">{unlocked.has(entry.id) ? entry.body : "Locked. Reach the relevant milestone to reveal."}</div>
-            </div>
-            {unlocked.has(entry.id) && <span className="tag">Unlocked</span>}
+    <section className="panel space-y-3">
+      <div className="row row-between">
+        <div>
+          <div className="text-lg font-semibold">Codex Archive</div>
+          <div className="text-muted text-sm">Operational knowledge unlocks as milestones are reached.</div>
+        </div>
+        <div className="text-xs text-muted">{unlockedCount}/{totalCount} unlocked</div>
+      </div>
+      <div className="card space-y-2">
+        <div className="row row-between">
+          <div className="text-xs text-muted">Filters</div>
+          <div className="flex flex-wrap gap-2">
+            {[
+              { id: "all", label: "All" },
+              { id: "unlocked", label: "Unlocked" },
+              { id: "locked", label: "Locked" },
+            ].map((tab) => (
+              <button
+                key={tab.id}
+                className={`tab ${filter === tab.id ? "active" : ""}`}
+                onClick={() => setFilter(tab.id)}
+              >
+                {tab.label}
+              </button>
+            ))}
           </div>
-        ))}
+        </div>
+        <input
+          className="w-full rounded-lg border border-white/10 bg-slate-900 px-3 py-2 text-sm text-white"
+          placeholder="Search codex entries"
+          value={query}
+          onChange={(e) => setQuery(e.target.value)}
+        />
+      </div>
+      <div className="list">
+        {entries.map((entry) => {
+          const isUnlocked = unlocked.has(entry.id);
+          return (
+            <div key={entry.id} className="row-item">
+              <div className="row-details">
+                <div className="row-title">{entry.title}</div>
+                <div className="row-meta">{isUnlocked ? entry.body : "Locked. Reach the relevant milestone to reveal."}</div>
+              </div>
+              <span className="tag">{isUnlocked ? "Unlocked" : "Locked"}</span>
+            </div>
+          );
+        })}
+        {!entries.length && <div className="text-muted text-sm">No entries match this filter.</div>}
       </div>
     </section>
   );

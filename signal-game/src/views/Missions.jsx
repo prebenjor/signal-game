@@ -151,53 +151,60 @@ function MissionLaunch({ state, startMission, setAutoLaunch, format, missionMode
   const command = missionMods?.command || { used: 0, capacity: 0, over: 0 };
   return (
     <div className="space-y-3">
-      <div className="text-sm text-muted">Slots {active.length}/{slots}</div>
-      <div className="row-item">
-        <div className="row-details">
-          <div className="row-title">Operational Stance</div>
-          <div className="row-meta">{mode?.desc}</div>
-        </div>
-        <select className="select bg-slate-800 text-white" value={modeId} onChange={(e) => setModeId(e.target.value)}>
-          {missionModes.map((m) => <option key={m.id} value={m.id}>{m.name}</option>)}
-        </select>
+      <div className="row row-between">
+        <div className="text-sm text-muted">Launch status</div>
+        <span className="tag">Slots {active.length}/{slots}</span>
       </div>
-      <div className="row">
-        <input type="range" min="0" max="10" value={fuelBoost} onChange={(e) => setFuelBoost(Number(e.target.value))} />
-        <span className="text-sm text-muted">Fuel boost: {fuelBoost}</span>
-      </div>
-      <div className="row-item">
-        <div className="row-details">
-          <div className="row-title">Cargo Projection</div>
-          <div className="row-meta">{Object.entries(forecast).map(([k, v]) => `${format(v)} ${k}`).join(" - ")}</div>
-          <div className="row-meta">Hazard {Math.round(hazard * 100)}% | Failure risk ~{failChance}% | Travel {formatDuration(travelMs)} | Mode {mode?.name}</div>
-          <div className="row-meta text-xs text-muted">Efficiency {efficiencyPct}% | Variance +/-10%</div>
-          {command.over > 0 && <div className="row-meta text-xs text-muted">Command over-capacity: -{Math.round(command.over * 7)}% cargo, +{Math.round(command.over * 8)}% travel time.</div>}
+
+      <div className="card space-y-2">
+        <div className="font-semibold">Launch Settings</div>
+        <div className="row-item">
+          <div className="row-details">
+            <div className="row-title">Operational Stance</div>
+            <div className="row-meta">{mode?.desc}</div>
+          </div>
+          <select className="select bg-slate-800 text-white" value={modeId} onChange={(e) => setModeId(e.target.value)}>
+            {missionModes.map((m) => <option key={m.id} value={m.id}>{m.name}</option>)}
+          </select>
         </div>
-        <button className="btn btn-primary" onClick={() => startMission(body.id, fuelBoost, modeId, specialist)}>Deploy</button>
-      </div>
-      <div className="row-item">
-        <div className="row-details">
-          <div className="row-title">Assign Specialist</div>
-          <div className="row-meta">Miner: +metal/rare | Botanist: +organics/fuel | Engineer: -hazard, +research</div>
+        <div className="row-item">
+          <div className="row-details">
+            <div className="row-title">Assign Specialist</div>
+            <div className="row-meta">Miner: +metal/rare | Botanist: +organics/fuel | Engineer: -hazard, +research</div>
+          </div>
+          <select className="select bg-slate-800 text-white" value={specialist} onChange={(e) => setSpecialist(e.target.value)}>
+            <option value="none">None</option>
+            <option value="miner">Miner</option>
+            <option value="botanist">Botanist</option>
+            <option value="engineer">Engineer</option>
+          </select>
         </div>
-        <select className="select bg-slate-800 text-white" value={specialist} onChange={(e) => setSpecialist(e.target.value)}>
-          <option value="none">None</option>
-          <option value="miner">Miner</option>
-          <option value="botanist">Botanist</option>
-          <option value="engineer">Engineer</option>
-        </select>
-      </div>
-      <div className="row-item">
-        <div className="row-details">
-          <div className="row-title">Auto-deploy</div>
-          <div className="row-meta">Deploy this target automatically when slots are free.</div>
+        <div className="row">
+          <input type="range" min="0" max="10" value={fuelBoost} onChange={(e) => setFuelBoost(Number(e.target.value))} />
+          <span className="text-sm text-muted">Fuel boost: {fuelBoost}</span>
         </div>
-        <div className="flex gap-2 items-center">
-          <input type="checkbox" checked={auto.enabled && auto.bodyId === body.id} onChange={(e) => {
-            if (e.target.checked) setAutoLaunch({ enabled: true, bodyId: body.id, mode: modeId, specialist });
-            else setAutoLaunch({ enabled: false, bodyId: null, mode: "balanced", specialist: "none" });
-          }} />
-          <span className="text-sm text-muted">{auto.enabled && auto.bodyId === body.id ? "Armed" : "Idle"}</span>
+      </div>
+
+      <div className="card space-y-2">
+        <div className="font-semibold">Cargo Projection</div>
+        <div className="text-sm">{Object.entries(forecast).map(([k, v]) => `${format(v)} ${k}`).join(" - ")}</div>
+        <div className="text-xs text-muted">Hazard {Math.round(hazard * 100)}% | Failure risk ~{failChance}% | Travel {formatDuration(travelMs)} | Mode {mode?.name}</div>
+        <div className="text-xs text-muted">Efficiency {efficiencyPct}% | Variance +/-10%</div>
+        {command.over > 0 && <div className="text-xs text-muted">Command over-capacity: -{Math.round(command.over * 7)}% cargo, +{Math.round(command.over * 8)}% travel time.</div>}
+        <button className="btn btn-primary w-full" onClick={() => startMission(body.id, fuelBoost, modeId, specialist)}>Deploy</button>
+      </div>
+
+      <div className="card space-y-2">
+        <div className="font-semibold">Auto-deploy</div>
+        <div className="row row-between">
+          <div className="text-sm text-muted">Deploy this target automatically when slots are free.</div>
+          <div className="flex gap-2 items-center">
+            <input type="checkbox" checked={auto.enabled && auto.bodyId === body.id} onChange={(e) => {
+              if (e.target.checked) setAutoLaunch({ enabled: true, bodyId: body.id, mode: modeId, specialist });
+              else setAutoLaunch({ enabled: false, bodyId: null, mode: "balanced", specialist: "none" });
+            }} />
+            <span className="text-sm text-muted">{auto.enabled && auto.bodyId === body.id ? "Armed" : "Idle"}</span>
+          </div>
         </div>
       </div>
     </div>
