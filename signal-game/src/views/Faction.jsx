@@ -1,4 +1,4 @@
-import React, { useMemo, useState } from "react";
+import React, { useEffect, useMemo, useRef, useState } from "react";
 import { FACTION_BUILDINGS, FACTION_DIRECTIVES } from "../game/data";
 
 const BUFF_LABELS = {
@@ -26,6 +26,7 @@ const TABS = [
   { id: "construction", label: "Construction" },
   { id: "directives", label: "Directives" },
   { id: "allegiance", label: "Allegiance" },
+  { id: "chat", label: "Chat" },
   { id: "network", label: "Network" },
 ];
 
@@ -146,6 +147,7 @@ export default function FactionView({
   const [chatDraft, setChatDraft] = useState("");
   const [chatStatus, setChatStatus] = useState(null);
   const [status, setStatus] = useState(null);
+  const chatListRef = useRef(null);
 
   const activeFaction = useMemo(() => factions.find((f) => f.id === membership?.faction_id), [factions, membership]);
   const activeProject = useMemo(() => projects[membership?.faction_id], [projects, membership]);
@@ -223,6 +225,12 @@ export default function FactionView({
     if (result?.message) setChatStatus(result.message);
   };
 
+  useEffect(() => {
+    const node = chatListRef.current;
+    if (!node) return;
+    node.scrollTop = node.scrollHeight;
+  }, [chatRows.length]);
+
   const standings = useMemo(() => {
     return factions
       .map((faction) => {
@@ -250,7 +258,9 @@ export default function FactionView({
 
   const activityRows = useMemo(() => activity || [], [activity]);
   const donationRows = useMemo(() => donations || [], [donations]);
-  const chatRows = useMemo(() => chat || [], [chat]);
+  const chatRows = useMemo(() => {
+    return (chat || []).slice().sort((a, b) => new Date(a.created_at) - new Date(b.created_at));
+  }, [chat]);
   const formatLogTime = (value) => {
     if (!value) return "";
     const stamp = new Date(value);
@@ -606,6 +616,48 @@ export default function FactionView({
         </div>
       )}
 
+
+      {pane === "chat" && (
+        <div className="space-y-3">
+          <div className="card space-y-2">
+            <div className="font-semibold">Relay Chat</div>
+            <div className="text-sm text-muted">Faction transmissions clear after a few hours.</div>
+            {chatError && <div className="text-xs text-amber-300">{chatError}</div>}
+            {!activeFaction && <div className="text-xs text-muted">Align with a faction to use relay chat.</div>}
+          </div>
+          <div className="card space-y-2">
+            {!!activeFaction && !chatRows.length && !chatError && (
+              <div className="text-xs text-muted">No transmissions yet.</div>
+            )}
+            <div ref={chatListRef} className="list max-h-72 overflow-y-auto">
+              {chatRows.map((row) => (
+                <div key={row.id} className="row-item">
+                  <div className="row-details">
+                    <div className="row-title">{row.message || ""}</div>
+                    <div className="row-meta">{formatPilot(row)} | {formatLogTime(row.created_at)}</div>
+                  </div>
+                </div>
+              ))}
+            </div>
+            <div className="row">
+              <input
+                className="flex-1 rounded-lg border border-white/10 bg-slate-900 px-3 py-2 text-sm text-white"
+                placeholder={needsName ? "Set callsign to transmit" : "Type transmission"}
+                value={chatDraft}
+                onChange={(e) => setChatDraft(e.target.value)}
+                onKeyDown={(e) => { if (e.key === "Enter") handleSendChat(); }}
+                disabled={!supabaseReady || !membership?.faction_id || needsName}
+                maxLength={240}
+              />
+              <button className="btn" onClick={handleSendChat} disabled={!canSendChat}>
+                Transmit
+              </button>
+            </div>
+            {chatStatus && <div className="text-xs text-muted">{chatStatus}</div>}
+          </div>
+        </div>
+      )}
+
       {pane === "network" && (
         <div className="space-y-3">
           <div className="card space-y-2">
@@ -651,40 +703,6 @@ export default function FactionView({
                 ))}
               </div>
             </div>
-          </div>
-          <div className="card space-y-2">
-            <div className="font-semibold">Relay Chat</div>
-            <div className="text-sm text-muted">Faction transmissions clear after a few hours.</div>
-            {chatError && <div className="text-xs text-amber-300">{chatError}</div>}
-            {!activeFaction && <div className="text-xs text-muted">Align with a faction to use relay chat.</div>}
-            {!!activeFaction && !chatRows.length && !chatError && (
-              <div className="text-xs text-muted">No transmissions yet.</div>
-            )}
-            <div className="list max-h-64 overflow-y-auto">
-              {chatRows.map((row) => (
-                <div key={row.id} className="row-item">
-                  <div className="row-details">
-                    <div className="row-title">{row.message || ""}</div>
-                    <div className="row-meta">{formatPilot(row)} · {formatLogTime(row.created_at)}</div>
-                  </div>
-                </div>
-              ))}
-            </div>
-            <div className="row">
-              <input
-                className="flex-1 rounded-lg border border-white/10 bg-slate-900 px-3 py-2 text-sm text-white"
-                placeholder={needsName ? "Set callsign to transmit" : "Type transmission"}
-                value={chatDraft}
-                onChange={(e) => setChatDraft(e.target.value)}
-                onKeyDown={(e) => { if (e.key === "Enter") handleSendChat(); }}
-                disabled={!supabaseReady || !membership?.faction_id || needsName}
-                maxLength={240}
-              />
-              <button className="btn" onClick={handleSendChat} disabled={!canSendChat}>
-                Transmit
-              </button>
-            </div>
-            {chatStatus && <div className="text-xs text-muted">{chatStatus}</div>}
           </div>
           <div className="card space-y-2">
             <div className="font-semibold">Network Horizons</div>

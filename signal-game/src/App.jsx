@@ -510,8 +510,14 @@ export default function App() {
       callsign: state.profile.name.trim(),
       message: content,
     };
-    const { error } = await supabase.from("faction_chat_log").insert(payload);
+    const { data, error } = await supabase.from("faction_chat_log").insert(payload).select("*").maybeSingle();
     if (error) return { ok: false, message: `Transmission failed: ${error.message}` };
+    if (data?.id) {
+      setFactionState((prev) => {
+        const next = [data, ...(prev.chat || [])].slice(0, 50);
+        return { ...prev, chat: next };
+      });
+    }
     return { ok: true, message: "Transmission sent." };
   }
 
@@ -1269,7 +1275,7 @@ export default function App() {
     log(`Ascended for ${points} prestige. Global production boost now ${Math.round((prestige.boost - 1) * 100)}%.`);
   }
 
-  // Export obfuscated profile blob for cross-browser transfer.
+  // Export obfuscated account blob for cross-browser transfer.
   function exportProfile() {
     try {
       const raw = JSON.stringify(state);
@@ -1289,13 +1295,13 @@ export default function App() {
         });
     } catch (e) {
       console.error(e);
-      alert("Failed to export profile.");
+      alert("Failed to export account.");
     }
   }
 
-  // Import profile blob (base64+xor) and overwrite current state.
+  // Import account blob (base64+xor) and overwrite current state.
   function importProfile() {
-    const data = window.prompt("Paste exported profile string");
+    const data = window.prompt("Paste exported account string");
     if (!data) return;
     try {
       const [hash, payload] = data.trim().split(".");
