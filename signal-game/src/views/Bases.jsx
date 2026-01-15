@@ -36,6 +36,9 @@ export default function BasesView({
   const [buildGroup, setBuildGroup] = useState("All");
   const [buildSearch, setBuildSearch] = useState("");
   const bonuses = baseBonuses ? baseBonuses(body.id) : { cargo: 1, travel: 1, hazard: 1 };
+  const maintenanceFill = Math.min(1, maintenanceStats.used / Math.max(1, maintenanceStats.cap));
+  const incidents = base.events || [];
+  const incidentFill = Math.min(1, incidents.length / 4);
   const groupedBuildings = useMemo(() => {
     const classify = (b) => {
       if (b.maintenanceCap) return "Infrastructure";
@@ -87,14 +90,30 @@ export default function BasesView({
   };
 
   return (
-    <section className="panel space-y-3">
-      <div>
-        <div className="text-lg font-semibold">Bases</div>
-        <div className="text-muted text-sm">Coordinate structures, incidents, and site ops. Mission targeting lives in Missions.</div>
+    <section className="panel space-y-4 base-command">
+      <div className="relative overflow-hidden rounded-2xl border border-emerald-400/20 bg-slate-950/80 p-4 base-banner">
+        <div className="absolute inset-0 bg-[radial-gradient(circle_at_top,_rgba(16,185,129,0.18),transparent_60%)]" />
+        <div className="absolute inset-x-0 bottom-0 h-12 bg-gradient-to-t from-slate-950/90 to-transparent" />
+        <div className="relative z-10 flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
+          <div>
+            <div className="text-xs uppercase tracking-[0.2em] text-emerald-200/70">Outpost Command</div>
+            <div className="text-2xl font-semibold">Bases</div>
+            <div className="text-sm text-muted mt-1">Coordinate structures, incidents, and site ops. Mission targeting lives in Missions.</div>
+          </div>
+          <div className="flex flex-wrap gap-2 text-xs">
+            <span className="tag">{labelify(body.type)} Site</span>
+            <span className="tag">Travel {formatDuration(body.travel * 1000)}</span>
+            <span className="tag">Hazard {(body.hazard * 100).toFixed(0)}%</span>
+            <span className="tag">Incidents {incidents.length}/4</span>
+          </div>
+        </div>
       </div>
-      <div className="card space-y-3">
+      <div className="rounded-2xl border border-white/10 bg-slate-950/70 p-4 space-y-3 base-deck">
         <div className="row row-between">
-          <div className="font-semibold">Outpost Operations Deck</div>
+          <div>
+            <div className="font-semibold">Outpost Operations Deck</div>
+            <div className="text-xs text-muted">Site-level controls, fabrication, and field protocols.</div>
+          </div>
           <div className="flex flex-wrap gap-2">
             {tabOrder.map((key) => (
               <button key={key} className={`tab ${pane === key ? "active" : ""}`} onClick={() => setPane(key)}>
@@ -107,11 +126,11 @@ export default function BasesView({
         {pane === "overview" && (
           <div className="grid lg:grid-cols-2 gap-3">
             <div className="space-y-3">
-              <div className="card space-y-3">
+              <div className="card space-y-3 base-panel">
                 <div className="flex items-center justify-between">
                   <div>
-                    <div className="font-semibold">Site Command</div>
-                    <div className="text-xs text-muted">Outpost Overview</div>
+                    <div className="font-semibold">Outpost Dossier</div>
+                    <div className="text-xs text-muted">Sector overview and routing</div>
                   </div>
                   <span className="tag">{labelify(body.type)} Site</span>
                 </div>
@@ -134,12 +153,13 @@ export default function BasesView({
                   <span className="tag">Travel {formatDuration(body.travel * 1000)}</span>
                   <span className="tag">Hazard {(body.hazard * 100).toFixed(0)}%</span>
                   <span className="tag">Ops {ops.length}</span>
-                  <span className="tag">Incidents {(base.events || []).length}/{4}</span>
+                  <span className="tag">Incidents {incidents.length}/4</span>
+                  <span className="tag">Focus {labelify(base.focus)}</span>
                 </div>
                 <div className="text-sm text-muted">Focus shifts here do not launch sorties; use Missions to dispatch expeditions.</div>
               </div>
 
-              <div className="card space-y-2">
+              <div className="card space-y-2 base-panel">
                 <div className="font-semibold">Stability Grid</div>
                 <div className="row-item">
                   <div className="row-details">
@@ -150,13 +170,25 @@ export default function BasesView({
                   </div>
                   <div className="tag">{maintenanceStats.over ? "Reduced output" : "Stable"}</div>
                 </div>
+                <div className="space-y-2">
+                  <div className="text-xs text-muted">Capacity load</div>
+                  <div className="h-2 rounded-full bg-white/10 overflow-hidden">
+                    <div className="h-full bg-emerald-400" style={{ width: `${maintenanceFill * 100}%` }} />
+                  </div>
+                </div>
+                <div className="space-y-2">
+                  <div className="text-xs text-muted">Incident pressure</div>
+                  <div className="h-2 rounded-full bg-white/10 overflow-hidden">
+                    <div className="h-full bg-amber-400" style={{ width: `${incidentFill * 100}%` }} />
+                  </div>
+                </div>
                 <div className="text-xs text-muted">Build Maintenance Bays to raise cap and slow incident spikes.</div>
               </div>
             </div>
 
             <div className="space-y-3">
-              <div className="card space-y-2">
-                <div className="font-semibold">Outpost Summary</div>
+              <div className="card space-y-2 base-panel">
+                <div className="font-semibold">Performance Snapshot</div>
                 <div className="grid grid-cols-2 gap-2">
                   <div className="stat-box">
                     <span className="text-muted text-xs">Cargo Bonus</span>
@@ -181,7 +213,7 @@ export default function BasesView({
         )}
 
         {pane === "focus" && (
-          <div className="card space-y-2">
+          <div className="card space-y-2 base-panel">
             <div className="font-semibold">Focus Protocol</div>
             <div className="flex flex-wrap gap-2">
               {['balanced', 'production', 'sustain', 'morale'].map((f) => (
@@ -195,7 +227,7 @@ export default function BasesView({
         )}
 
         {pane === "traits" && (
-          <div className="card space-y-2">
+          <div className="card space-y-2 base-panel">
             <div className="font-semibold">Site Traits</div>
             <div className="list">
               {baseTraits.map((t) => (
@@ -229,9 +261,13 @@ export default function BasesView({
               onChange={(e) => setBuildSearch(e.target.value)}
             />
             {visibleGroups.map((group) => (
-              <div key={group.name} className="space-y-2">
-                <div className="font-semibold">{group.name}</div>
-                <div className="list max-h-[420px] overflow-y-auto pr-1">
+              <div key={group.name} className="space-y-2 base-build-group">
+                <div className="row row-between base-build-group-header">
+                  <div className="font-semibold">{group.name}</div>
+                  <div className="text-xs text-muted">{group.items.length} schematics</div>
+                </div>
+                <div className="base-build-divider" />
+                <div className="list max-h-[420px] overflow-y-auto pr-1 base-build-list">
                   {(buildQuery
                     ? group.items.filter((b) => {
                         const name = (b.name || "").toLowerCase();

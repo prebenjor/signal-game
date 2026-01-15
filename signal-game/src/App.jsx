@@ -2775,6 +2775,16 @@ function rollTraits(body) {
   }
   return picks;
 }
+function defaultBaseState(body) {
+  return {
+    buildings: {},
+    events: [],
+    focus: "balanced",
+    nextEventAt: Date.now() + randomBetween(...EVENT_COOLDOWN_MS),
+    opsReadyAt: 0,
+    traits: body ? rollTraits(body) : [],
+  };
+}
 function traitEffects(traitIds = []) {
   const out = { prod: {}, hazardMult: 1, travelMult: 1, cargoMult: 1, eventMult: 1, maintenanceCap: 0, morale: 0 };
   traitIds.forEach((id) => {
