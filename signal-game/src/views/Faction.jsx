@@ -225,12 +225,6 @@ export default function FactionView({
     if (result?.message) setChatStatus(result.message);
   };
 
-  useEffect(() => {
-    const node = chatListRef.current;
-    if (!node) return;
-    node.scrollTop = node.scrollHeight;
-  }, [chatRows.length]);
-
   const standings = useMemo(() => {
     return factions
       .map((faction) => {
@@ -261,6 +255,12 @@ export default function FactionView({
   const chatRows = useMemo(() => {
     return (chat || []).slice().sort((a, b) => new Date(a.created_at) - new Date(b.created_at));
   }, [chat]);
+
+  useEffect(() => {
+    const node = chatListRef.current;
+    if (!node) return;
+    node.scrollTop = node.scrollHeight;
+  }, [chatRows.length]);
   const formatLogTime = (value) => {
     if (!value) return "";
     const stamp = new Date(value);
