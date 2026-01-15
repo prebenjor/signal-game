@@ -19,7 +19,7 @@ import CrewView from "./views/Crew";
 import TechView from "./views/Tech";
 import FactionView from "./views/Faction";
 import { supabase, supabaseConfigured } from "./lib/supabase";
-import { STORAGE_KEY, LEGACY_KEY, TICK_MS, SAVE_MS, MAX_EVENTS_PER_BASE, SAVE_VERSION, TAB_ORDER, EVENT_COOLDOWN_MS, PACE, CREW_FATIGUE, CONTRACT_REFRESH_MS, COST_EXP, SYSTEM_EVENT_COOLDOWN_MS, MAX_SYSTEM_EVENTS, BODIES, HUB_UPGRADES, HUB_BUILDINGS, BIOME_BUILDINGS, BASE_TRAITS, TECH, BASE_OPS, STARTER_TOUR, CODEX_ENTRIES, MISSION_MODES, SYSTEM_NAME_PARTS, SYSTEM_TRAITS, SYSTEM_SURVEY_STEPS, SURVEY_SEQUENCE, COLONY_ROLES, COLONY_COST, CREW_PROGRAMS, CREW_CONTRACTS, SYSTEM_EVENTS, INTEGRATION_PROJECTS, GALAXY_RULESETS, DOCTRINES } from "./game/data";
+import { STORAGE_KEY, LEGACY_KEY, TICK_MS, SAVE_MS, MAX_EVENTS_PER_BASE, SAVE_VERSION, TAB_ORDER, EVENT_COOLDOWN_MS, PACE, CREW_FATIGUE, CONTRACT_REFRESH_MS, COST_EXP, HUB_TIER_STEP, HUB_TIER_COST_MULT, HUB_UPGRADE_TIER_MULT, SYSTEM_EVENT_COOLDOWN_MS, MAX_SYSTEM_EVENTS, BODIES, HUB_UPGRADES, HUB_BUILDINGS, BIOME_BUILDINGS, BASE_TRAITS, TECH, BASE_OPS, STARTER_TOUR, CODEX_ENTRIES, MISSION_MODES, SYSTEM_NAME_PARTS, SYSTEM_TRAITS, SYSTEM_SURVEY_STEPS, SURVEY_SEQUENCE, COLONY_ROLES, COLONY_COST, CREW_PROGRAMS, CREW_CONTRACTS, SYSTEM_EVENTS, INTEGRATION_PROJECTS, GALAXY_RULESETS, DOCTRINES } from "./game/data";
 
 function seedCrewRoster(workers) {
   const assigned = workers?.assigned || { miner: 0, botanist: 0, engineer: 0 };
@@ -614,6 +614,7 @@ export default function App() {
     const maintenance = baseMaintenanceStats(currentBase);
     const focusMods = crewFocusModifiers(state);
     const contractMods = crewContractModifiers(state);
+    const hubMods = hubUpgradeMods(state);
 
     const addContribution = (prod, cons, requiresPower) => contributions.push({ prod, cons, requiresPower });
 
@@ -622,8 +623,9 @@ export default function App() {
       const prod = {}; Object.entries(def.prod || {}).forEach(([k, v]) => prod[k] = v * lvl * mult);
       addContribution(applyProdMult(prod, focusMods, contractMods), scaleCons(def.cons, lvl), !!def.cons?.power);
     });
-    if (state.hubUpgrades.fuel_farm) addContribution(applyProdMult({ fuel: 2 * state.hubUpgrades.fuel_farm }, focusMods, contractMods), {}, false);
-    if (state.hubUpgrades.scan_array) addContribution(applyProdMult({ signal: 3 * state.hubUpgrades.scan_array }, focusMods, contractMods), {}, false);
+    if (state.hubUpgrades.fuel_farm) addContribution(applyProdMult({ fuel: 1 * state.hubUpgrades.fuel_farm }, focusMods, contractMods), {}, false);
+    if (state.hubUpgrades.scan_array) addContribution(applyProdMult({ signal: 2 * state.hubUpgrades.scan_array }, focusMods, contractMods), {}, false);
+    if (hubMods.habitat || hubMods.morale) addContribution({ habitat: hubMods.habitat, morale: hubMods.morale }, {}, false);
     if (state.tech.fuel_synth) addContribution(applyProdMult({ fuel: 1 * state.tech.fuel_synth }, focusMods, contractMods), {}, false);
     if (state.tech.deep_scan) addContribution(applyProdMult({ research: 1 * state.tech.deep_scan }, focusMods, contractMods), {}, false);
     if (state.tech.bio_domes) addContribution(applyProdMult({ food: 2 * state.tech.bio_domes, habitat: 2 * state.tech.bio_domes }, focusMods, contractMods), {}, false);
@@ -676,7 +678,7 @@ export default function App() {
       const oreFocus = (["ore_rig","core_rig","core_tap"].includes(buildingId)) ? (focusMods.minerOreMult || 1) : 1;
       return (1 + (state.workers.assigned.miner || 0) * 0.1 + (bonus.miner || 0)) * (1 + focusBonus) * oreFocus * fatigueMult * moraleBoost;
     }
-    if (["algae_farm","protein_farm","bio_reactor"].includes(buildingId)) {
+    if (["algae_farm","protein_farm","bio_reactor","hydroponics"].includes(buildingId)) {
       const fatigueMult = 1 - (fatigueStats.byRole.botanist || 0) * 0.2;
       const focusBonus = focusMods.roleProdBonus.botanist || 0;
       const nutritionFocus = focusMods.botanistNutritionMult || 1;
@@ -1113,16 +1115,18 @@ export default function App() {
     if ((state.missions.active || []).length >= slots) { log("All mission slots busy."); return; }
     const crewMods = crewProgramModifiers(state);
     const missionMods = colonyModifiers(state);
+    const hubMods = hubUpgradeMods(state);
     let fuelCost = Math.max(5, Math.floor(body.travel / 3)) + fuelBoost;
-    fuelCost = Math.ceil(fuelCost * (missionMods.fuelMult || 1) * (crewMods.fuelMult || 1));
+    fuelCost = Math.ceil(fuelCost * (missionMods.fuelMult || 1) * (crewMods.fuelMult || 1) * (hubMods.fuelMult || 1));
     if (!state.milestones?.firstLaunch) fuelCost = 0;
     if (state.resources.fuel < fuelCost) { log("Not enough fuel."); return; }
     bumpResources({ fuel: -fuelCost });
     const mode = missionModeById(modeId);
     const bonuses = baseBonuses(state, body.id);
+    const hubBonus = hubMissionBonuses(state);
     const hazardBase = body.hazard - (state.tech.hazard_gear ? 0.25 : 0) - (state.tech.shielding ? 0.2 : 0) + (mode?.hazard || 0) + (specialist === "engineer" ? -0.1 : 0);
-    const hazard = Math.max(0, hazardBase * (bonuses.hazard || 1) * (missionMods.hazardMult || 1) * (crewMods.hazardMult || 1));
-    const duration = Math.max(15000, ((body.travel * 1000 * (bonuses.travel || 1) * (missionMods.travelMult || 1) * (crewMods.travelMult || 1)) - fuelBoost * 3000 + (mode?.durationMs || 0)) * (state.tech.auto_pilots ? 0.9 : 1) * PACE.missionDurationMult);
+    const hazard = Math.max(0, hazardBase * (bonuses.hazard || 1) * (missionMods.hazardMult || 1) * (crewMods.hazardMult || 1) * (hubMods.hazardMult || 1));
+    const duration = Math.max(15000, ((body.travel * 1000 * (bonuses.travel || 1) * (hubBonus.travel || 1) * (missionMods.travelMult || 1) * (crewMods.travelMult || 1)) - fuelBoost * 3000 + (mode?.durationMs || 0)) * (state.tech.auto_pilots ? 0.9 : 1) * PACE.missionDurationMult);
     const objectiveChance = Math.min(0.55, 0.3 + (missionMods.objectiveBonus || 0) + (crewMods.objectiveBonus || 0));
     const objective = Math.random() < objectiveChance ? makeObjective(body) : null;
     const efficiency = depletionFactor(state, body.id);
@@ -1181,7 +1185,7 @@ export default function App() {
   function buildHub(id) {
     const def = HUB_BUILDINGS.find((b) => b.id === id); if (!def) return;
     const level = state.hubBuildings[id] || 0;
-    const cost = scaledCost(def.cost, level, COST_EXP.hub);
+    const cost = scaledHubCost(def.cost, level);
     if (!canAfford(cost)) { log("Not enough resources."); return; }
     spend(cost);
     dispatch({ type: "UPDATE", patch: { hubBuildings: { ...state.hubBuildings, [id]: (state.hubBuildings[id] || 0) + 1 } } });
@@ -1191,8 +1195,16 @@ export default function App() {
 
   function buyHubUpgrade(id) {
     const def = HUB_UPGRADES.find((u) => u.id === id); if (!def) return;
-    if (!canAfford(def.cost)) { log("Not enough resources."); return; }
-    spend(def.cost);
+    const level = state.hubUpgrades[id] || 0;
+    const totalLevels = hubTotalLevel(state);
+    const unlockAt = (level + 1) * HUB_TIER_STEP;
+    if (totalLevels < unlockAt) {
+      log(`Upgrade locked. Reach Nexus level ${unlockAt} to unlock tier ${level + 1}.`);
+      return;
+    }
+    const cost = scaledUpgradeCost(def.cost, level);
+    if (!canAfford(cost)) { log("Not enough resources."); return; }
+    spend(cost);
     dispatch({ type: "UPDATE", patch: { hubUpgrades: { ...state.hubUpgrades, [id]: (state.hubUpgrades[id] || 0) + 1 } } });
     unlockCodex("hub_ops");
     log(`Upgraded ${def.name}.`);
@@ -1255,7 +1267,8 @@ export default function App() {
     const crewMods = crewProgramModifiers(state);
     const focusMods = crewFocusModifiers(state);
     const contractMods = crewContractModifiers(state);
-    const gain = Math.floor(6 * (crewMods.researchMult || 1) * (focusMods.researchMult || 1) * (contractMods.researchMult || 1) * PACE.labYieldMult);
+    const hubResearch = 1 + (state.hubUpgrades?.survey_lab || 0) * 0.08;
+    const gain = Math.floor(6 * (crewMods.researchMult || 1) * (focusMods.researchMult || 1) * (contractMods.researchMult || 1) * hubResearch * PACE.labYieldMult);
     bumpResources({ research: gain });
     dispatch({ type: "UPDATE", patch: { labReadyAt: Date.now() + cooldownMs } });
     if (!silent) log("Research pulse completed. New data archived.");
@@ -1852,11 +1865,25 @@ function HubView({ state, buildHub, buyHubUpgrade, crewBonusText, ascend, format
   const ops = state.hubOps || { autoPulse: false, autoPulseMinSignal: 150, autoLab: false, autoLabMinSignal: 120, autoLabMinMetal: 40, reserveSignal: 70, reserveMetal: 0 };
   const [pane, setPane] = useState("build");
   const command = commandUsage(state);
+  const hubLevels = hubTotalLevel(state);
+  const hubTier = Math.floor(hubLevels / HUB_TIER_STEP);
+  const hubMods = hubUpgradeMods(state);
+  const hubTravel = hubMissionBonuses(state).travel || 1;
+  const missionSlots = 1 + (state.hubUpgrades.launch_bay || 0) + (state.tech.auto_pilots ? 1 : 0);
+  const cargoBoost = (state.hubUpgrades.drone_bay || 0) * 8;
+  const researchBoost = (state.hubUpgrades.survey_lab || 0) * 8;
+  const hazardShield = Math.round((1 - (hubMods.hazardMult || 1)) * 100);
+  const fuelSavings = Math.round((1 - (hubMods.fuelMult || 1)) * 100);
+  const saturation = signalSaturation(state);
+  const signalFill = clamp((state.resources.signal || 0) / Math.max(1, saturation.cap), 0, 1);
+  const commandFill = clamp((command.used || 0) / Math.max(1, command.capacity || 1), 0, 1);
+  const moraleFill = clamp(state.workers.satisfaction || 0, 0, 1);
   const canPrestige = (state.milestonesUnlocked || []).includes("M4_PRESTIGE_UNLOCK");
   const briefing = [
     "Collect Signal, then fire a Pulse Scan (cost ramps, cooldown lengthens) to transmute signal into metal/fuel/research.",
     "First launch is fuel-free; Debris sorties return early research and fuel.",
     "Stand up a Fuel Refinery or Fuel Cracker early to keep sorties flowing.",
+    "Install a Hydroponics Bay to keep food above upkeep and morale stable.",
     "Keep power >= 0 and food positive to prevent morale slippage.",
     "Use the Research Console if fuel is low to bootstrap research.",
   ];
@@ -1877,18 +1904,33 @@ function HubView({ state, buildHub, buyHubUpgrade, crewBonusText, ascend, format
   };
 
   return (
-    <section className="panel space-y-3">
-      <div className="flex flex-wrap gap-2 items-center justify-between">
-        <div>
-          <div className="text-lg font-semibold">Command Nexus</div>
-          <div className="text-muted text-sm">Primary control node for operations, automation, and expansion.</div>
+    <section className="panel space-y-4 hub-bridge">
+      <div className="relative overflow-hidden rounded-2xl border border-amber-400/20 bg-slate-950/80 p-4 hub-bridge-banner">
+        <div className="absolute inset-0 bg-[radial-gradient(circle_at_top,_rgba(251,191,36,0.18),transparent_60%)]" />
+        <div className="absolute inset-x-0 bottom-0 h-12 bg-gradient-to-t from-slate-950/90 to-transparent" />
+        <div className="relative z-10 flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
+          <div>
+            <div className="text-xs uppercase tracking-[0.2em] text-amber-200/70">Bridge Uplink</div>
+            <div className="text-2xl font-semibold">Command Nexus</div>
+            <div className="text-sm text-muted mt-1">Primary control node for operations, automation, and expansion.</div>
+          </div>
+          <div className="flex flex-wrap gap-2 text-xs">
+            <span className="tag">Nexus Lv {hubLevels}</span>
+            <span className="tag">Upgrade Tier {hubTier}</span>
+            <span className="tag">Command {command.used}/{command.capacity}</span>
+            <span className="tag">Range {hubRange(state)}</span>
+            <span className="tag">Signal Cap {format(saturation.cap)}</span>
+          </div>
         </div>
       </div>
 
       <div className="grid lg:grid-cols-[340px,1fr] gap-3">
         <div className="space-y-3">
-          <div className="card space-y-2">
-            <div className="font-semibold">Nexus Status</div>
+          <div className="rounded-2xl border border-amber-400/15 bg-slate-950/70 p-4 space-y-3 hub-bridge-panel">
+            <div className="row row-between">
+              <div className="font-semibold">Bridge Status</div>
+              <span className="text-xs text-muted">Telemetry</span>
+            </div>
             <div className="grid grid-cols-2 gap-2">
               <div className="stat-box">
                 <span className="text-muted text-xs">Power</span>
@@ -1907,20 +1949,26 @@ function HubView({ state, buildHub, buyHubUpgrade, crewBonusText, ascend, format
                 <strong>{Math.round((state.workers.satisfaction || 1) * 100)}%</strong>
               </div>
               <div className="stat-box">
-                <span className="text-muted text-xs">Range</span>
-                <strong>{hubRange(state)}</strong>
-              </div>
-              <div className="stat-box">
-                <span className="text-muted text-xs">Command Cap</span>
-                <strong>{command.used}/{command.capacity}</strong>
-              </div>
-              <div className="stat-box">
                 <span className="text-muted text-xs">Signal Cap</span>
-                <strong>{format(signalSaturation(state).cap)}</strong>
+                <strong>{format(saturation.cap)}</strong>
               </div>
               <div className="stat-box">
                 <span className="text-muted text-xs">Saturation</span>
-                <strong>{Math.round(signalSaturation(state).penalty * 100)}%</strong>
+                <strong>{Math.round(saturation.penalty * 100)}%</strong>
+              </div>
+            </div>
+            <div className="space-y-2">
+              <div className="text-xs text-muted">Command Load</div>
+              <div className="h-2 rounded-full bg-white/10 overflow-hidden">
+                <div className="h-full bg-amber-400" style={{ width: `${commandFill * 100}%` }} />
+              </div>
+              <div className="text-xs text-muted">Signal Buffer</div>
+              <div className="h-2 rounded-full bg-white/10 overflow-hidden">
+                <div className="h-full bg-sky-400" style={{ width: `${signalFill * 100}%` }} />
+              </div>
+              <div className="text-xs text-muted">Crew Morale</div>
+              <div className="h-2 rounded-full bg-white/10 overflow-hidden">
+                <div className="h-full bg-emerald-400" style={{ width: `${moraleFill * 100}%` }} />
               </div>
             </div>
             {command.over > 0 && (
@@ -1932,12 +1980,53 @@ function HubView({ state, buildHub, buyHubUpgrade, crewBonusText, ascend, format
               Prestige Protocol: {(state.milestonesUnlocked || []).includes("M4_PRESTIGE_UNLOCK") ? "Ready" : "Locked"} (Depth 2, 2 integrations, saturation 25%).
             </div>
           </div>
+          <div className="card space-y-2 hub-bridge-panel">
+            <div className="font-semibold">Command Array</div>
+            <div className="text-xs text-muted">Hub directives and mission-wide modifiers.</div>
+            <div className="grid grid-cols-2 gap-2 text-xs text-muted">
+              <div className="stat-box">
+                <span className="text-muted text-[10px]">Mission Slots</span>
+                <strong className="text-sm">{missionSlots}</strong>
+              </div>
+              <div className="stat-box">
+                <span className="text-muted text-[10px]">Travel Efficiency</span>
+                <strong className="text-sm">{Math.round(hubTravel * 100)}%</strong>
+              </div>
+              <div className="stat-box">
+                <span className="text-muted text-[10px]">Fuel Logistics</span>
+                <strong className="text-sm">{fuelSavings > 0 ? `-${fuelSavings}%` : "Stable"}</strong>
+              </div>
+              <div className="stat-box">
+                <span className="text-muted text-[10px]">Hazard Shielding</span>
+                <strong className="text-sm">{hazardShield > 0 ? `-${hazardShield}%` : "None"}</strong>
+              </div>
+              <div className="stat-box">
+                <span className="text-muted text-[10px]">Cargo Boost</span>
+                <strong className="text-sm">{cargoBoost > 0 ? `+${cargoBoost}%` : "None"}</strong>
+              </div>
+              <div className="stat-box">
+                <span className="text-muted text-[10px]">Research Boost</span>
+                <strong className="text-sm">{researchBoost > 0 ? `+${researchBoost}%` : "None"}</strong>
+              </div>
+              <div className="stat-box">
+                <span className="text-muted text-[10px]">Signal Buffer</span>
+                <strong className="text-sm">{hubMods.signalCapBonus > 0 ? `+${hubMods.signalCapBonus}` : "None"}</strong>
+              </div>
+              <div className="stat-box">
+                <span className="text-muted text-[10px]">Habitat Lift</span>
+                <strong className="text-sm">{hubMods.habitat > 0 ? `+${hubMods.habitat}/t` : "None"}</strong>
+              </div>
+            </div>
+          </div>
 
         </div>
 
-        <div className="card space-y-3">
+        <div className="rounded-2xl border border-white/10 bg-slate-950/70 p-4 space-y-3 hub-bridge-deck">
           <div className="row row-between">
-            <div className="font-semibold">Nexus Operations Deck</div>
+            <div>
+              <div className="font-semibold">Nexus Operations Deck</div>
+              <div className="text-xs text-muted">Command surfaces and routing protocols.</div>
+            </div>
             <div className="flex flex-wrap gap-2">
               {hubTabs.map((tab) => (
                 <button key={tab.id} className={`tab ${pane === tab.id ? 'active' : ''}`} onClick={() => setPane(tab.id)}>
@@ -1951,16 +2040,17 @@ function HubView({ state, buildHub, buyHubUpgrade, crewBonusText, ascend, format
             <div className="list max-h-[520px] overflow-y-auto pr-1">
               {HUB_BUILDINGS.map((b) => {
                 const level = state.hubBuildings[b.id] || 0;
-                const can = canAffordUI(state.resources, scaledCost(b.cost, level, COST_EXP.hub));
+                const cost = scaledHubCost(b.cost, level);
+                const can = canAffordUI(state.resources, cost);
                 return (
                   <div key={b.id} className="row-item">
                     <div className="row-details">
                       <div className="row-title">{b.name} <span className="tag">Lv {level}</span></div>
                       <div className="row-meta">{b.desc}</div>
                       <div className="row-meta text-xs text-muted">Crew bonus: {crewBonusText(b.id)}</div>
-                      <div className="row-meta text-xs text-muted">Next cost: {costText(scaledCost(b.cost, level, COST_EXP.hub), format)}</div>
+                      <div className="row-meta text-xs text-muted">Next cost: {costText(cost, format)}</div>
                     </div>
-                    <button className="btn" disabled={!can} onClick={() => buildHub(b.id)}>Build ({costText(scaledCost(b.cost, level, COST_EXP.hub), format)})</button>
+                    <button className="btn" disabled={!can} onClick={() => buildHub(b.id)}>Build ({costText(cost, format)})</button>
                   </div>
                 );
               })}
@@ -1971,14 +2061,18 @@ function HubView({ state, buildHub, buyHubUpgrade, crewBonusText, ascend, format
             <div className="list max-h-[520px] overflow-y-auto pr-1">
               {HUB_UPGRADES.map((u) => {
                 const level = state.hubUpgrades[u.id] || 0;
+                const unlockAt = (level + 1) * HUB_TIER_STEP;
+                const unlocked = hubLevels >= unlockAt;
+                const cost = scaledUpgradeCost(u.cost, level);
                 return (
                   <div key={u.id} className="row-item">
                     <div className="row-details">
-                      <div className="row-title">{u.name} <span className="tag">Lv {level}</span></div>
+                      <div className="row-title">{u.name} <span className="tag">Tier {level}</span></div>
                       <div className="row-meta">{u.desc}</div>
+                      <div className="row-meta text-xs text-muted">Unlocks at Nexus level {unlockAt}</div>
                     </div>
-                    <button className="btn" disabled={!canAffordUI(state.resources, scaledCost(u.cost, level, COST_EXP.hub))} onClick={() => buyHubUpgrade(u.id)}>
-                      Upgrade ({costText(scaledCost(u.cost, level, COST_EXP.hub), format)})
+                    <button className="btn" disabled={!unlocked || !canAffordUI(state.resources, cost)} onClick={() => buyHubUpgrade(u.id)}>
+                      {unlocked ? `Upgrade (${costText(cost, format)})` : "Locked"}
                     </button>
                   </div>
                 );
@@ -2594,6 +2688,18 @@ function scaledCost(baseCost, level, exp) {
   });
   return out;
 }
+function hubTotalLevel(stateObj) {
+  return Object.values(stateObj.hubBuildings || {}).reduce((sum, lvl) => sum + (lvl || 0), 0);
+}
+function scaledHubCost(baseCost, level) {
+  const tier = Math.floor((level || 0) / HUB_TIER_STEP);
+  const tierMult = Math.pow(HUB_TIER_COST_MULT, tier);
+  return scaleCost(scaledCost(baseCost, level, COST_EXP.hub), tierMult);
+}
+function scaledUpgradeCost(baseCost, level) {
+  const tierMult = Math.pow(HUB_UPGRADE_TIER_MULT, (level || 0) + 1);
+  return scaleCost(scaledCost(baseCost, level, COST_EXP.hub), tierMult);
+}
 function scaleCost(baseCost, mult = 1) {
   const out = {};
   Object.entries(baseCost || {}).forEach(([k, v]) => {
@@ -2786,6 +2892,29 @@ function baseBonuses(stateObj, bodyId) {
   });
   return { cargo, travel, hazard };
 }
+function hubMissionBonuses(stateObj) {
+  let travel = 1;
+  HUB_BUILDINGS.forEach((def) => {
+    if (!def.travelMult) return;
+    const lvl = stateObj.hubBuildings?.[def.id] || 0;
+    if (lvl > 0) travel *= Math.pow(def.travelMult, lvl);
+  });
+  return { travel };
+}
+function hubUpgradeMods(stateObj) {
+  const upgrades = stateObj.hubUpgrades || {};
+  const missionControl = upgrades.mission_control || 0;
+  const supplyDepot = upgrades.supply_depot || 0;
+  const signalVault = upgrades.signal_vault || 0;
+  const habitatWing = upgrades.habitat_wing || 0;
+  return {
+    hazardMult: Math.pow(0.96, missionControl),
+    fuelMult: Math.pow(0.95, supplyDepot),
+    signalCapBonus: signalVault * 120,
+    habitat: habitatWing * 2,
+    morale: habitatWing * 0.01,
+  };
+}
 function bodyById(id) { return BODIES.find((b) => b.id === id) || BODIES[0]; }
 function withLogisticsCost(cost, body) {
   const logisticsFuel = Math.max(2, Math.floor((body?.travel || 0) / 25));
@@ -2800,10 +2929,11 @@ function scaleCargo(cargo, factor) {
 function signalSaturation(stateObj) {
   const galaxyMods = galaxyModifiers(stateObj);
   const doctrineMods = doctrineModifiers(stateObj);
+  const hubMods = hubUpgradeMods(stateObj);
   const baseCap = 300 + (stateObj.hubUpgrades.scan_array || 0) * 140 + (stateObj.tech.deep_scan ? 220 : 0) + (stateObj.tech.rift_mapping ? 240 : 0);
   const integrationBonus = stateObj.integration?.signalCapBonus || 0;
   const capMult = galaxyMods.signalCapMult || 1;
-  const cap = Math.max(150, Math.floor(baseCap * capMult) + integrationBonus + (doctrineMods.signalCapBonus || 0));
+  const cap = Math.max(150, Math.floor(baseCap * capMult) + integrationBonus + (doctrineMods.signalCapBonus || 0) + (hubMods.signalCapBonus || 0));
   const current = stateObj.resources.signal || 0;
   if (current <= cap) return { factor: 1, cap, penalty: 0 };
   const relief = clamp((stateObj.integration?.saturationRelief || 0) + (galaxyMods.saturationRelief || 0) + (doctrineMods.saturationRelief || 0), 0, 0.6);
@@ -2874,6 +3004,8 @@ function missionYield(state, body, modeId, specialist = "none", efficiency = 1) 
   const focusMods = crewFocusModifiers(state);
   const contractMods = crewContractModifiers(state);
   const colonyMods = colonyModifiers(state);
+  const hubCargo = 1 + (state.hubUpgrades?.drone_bay || 0) * 0.08;
+  const hubResearch = 1 + (state.hubUpgrades?.survey_lab || 0) * 0.08;
   const mode = missionModeById(modeId);
   const cargo = {};
   Object.entries(base).forEach(([k, v]) => {
@@ -2886,7 +3018,8 @@ function missionYield(state, body, modeId, specialist = "none", efficiency = 1) 
     const focusMission = focusMods.missionMult?.[k] || 1;
     const contractMission = contractMods.missionMult?.[k] || 1;
     const contractCargo = contractMods.cargoMult || 1;
-    cargo[k] = Math.floor(v * mult * modeBoost * specBoost * (bonuses.cargo || 1) * (colonyMods.cargoMult || 1) * contractCargo * crewMult * focusMission * contractMission * efficiency * PACE.missionYieldMult);
+    const hubBoost = k === "research" ? hubResearch : 1;
+    cargo[k] = Math.floor(v * mult * modeBoost * specBoost * (bonuses.cargo || 1) * (colonyMods.cargoMult || 1) * hubCargo * contractCargo * crewMult * focusMission * contractMission * hubBoost * efficiency * PACE.missionYieldMult);
   });
   return cargo;
 }
@@ -3267,7 +3400,7 @@ function isUnlockedUI(state, body) {
 function commandCapacity(state) {
   const galaxyBonus = galaxyModifiers(state).commandCapBonus || 0;
   const doctrineBonus = doctrineModifiers(state).commandCapBonus || 0;
-  return 1 + (state.hubUpgrades.launch_bay || 0) + (state.tech.auto_pilots ? 1 : 0) + galaxyBonus + doctrineBonus;
+  return 1 + (state.hubUpgrades.launch_bay || 0) + (state.hubUpgrades.command_uplink || 0) + (state.tech.auto_pilots ? 1 : 0) + galaxyBonus + doctrineBonus;
 }
 function deriveCapabilities(state) {
   const unlocked = new Set(state.milestonesUnlocked || []);

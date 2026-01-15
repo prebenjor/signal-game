@@ -29,6 +29,9 @@ export const PACE = {
 export const CREW_FATIGUE = { gain: 0.00006, recovery: 0.0001 };
 export const CONTRACT_REFRESH_MS = 180000;
 export const COST_EXP = PACE.costExp;
+export const HUB_TIER_STEP = 25;
+export const HUB_TIER_COST_MULT = 2.5;
+export const HUB_UPGRADE_TIER_MULT = 3.0;
 export const SYSTEM_EVENT_COOLDOWN_MS = [90000, 180000];
 export const MAX_SYSTEM_EVENTS = 3;
 
@@ -43,18 +46,26 @@ export const BODIES = [
 ];
 
 export const HUB_UPGRADES = [
-  { id: "launch_bay", name: "Launch Bay", desc: "+1 concurrent mission slot", cost: { metal: 140, fuel: 40 } },
-  { id: "fuel_farm", name: "Fuel Farm", desc: "+2 fuel/tick", cost: { metal: 180, organics: 60 } },
-  { id: "scan_array", name: "Scan Array", desc: "+3 signal/tick, +1 range tier", cost: { metal: 220, fuel: 20 } },
-  { id: "drone_bay", name: "Drone Bay", desc: "+10% mission cargo", cost: { metal: 260, rare: 10 } },
+  { id: "launch_bay", name: "Launch Bay", desc: "+1 concurrent mission slot", cost: { metal: 220, fuel: 70, research: 20 } },
+  { id: "fuel_farm", name: "Fuel Farm", desc: "+1 fuel/tick", cost: { metal: 200, organics: 80, fuel: 20 } },
+  { id: "scan_array", name: "Scan Array", desc: "+2 signal/tick, +1 range tier", cost: { metal: 240, fuel: 60, research: 40 } },
+  { id: "drone_bay", name: "Drone Bay", desc: "+8% mission cargo", cost: { metal: 300, rare: 16, fuel: 40 } },
+  { id: "command_uplink", name: "Command Uplink", desc: "+1 command capacity", cost: { metal: 320, fuel: 120, research: 60 } },
+  { id: "survey_lab", name: "Survey Lab", desc: "+8% mission research yield, +8% research pulse yield", cost: { metal: 260, research: 120, organics: 40 } },
+  { id: "mission_control", name: "Mission Control", desc: "-4% mission hazard", cost: { metal: 260, fuel: 90, research: 80 } },
+  { id: "supply_depot", name: "Supply Depot", desc: "-5% mission fuel cost", cost: { metal: 240, fuel: 120, organics: 60 } },
+  { id: "signal_vault", name: "Signal Vault", desc: "+120 signal cap", cost: { metal: 240, research: 80, rare: 8 } },
+  { id: "habitat_wing", name: "Habitat Wing", desc: "+2 habitat/tick, +0.01 morale/tick", cost: { metal: 220, organics: 110, food: 30 } },
 ];
 
 export const HUB_BUILDINGS = [
-  { id: "refinery", name: "Fuel Refinery", desc: "+2 fuel/tick", cost: { metal: 90, organics: 16 }, prod: { fuel: 2 }, cons: { power: 1 } },
-  { id: "reactor", name: "Reactor", desc: "+4 power/tick, -1 fuel", cost: { metal: 140, fuel: 35 }, prod: { power: 4 }, cons: { fuel: 1 } },
-  { id: "hab", name: "Hab Module", desc: "+4 habitat", cost: { metal: 120, organics: 40 }, prod: { habitat: 4 }, cons: {} },
-  { id: "rec", name: "Rec Dome", desc: "Boosts morale", cost: { metal: 90, organics: 60 }, prod: { morale: 0.03 }, cons: { power: 1 } },
-  { id: "array", name: "Comms Array", desc: "+4 signal/tick", cost: { metal: 180, fuel: 16 }, prod: { signal: 4 }, cons: { power: 1 } },
+  { id: "refinery", name: "Fuel Refinery", desc: "+1 fuel/tick", cost: { metal: 90, organics: 16 }, prod: { fuel: 1 }, cons: { power: 1 } },
+  { id: "reactor", name: "Reactor", desc: "+3 power/tick, -1 fuel", cost: { metal: 140, fuel: 35 }, prod: { power: 3 }, cons: { fuel: 1 } },
+  { id: "hab", name: "Hab Module", desc: "+3 habitat", cost: { metal: 120, organics: 40 }, prod: { habitat: 3 }, cons: {} },
+  { id: "hydroponics", name: "Hydroponics Bay", desc: "+2 food/tick", cost: { metal: 110, organics: 35 }, prod: { food: 2 }, cons: { power: 1 } },
+  { id: "rec", name: "Rec Dome", desc: "Boosts morale", cost: { metal: 90, organics: 60 }, prod: { morale: 0.02 }, cons: { power: 1 } },
+  { id: "array", name: "Comms Array", desc: "+3 signal/tick", cost: { metal: 180, fuel: 16 }, prod: { signal: 3 }, cons: { power: 1 } },
+  { id: "nav_console", name: "Nav Console", desc: "-1% mission travel time per level", cost: { metal: 160, fuel: 24, research: 18 }, prod: {}, cons: { power: 1 }, travelMult: 0.99 },
 ];
 export const BIOME_BUILDINGS = {
   asteroid: [
