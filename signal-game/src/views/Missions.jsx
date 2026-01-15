@@ -2,57 +2,129 @@
 import { useState } from "react";
 
 export default function MissionsView({ state, startMission, setAutoLaunch, setSelected, format, missionModeById, missionYield, formatDuration, bodies, missionModes, isUnlockedUI, baseBonuses, hubRange, depletionFactor, missionMods, missionDurationMult }) {
+  const [pane, setPane] = useState("targeting");
+  const missionTabs = [
+    { id: "targeting", label: "Target Lattice" },
+    { id: "launch", label: "Launch Bay" },
+    { id: "active", label: "Ops Monitor" },
+    { id: "intel", label: "Signal Intel" },
+  ];
+  const selectedBody = bodies.find((b) => b.id === state.selectedBody) || bodies[0];
+  const efficiency = depletionFactor(selectedBody.id);
+  const efficiencyPct = Math.round(efficiency * 100);
+  const bonuses = baseBonuses ? baseBonuses(selectedBody.id) : { cargo: 1, travel: 1, hazard: 1 };
+  const rangeLocked = (selectedBody.tier || 1) > hubRange;
+  const formatBonus = (value) => {
+    const delta = Math.round((value - 1) * 100);
+    if (delta === 0) return "0%";
+    return `${delta > 0 ? "+" : ""}${delta}%`;
+  };
+
   return (
     <section className="panel space-y-3">
       <div>
         <div className="text-lg font-semibold">Missions</div>
         <div className="text-muted text-sm">Biome-specific hazards and salvage. Burn fuel to cut transit time. Debris Field is your early fuel/research trickle.</div>
-        <div className="text-xs text-muted mt-1">Range Tier {hubRange} opens higher targets. Extend range via Hub Scan Array, Tech (Deep Scan/Rift Mapping), and Relay Anchors.</div>
       </div>
-      <div className="grid md:grid-cols-2 gap-3">
-        <div className="card">
-          <div className="font-semibold mb-1">Target Locks</div>
-          <div className="list">
-            {bodies.map((b) => {
-              const locked = !isUnlockedUI(state, b);
-              const rangeLocked = (b.tier || 1) > hubRange;
-              const efficiency = depletionFactor(b.id);
-              const efficiencyPct = Math.round(efficiency * 100);
-              return (
-                <div key={b.id} className="row-item">
-                  <div className="row-details">
-                    <div className="row-title">
-                      {b.name} {!locked && state.selectedBody === b.id && <span className="tag">Selected</span>} {rangeLocked && <span className="tag">Beyond Range</span>} {!rangeLocked && locked && <span className="tag">Locked</span>}
-                    </div>
-                    <div className="row-meta">{b.type.toUpperCase()} - Travel {formatDuration(b.travel * 1000)} - Hazard {(b.hazard * 100).toFixed(0)}%</div>
-                    <div className="row-meta text-xs text-muted">Tier {b.tier} | Efficiency {efficiencyPct}%</div>
-                    {rangeLocked && <div className="row-meta text-xs text-muted">Requires Range Tier {b.tier} (current {hubRange}).</div>}
-                  </div>
-                  <button className="btn" disabled={locked} onClick={() => setSelected(b.id)}>Lock</button>
-                </div>
-              );
-            })}
+      <div className="card space-y-3">
+        <div className="row row-between">
+          <div className="font-semibold">Mission Operations Deck</div>
+          <div className="flex flex-wrap gap-2">
+            {missionTabs.map((tab) => (
+              <button key={tab.id} className={`tab ${pane === tab.id ? "active" : ""}`} onClick={() => setPane(tab.id)}>
+                {tab.label}
+              </button>
+            ))}
           </div>
         </div>
 
-        <div className="card">
-          <div className="font-semibold mb-1">Deploy</div>
-          <MissionLaunch
-            state={state}
-            startMission={startMission}
-            setAutoLaunch={setAutoLaunch}
-            format={format}
-            missionModeById={missionModeById}
-            missionYield={missionYield}
-            formatDuration={formatDuration}
-            bodies={bodies}
-            missionModes={missionModes}
-            baseBonuses={baseBonuses}
-            depletionFactor={depletionFactor}
-            missionMods={missionMods}
-            missionDurationMult={missionDurationMult}
-          />
-        </div>
+        {pane === "targeting" && (
+          <div className="grid md:grid-cols-2 gap-3">
+            <div className="card">
+              <div className="font-semibold mb-1">Target Locks</div>
+              <div className="list max-h-[420px] overflow-y-auto pr-1">
+                {bodies.map((b) => {
+                  const locked = !isUnlockedUI(state, b);
+                  const bodyRangeLocked = (b.tier || 1) > hubRange;
+                  const bodyEfficiency = depletionFactor(b.id);
+                  const efficiencyLabel = Math.round(bodyEfficiency * 100);
+                  return (
+                    <div key={b.id} className="row-item">
+                      <div className="row-details">
+                        <div className="row-title">
+                          {b.name} {!locked && state.selectedBody === b.id && <span className="tag">Selected</span>} {bodyRangeLocked && <span className="tag">Beyond Range</span>} {!bodyRangeLocked && locked && <span className="tag">Locked</span>}
+                        </div>
+                        <div className="row-meta">{b.type.toUpperCase()} - Travel {formatDuration(b.travel * 1000)} - Hazard {(b.hazard * 100).toFixed(0)}%</div>
+                        <div className="row-meta text-xs text-muted">Tier {b.tier} | Efficiency {efficiencyLabel}%</div>
+                        {bodyRangeLocked && <div className="row-meta text-xs text-muted">Requires Range Tier {b.tier} (current {hubRange}).</div>}
+                      </div>
+                      <button className="btn" disabled={locked} onClick={() => setSelected(b.id)}>Lock</button>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+
+            <div className="card space-y-2">
+              <div className="font-semibold">Target Intel</div>
+              <div className="row-item">
+                <div className="row-details">
+                  <div className="row-title">{selectedBody.name}</div>
+                  <div className="row-meta">{selectedBody.type.toUpperCase()} | Travel {formatDuration(selectedBody.travel * 1000)} | Hazard {(selectedBody.hazard * 100).toFixed(0)}%</div>
+                </div>
+                {rangeLocked && <span className="tag">Beyond Range</span>}
+              </div>
+              <div className="text-xs text-muted">Efficiency {efficiencyPct}% | Range Tier {selectedBody.tier || 1}</div>
+              <div className="text-xs text-muted">Base modifiers: Cargo {formatBonus(bonuses.cargo || 1)} | Travel {formatBonus(bonuses.travel || 1)} | Hazard {formatBonus(bonuses.hazard || 1)}</div>
+              <div className="text-xs text-muted">Range Tier {hubRange} opens higher targets. Extend range via Hub Scan Array, Tech (Deep Scan/Rift Mapping), and Relay Anchors.</div>
+            </div>
+          </div>
+        )}
+
+        {pane === "launch" && (
+          <div className="space-y-2">
+            <div className="font-semibold">Launch Bay</div>
+            <MissionLaunch
+              state={state}
+              startMission={startMission}
+              setAutoLaunch={setAutoLaunch}
+              format={format}
+              missionModeById={missionModeById}
+              missionYield={missionYield}
+              formatDuration={formatDuration}
+              bodies={bodies}
+              missionModes={missionModes}
+              baseBonuses={baseBonuses}
+              depletionFactor={depletionFactor}
+              missionMods={missionMods}
+              missionDurationMult={missionDurationMult}
+            />
+          </div>
+        )}
+
+        {pane === "active" && (
+          <div className="space-y-2">
+            <div className="font-semibold">Active Operations</div>
+            <ActiveMissions
+              state={state}
+              bodies={bodies}
+              missionModeById={missionModeById}
+              formatDuration={formatDuration}
+            />
+          </div>
+        )}
+
+        {pane === "intel" && (
+          <div className="space-y-2">
+            <div className="font-semibold">Operational Intel</div>
+            <ul className="text-sm text-muted list-disc list-inside space-y-1">
+              <li>Fuel boost reduces travel time by 3s per step and reduces returns on long routes.</li>
+              <li>Stance selection tunes hazard and reward balance; specialists push a specific output.</li>
+              <li>Depletion lowers yields on repeated runs, rotate targets to recover efficiency.</li>
+              <li>Command over-capacity increases travel time and reduces cargo return.</li>
+            </ul>
+          </div>
+        )}
       </div>
     </section>
   );
@@ -128,23 +200,29 @@ function MissionLaunch({ state, startMission, setAutoLaunch, format, missionMode
           <span className="text-sm text-muted">{auto.enabled && auto.bodyId === body.id ? "Armed" : "Idle"}</span>
         </div>
       </div>
-      <div className="list">
-        {active.map((m, i) => {
-          const b = bodies.find((x) => x.id === m.bodyId);
-          const remaining = Math.max(0, m.endsAt - Date.now());
-          return (
-            <div key={i} className="row-item">
-              <div className="row-details">
-                <div className="row-title">In transit to {b?.name || "target"} <span className="tag">{missionModeById(m.mode)?.name || "Balanced"}</span></div>
-                <div className="row-meta">{formatDuration(remaining)} remaining</div>
-                {m.objective && <div className="row-meta text-xs text-muted">Side objective: {m.objective.desc}</div>}
-                {m.specialist && m.specialist !== "none" && <div className="row-meta text-xs text-muted">Specialist: {m.specialist}</div>}
-              </div>
+    </div>
+  );
+}
+
+function ActiveMissions({ state, bodies, missionModeById, formatDuration }) {
+  const active = state.missions.active || [];
+  return (
+    <div className="list max-h-[420px] overflow-y-auto pr-1">
+      {active.map((m, i) => {
+        const b = bodies.find((x) => x.id === m.bodyId);
+        const remaining = Math.max(0, m.endsAt - Date.now());
+        return (
+          <div key={i} className="row-item">
+            <div className="row-details">
+              <div className="row-title">In transit to {b?.name || "target"} <span className="tag">{missionModeById(m.mode)?.name || "Balanced"}</span></div>
+              <div className="row-meta">{formatDuration(remaining)} remaining</div>
+              {m.objective && <div className="row-meta text-xs text-muted">Side objective: {m.objective.desc}</div>}
+              {m.specialist && m.specialist !== "none" && <div className="row-meta text-xs text-muted">Specialist: {m.specialist}</div>}
             </div>
-          );
-        })}
-        {!active.length && <div className="text-muted text-sm">No active sorties.</div>}
-      </div>
+          </div>
+        );
+      })}
+      {!active.length && <div className="text-muted text-sm">No active sorties.</div>}
     </div>
   );
 }

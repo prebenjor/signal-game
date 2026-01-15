@@ -1861,6 +1861,16 @@ function HubView({ state, buildHub, buyHubUpgrade, crewBonusText, ascend, format
     "Use the Research Console if fuel is low to bootstrap research.",
   ];
 
+  const hubTabs = [
+    { id: "build", label: "Fabrication" },
+    { id: "upgrades", label: "Upgrades" },
+    { id: "range", label: "Range Uplink" },
+    { id: "prestige", label: "Prestige Protocols" },
+    { id: "automation", label: "Automation Matrix" },
+    { id: "briefing", label: "Briefing" },
+  ];
+  const activeDoctrine = doctrineById(state.doctrine);
+
   const setOps = (patch) => {
     if (setHubOps) setHubOps(patch);
   };
@@ -1876,96 +1886,6 @@ function HubView({ state, buildHub, buyHubUpgrade, crewBonusText, ascend, format
 
       <div className="grid lg:grid-cols-[340px,1fr] gap-3">
         <div className="space-y-3">
-          <div className="card space-y-2">
-            <div className="font-semibold">Range Uplink</div>
-            <div className="row-item">
-              <div className="row-details">
-                <div className="row-title">Range Tier {hubRange(state)}</div>
-                <div className="row-meta">Unlocks higher-tier targets.</div>
-              </div>
-            </div>
-            <div className="text-xs text-muted">Extend range via Scan Array (Hub), Deep Scan Arrays + Rift Mapping (Tech), and Relay Anchor colonies.</div>
-          </div>
-          <div className="card space-y-2">
-            <div className="font-semibold">Prestige Protocol</div>
-            <div className="text-sm text-muted">Recalibrate for a global production boost. Current boost: {Math.round(((state.prestige?.boost || 1) - 1) * 100)}% Aú Points: {state.prestige?.points || 0}</div>
-            <button className="btn" disabled={!canPrestige} onClick={ascend}>Recalibrate</button>
-            <div className="text-xs text-muted">
-              {canPrestige ? "Grants legacy signal based on total value. Progress auto-saves locally; refresh won't wipe." : "Prestige Protocol unlocks after galaxy depth 2, two integrations, and saturation pressure."}
-            </div>
-          </div>
-          <div className="card space-y-2">
-            <div className="font-semibold">Automation Matrix</div>
-            <div className="row-item">
-              <div className="row-details">
-                <div className="row-title">Auto Pulse Sweep</div>
-                <div className="row-meta">Runs when cooldown clears and signal exceeds threshold.</div>
-              </div>
-              <div className="row gap-2">
-                <input
-                  type="number"
-                  className="w-20 rounded-lg border border-white/10 bg-slate-900 px-2 py-1 text-xs text-white"
-                  value={ops.autoPulseMinSignal}
-                  min={0}
-                  onChange={(e) => setOps({ autoPulseMinSignal: Number(e.target.value) })}
-                />
-                <label className="row">
-                  <span className="text-xs">On</span>
-                  <input type="checkbox" checked={!!ops.autoPulse} onChange={(e) => setOps({ autoPulse: e.target.checked })} />
-                </label>
-              </div>
-            </div>
-            <div className="row-item">
-              <div className="row-details">
-                <div className="row-title">Auto Research Cycle</div>
-                <div className="row-meta">Runs when the lab is ready and resources exceed thresholds.</div>
-              </div>
-              <div className="row gap-2">
-                <input
-                  type="number"
-                  className="w-20 rounded-lg border border-white/10 bg-slate-900 px-2 py-1 text-xs text-white"
-                  value={ops.autoLabMinSignal}
-                  min={0}
-                  onChange={(e) => setOps({ autoLabMinSignal: Number(e.target.value) })}
-                />
-                <input
-                  type="number"
-                  className="w-20 rounded-lg border border-white/10 bg-slate-900 px-2 py-1 text-xs text-white"
-                  value={ops.autoLabMinMetal}
-                  min={0}
-                  onChange={(e) => setOps({ autoLabMinMetal: Number(e.target.value) })}
-                />
-                <label className="row">
-                  <span className="text-xs">On</span>
-                  <input type="checkbox" checked={!!ops.autoLab} onChange={(e) => setOps({ autoLab: e.target.checked })} />
-                </label>
-              </div>
-            </div>
-            <div className="row-item">
-              <div className="row-details">
-                <div className="row-title">Reserve Locks</div>
-                <div className="row-meta">Automation Matrix keeps these minimums in storage.</div>
-              </div>
-              <div className="row gap-2">
-                <input
-                  type="number"
-                  className="w-20 rounded-lg border border-white/10 bg-slate-900 px-2 py-1 text-xs text-white"
-                  value={ops.reserveSignal}
-                  min={0}
-                  onChange={(e) => setOps({ reserveSignal: Number(e.target.value) })}
-                />
-                <input
-                  type="number"
-                  className="w-20 rounded-lg border border-white/10 bg-slate-900 px-2 py-1 text-xs text-white"
-                  value={ops.reserveMetal}
-                  min={0}
-                  onChange={(e) => setOps({ reserveMetal: Number(e.target.value) })}
-                />
-              </div>
-            </div>
-            <div className="text-xs text-muted">Thresholds: lab uses signal + metal; pulse uses signal.</div>
-          </div>
-
           <div className="card space-y-2">
             <div className="font-semibold">Nexus Status</div>
             <div className="grid grid-cols-2 gap-2">
@@ -2030,11 +1950,11 @@ function HubView({ state, buildHub, buyHubUpgrade, crewBonusText, ascend, format
 
         <div className="card space-y-3">
           <div className="row row-between">
-            <div className="font-semibold">Nexus Workspace</div>
+            <div className="font-semibold">Nexus Operations Deck</div>
             <div className="flex flex-wrap gap-2">
-              {['build', 'upgrades', 'briefing'].map((key) => (
-                <button key={key} className={`tab ${pane === key ? 'active' : ''}`} onClick={() => setPane(key)}>
-                  {key[0].toUpperCase() + key.slice(1)}
+              {hubTabs.map((tab) => (
+                <button key={tab.id} className={`tab ${pane === tab.id ? 'active' : ''}`} onClick={() => setPane(tab.id)}>
+                  {tab.label}
                 </button>
               ))}
             </div>
@@ -2076,6 +1996,126 @@ function HubView({ state, buildHub, buyHubUpgrade, crewBonusText, ascend, format
                   </div>
                 );
               })}
+            </div>
+          )}
+
+          {pane === "range" && (
+            <div className="space-y-3">
+              <div className="card space-y-2">
+                <div className="font-semibold">Range Uplink</div>
+                <div className="row-item">
+                  <div className="row-details">
+                    <div className="row-title">Range Tier {hubRange(state)}</div>
+                    <div className="row-meta">Unlocks higher-tier targets.</div>
+                  </div>
+                </div>
+                <div className="text-xs text-muted">Extend range via Scan Array (Hub), Deep Scan Arrays + Rift Mapping (Tech), and Relay Anchor colonies.</div>
+              </div>
+              <div className="card space-y-2">
+                <div className="font-semibold">Range Channels</div>
+                <ul className="text-xs text-muted list-disc list-inside space-y-1">
+                  <li>Scan Array uplinked to the hub core</li>
+                  <li>Deep Scan Arrays research line</li>
+                  <li>Rift Mapping research line</li>
+                  <li>Relay Anchor colonies in nearby systems</li>
+                </ul>
+              </div>
+            </div>
+          )}
+
+          {pane === "prestige" && (
+            <div className="space-y-3">
+              <div className="card space-y-2">
+                <div className="font-semibold">Prestige Protocols</div>
+                <div className="text-sm text-muted">Recalibrate for a global production boost. Current boost: {Math.round(((state.prestige?.boost || 1) - 1) * 100)}% | Points: {state.prestige?.points || 0}</div>
+                <button className="btn" disabled={!canPrestige} onClick={ascend}>Recalibrate</button>
+                <div className="text-xs text-muted">
+                  {canPrestige ? "Grants legacy signal based on total value. Progress auto-saves locally; refresh won't wipe." : "Prestige Protocol unlocks after galaxy depth 2, two integrations, and saturation pressure."}
+                </div>
+              </div>
+              <div className="card space-y-2">
+                <div className="font-semibold">Doctrine Cache</div>
+                <div className="text-xs text-muted">{activeDoctrine ? `Active doctrine: ${activeDoctrine.name}` : "No doctrine selected yet."}</div>
+                {!state.prestige?.runs && (
+                  <div className="text-xs text-muted">Prestige Protocol once to unlock doctrine selection.</div>
+                )}
+              </div>
+            </div>
+          )}
+
+          {pane === "automation" && (
+            <div className="space-y-3">
+              <div className="card space-y-2">
+                <div className="font-semibold">Automation Matrix</div>
+                <div className="row-item">
+                  <div className="row-details">
+                    <div className="row-title">Auto Pulse Sweep</div>
+                    <div className="row-meta">Runs when cooldown clears and signal exceeds threshold.</div>
+                  </div>
+                  <div className="row gap-2">
+                    <input
+                      type="number"
+                      className="w-20 rounded-lg border border-white/10 bg-slate-900 px-2 py-1 text-xs text-white"
+                      value={ops.autoPulseMinSignal}
+                      min={0}
+                      onChange={(e) => setOps({ autoPulseMinSignal: Number(e.target.value) })}
+                    />
+                    <label className="row">
+                      <span className="text-xs">On</span>
+                      <input type="checkbox" checked={!!ops.autoPulse} onChange={(e) => setOps({ autoPulse: e.target.checked })} />
+                    </label>
+                  </div>
+                </div>
+                <div className="row-item">
+                  <div className="row-details">
+                    <div className="row-title">Auto Research Cycle</div>
+                    <div className="row-meta">Runs when the lab is ready and resources exceed thresholds.</div>
+                  </div>
+                  <div className="row gap-2">
+                    <input
+                      type="number"
+                      className="w-20 rounded-lg border border-white/10 bg-slate-900 px-2 py-1 text-xs text-white"
+                      value={ops.autoLabMinSignal}
+                      min={0}
+                      onChange={(e) => setOps({ autoLabMinSignal: Number(e.target.value) })}
+                    />
+                    <input
+                      type="number"
+                      className="w-20 rounded-lg border border-white/10 bg-slate-900 px-2 py-1 text-xs text-white"
+                      value={ops.autoLabMinMetal}
+                      min={0}
+                      onChange={(e) => setOps({ autoLabMinMetal: Number(e.target.value) })}
+                    />
+                    <label className="row">
+                      <span className="text-xs">On</span>
+                      <input type="checkbox" checked={!!ops.autoLab} onChange={(e) => setOps({ autoLab: e.target.checked })} />
+                    </label>
+                  </div>
+                </div>
+                <div className="row-item">
+                  <div className="row-details">
+                    <div className="row-title">Reserve Locks</div>
+                    <div className="row-meta">Automation Matrix keeps these minimums in storage.</div>
+                  </div>
+                  <div className="row gap-2">
+                    <input
+                      type="number"
+                      className="w-20 rounded-lg border border-white/10 bg-slate-900 px-2 py-1 text-xs text-white"
+                      value={ops.reserveSignal}
+                      min={0}
+                      onChange={(e) => setOps({ reserveSignal: Number(e.target.value) })}
+                    />
+                    <input
+                      type="number"
+                      className="w-20 rounded-lg border border-white/10 bg-slate-900 px-2 py-1 text-xs text-white"
+                      value={ops.reserveMetal}
+                      min={0}
+                      onChange={(e) => setOps({ reserveMetal: Number(e.target.value) })}
+                    />
+                  </div>
+                </div>
+                <div className="text-xs text-muted">Thresholds: lab uses signal + metal; pulse uses signal.</div>
+              </div>
             </div>
           )}
 
