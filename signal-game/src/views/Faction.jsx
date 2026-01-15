@@ -60,17 +60,53 @@ function projectTotals(project) {
   return { goalEntries, progressEntries, totalGoal, totalProgress, percent };
 }
 
-function buildingTotals(def, progress) {
-  const goalEntries = Object.entries(def?.goal || {});
-  const progressEntries = goalEntries.map(([key, goal]) => [key, Math.min(progress?.[key] || 0, goal)]);
+function baseGoal(def) {
+  return def?.baseGoal || def?.goal || {};
+}
+
+function tierScale(def) {
+  return Number.isFinite(def?.tierScale) ? def.tierScale : 1;
+}
+
+function goalForTier(def, tier) {
+  const scale = tierScale(def);
+  const goal = baseGoal(def);
+  const out = {};
+  Object.entries(goal).forEach(([key, value]) => {
+    out[key] = Math.round(Number(value || 0) * Math.pow(scale, Math.max(0, tier - 1)));
+  });
+  return out;
+}
+
+function progressForTier(def, progress, tier) {
+  const scale = tierScale(def);
+  const goal = baseGoal(def);
+  const out = {};
+  Object.entries(goal).forEach(([key, value]) => {
+    const base = Number(value || 0);
+    const total = Number(progress?.[key] || 0);
+    const prev = scale === 1
+      ? base * Math.max(0, tier - 1)
+      : base * (Math.pow(scale, Math.max(0, tier - 1)) - 1) / (scale - 1);
+    out[key] = Math.max(0, total - prev);
+  });
+  return out;
+}
+
+function buildingTotals(def, progress, tier) {
+  const goal = goalForTier(def, tier);
+  const tierProgress = progressForTier(def, progress, tier);
+  const goalEntries = Object.entries(goal);
+  const progressEntries = goalEntries.map(([key, goalValue]) => [key, Math.min(tierProgress?.[key] || 0, goalValue)]);
   const totalGoal = goalEntries.reduce((sum, [, goal]) => sum + Number(goal || 0), 0);
   const totalProgress = progressEntries.reduce((sum, [, val]) => sum + Number(val || 0), 0);
   const percent = totalGoal > 0 ? totalProgress / totalGoal : 0;
   return { goalEntries, progressEntries, totalGoal, totalProgress, percent };
 }
 
-function isBuildingComplete(def, progress) {
-  return Object.entries(def?.goal || {}).every(([key, goal]) => (progress?.[key] || 0) >= goal);
+function isTierComplete(def, progress, tier) {
+  const goal = goalForTier(def, tier);
+  return Object.entries(goal).every(([key, value]) => (progress?.[key] || 0) >= value);
 }
 
 const resourceLabel = (id) => RESOURCE_OPTIONS.find((opt) => opt.id === id)?.label || id;
@@ -82,6 +118,10 @@ export default function FactionView({
   projects,
   buildings,
   buildingsError,
+  activity,
+  donations,
+  activityError,
+  donationsError,
   membership,
   loading,
   error,
@@ -109,11 +149,14 @@ export default function FactionView({
   const buildingDefs = useMemo(() => (activeFactionId ? (FACTION_BUILDINGS[activeFactionId] || []) : []), [activeFactionId]);
   const buildingProgress = useMemo(() => (activeFactionId ? (buildings?.[activeFactionId] || {}) : {}), [activeFactionId, buildings]);
   const directives = useMemo(() => (activeFactionId ? (FACTION_DIRECTIVES[activeFactionId] || []) : []), [activeFactionId]);
-  const buildingCompleteMap = useMemo(() => {
+  const buildingTierMap = useMemo(() => {
     const out = {};
     buildingDefs.forEach((def) => {
-      const progress = buildingProgress[def.id]?.progress || {};
-      out[def.id] = isBuildingComplete(def, progress);
+      const row = buildingProgress[def.id] || {};
+      out[def.id] = {
+        tier: Math.max(1, row.tier || 1),
+        completed: row.completed_tier || 0,
+      };
     });
     return out;
   }, [buildingDefs, buildingProgress]);
@@ -181,6 +224,37 @@ export default function FactionView({
     return id ? `Pilot ${id.slice(0, 6)}` : "Pilot";
   };
 
+  const activityRows = useMemo(() => activity || [], [activity]);
+  const donationRows = useMemo(() => donations || [], [donations]);
+  const formatLogTime = (value) => {
+    if (!value) return "";
+    const stamp = new Date(value);
+    return Number.isNaN(stamp.getTime()) ? "" : stamp.toLocaleTimeString();
+  };
+  const buildingNameById = (id) => buildingDefs.find((b) => b.id === id)?.name || id || "facility";
+  const formatActivityLine = (row) => {
+    const type = row?.activity_type || "activity";
+    const payload = row?.payload || {};
+    if (type === "building_donation") {
+      return `${formatPilot(row)} routed ${format(payload.amount || 0)} ${resourceLabel(payload.resource)} to ${buildingNameById(payload.building_id)}.`;
+    }
+    if (type === "project_donation") {
+      return `${formatPilot(row)} routed ${format(payload.amount || 0)} ${resourceLabel(payload.resource)} to the frontier project.`;
+    }
+    if (type === "building_tier_complete") {
+      return `${buildingNameById(payload.building_id)} tier ${payload.tier || "?"} completed.`;
+    }
+    return `${formatPilot(row)}: ${type.replace(/_/g, " ")}`;
+  };
+  const formatDonationLine = (row) => {
+    const target = row?.target_type === "building"
+      ? buildingNameById(row?.target_id)
+      : row?.target_type === "project"
+        ? "Frontier Project"
+        : "Relay";
+    return `${formatPilot(row)} donated ${format(row?.amount || 0)} ${resourceLabel(row?.resource)} to ${target}.`;
+  };
+
   const canTestRpc =
     supabaseReady &&
     !!onDonate &&
@@ -189,10 +263,16 @@ export default function FactionView({
     (resources?.metal || 0) >= 1;
 
   return (
-    <section className="panel space-y-3">
-      <div>
-        <div className="text-lg font-semibold">Faction Network</div>
-        <div className="text-sm text-muted">Align with a faction, build shared infrastructure, and shape the frontier.</div>
+    <section className="panel network-panel space-y-3">
+      <div className="network-hero">
+        <div>
+          <div className="network-hero-title">Relay Network</div>
+          <div className="text-sm text-muted">A separate command layer for shared infrastructure and cooperative operations.</div>
+        </div>
+        <div className="flex flex-wrap gap-2">
+          <span className="tag">{supabaseReady ? "Link Online" : "Link Offline"}</span>
+          <span className="tag">{activeFaction?.name || "Unaligned"}</span>
+        </div>
       </div>
       <div className="row row-between">
         <div className="text-sm text-muted">Network console</div>
@@ -356,6 +436,7 @@ export default function FactionView({
           <div className="card space-y-2">
             <div className="font-semibold">Faction Construction</div>
             <div className="text-sm text-muted">Fund shared facilities that unlock faction-wide events and buffs.</div>
+            <div className="text-xs text-muted">Tiered goals scale steeply; expect multi-pilot contributions.</div>
             {buildingsError && <div className="text-xs text-amber-300">{buildingsError}</div>}
             {!activeFaction && <div className="text-xs text-muted">Align with a faction to see construction queues.</div>}
             {activeFaction && !buildingDefs.length && <div className="text-xs text-muted">No faction facilities configured yet.</div>}
@@ -389,9 +470,17 @@ export default function FactionView({
               </div>
               <div className="grid md:grid-cols-2 gap-3">
                 {buildingDefs.map((def) => {
-                  const progress = buildingProgress[def.id]?.progress || {};
-                  const totals = buildingTotals(def, progress);
-                  const complete = buildingCompleteMap[def.id];
+                  const progressRow = buildingProgress[def.id] || {};
+                  const progress = progressRow.progress || {};
+                  const maxTier = def.maxTier || 1;
+                  const tier = Math.min(Math.max(1, progressRow.tier || 1), maxTier);
+                  const completedTier = progressRow.completed_tier || 0;
+                  const totals = buildingTotals(def, progress, tier);
+                  const tierComplete = isTierComplete(def, progress, tier);
+                  const scale = tierScale(def);
+                  const isMaxed = completedTier >= maxTier;
+                  const unlocks = Array.isArray(def.unlocks) ? def.unlocks : def.unlocks?.[tier] || [];
+                  const nextUnlocks = Array.isArray(def.unlocks) ? [] : def.unlocks?.[tier + 1] || [];
                   return (
                     <div key={def.id} className="card space-y-2">
                       <div className="row row-between">
@@ -399,19 +488,20 @@ export default function FactionView({
                           <div className="font-semibold">{def.name}</div>
                           <div className="text-xs text-muted">{def.desc}</div>
                         </div>
-                        <span className="tag">{complete ? "Complete" : "Under Construction"}</span>
+                        <span className="tag">{isMaxed ? "Maxed" : tierComplete ? "Tier Ready" : "Under Construction"}</span>
                       </div>
+                      <div className="text-xs text-muted">Tier {tier}/{maxTier} | Scale x{scale.toFixed(2)} per tier</div>
                       <div className="space-y-2">
                         <div className="h-2 rounded-full bg-white/10 overflow-hidden">
                           <div className="h-full bg-amber-400" style={{ width: `${Math.min(100, totals.percent * 100)}%` }} />
                         </div>
                         <div className="text-xs text-muted">
-                          {format(totals.totalProgress)} / {format(totals.totalGoal)} total ({formatPercent(totals.percent)})
+                          {format(totals.totalProgress)} / {format(totals.totalGoal)} this tier ({formatPercent(totals.percent)})
                         </div>
                       </div>
                       <div className="space-y-2">
                         {totals.goalEntries.map(([key, goal]) => {
-                          const amount = progress?.[key] || 0;
+                          const amount = progressForTier(def, progress, tier)?.[key] || 0;
                           const pct = goal > 0 ? Math.min(1, amount / goal) : 0;
                           return (
                             <div key={key} className="space-y-1">
@@ -426,11 +516,14 @@ export default function FactionView({
                           );
                         })}
                       </div>
-                      {def.unlocks?.length > 0 && (
-                        <div className="text-xs text-muted">Unlocks: {def.unlocks.join(" | ")}</div>
+                      {!!unlocks.length && (
+                        <div className="text-xs text-muted">Unlocks (tier {tier}): {unlocks.join(" | ")}</div>
                       )}
-                      <button className="btn" disabled={!canDonateBuilding} onClick={() => handleDonateBuilding(def.id)}>
-                        Send {buildAmount > 0 ? `${format(buildAmount)} ${buildResource}` : "materials"}
+                      {!!nextUnlocks.length && (
+                        <div className="text-xs text-muted">Next tier unlocks: {nextUnlocks.join(" | ")}</div>
+                      )}
+                      <button className="btn" disabled={!canDonateBuilding || isMaxed} onClick={() => handleDonateBuilding(def.id)}>
+                        {isMaxed ? "Maxed" : `Send ${buildAmount > 0 ? `${format(buildAmount)} ${buildResource}` : "materials"}`}
                       </button>
                     </div>
                   );
@@ -453,7 +546,8 @@ export default function FactionView({
             <div className="grid md:grid-cols-2 gap-3">
               {directives.map((directive) => {
                 const reqBuilding = directive.requires?.building;
-                const unlocked = !reqBuilding || buildingCompleteMap[reqBuilding];
+                const reqTier = directive.requires?.tier || 1;
+                const unlocked = !reqBuilding || (buildingTierMap[reqBuilding]?.completed || 0) >= reqTier;
                 return (
                   <div key={directive.id} className="card space-y-2">
                     <div className="row row-between">
@@ -463,7 +557,7 @@ export default function FactionView({
                     <div className="text-xs text-muted">{directive.desc}</div>
                     <div className="text-xs text-muted">{directive.effect}</div>
                     {reqBuilding && !unlocked && (
-                      <div className="text-xs text-muted">Requires: {buildingDefs.find((b) => b.id === reqBuilding)?.name || reqBuilding}</div>
+                      <div className="text-xs text-muted">Requires: {buildingDefs.find((b) => b.id === reqBuilding)?.name || reqBuilding} tier {reqTier}</div>
                     )}
                   </div>
                 );
@@ -503,19 +597,63 @@ export default function FactionView({
       {pane === "network" && (
         <div className="space-y-3">
           <div className="card space-y-2">
+            <div className="font-semibold">Relay Feed</div>
+            <div className="text-sm text-muted">Live transmissions and donation telemetry from your faction.</div>
+          </div>
+          <div className="grid lg:grid-cols-[1.1fr,0.9fr] gap-3">
+            <div className="card space-y-2">
+              <div className="font-semibold">Transmission Feed</div>
+              <div className="text-sm text-muted">Faction-level events, tier completions, and relay diagnostics.</div>
+              {activityError && <div className="text-xs text-amber-300">{activityError}</div>}
+              {!activeFaction && <div className="text-xs text-muted">Align with a faction to see the relay feed.</div>}
+              {!!activeFaction && !activityRows.length && !activityError && (
+                <div className="text-xs text-muted">No transmissions yet.</div>
+              )}
+              <div className="list">
+                {activityRows.map((row) => (
+                  <div key={row.id} className="row-item">
+                    <div className="row-details">
+                      <div className="row-title">{formatActivityLine(row)}</div>
+                      <div className="row-meta">{formatLogTime(row.created_at)}</div>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+            <div className="card space-y-2">
+              <div className="font-semibold">Donation Ledger</div>
+              <div className="text-sm text-muted">Recent material transfers routed through the relay.</div>
+              {donationsError && <div className="text-xs text-amber-300">{donationsError}</div>}
+              {!activeFaction && <div className="text-xs text-muted">Align with a faction to see donations.</div>}
+              {!!activeFaction && !donationRows.length && !donationsError && (
+                <div className="text-xs text-muted">No donations logged yet.</div>
+              )}
+              <div className="list">
+                {donationRows.map((row) => (
+                  <div key={row.id} className="row-item">
+                    <div className="row-details">
+                      <div className="row-title">{formatDonationLine(row)}</div>
+                      <div className="row-meta">{formatLogTime(row.created_at)}</div>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          </div>
+          <div className="card space-y-2">
             <div className="font-semibold">Network Horizons</div>
             <div className="text-sm text-muted">Upcoming multiplayer layers that fit the faction system.</div>
-          </div>
-          <div className="grid md:grid-cols-2 gap-3">
-            {NETWORK_FEATURES.map((feature) => (
-              <div key={feature.id} className="card space-y-2">
-                <div className="row row-between">
-                  <div className="font-semibold">{feature.name}</div>
-                  <span className="tag">{feature.status}</span>
+            <div className="grid md:grid-cols-2 gap-3 mt-2">
+              {NETWORK_FEATURES.map((feature) => (
+                <div key={feature.id} className="card space-y-2">
+                  <div className="row row-between">
+                    <div className="font-semibold">{feature.name}</div>
+                    <span className="tag">{feature.status}</span>
+                  </div>
+                  <div className="text-xs text-muted">{feature.desc}</div>
                 </div>
-                <div className="text-xs text-muted">{feature.desc}</div>
-              </div>
-            ))}
+              ))}
+            </div>
           </div>
         </div>
       )}

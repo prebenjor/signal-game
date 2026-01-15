@@ -87,3 +87,19 @@ body {
 .modal {
   @apply bg-panel2 p-5 rounded-2xl border border-[rgba(255,255,255,0.1)] shadow-panel max-w-xl w-[92%];
 }
+
+.network-panel {
+  background:
+    radial-gradient(700px 420px at 12% 0%, rgba(56, 189, 248, 0.14), transparent 60%),
+    radial-gradient(700px 420px at 88% 0%, rgba(251, 191, 36, 0.12), transparent 60%),
+    rgba(6, 10, 18, 0.9);
+  border: 1px solid rgba(148, 163, 184, 0.18);
+}
+
+.network-hero {
+  @apply flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-[rgba(255,255,255,0.12)] bg-slate-950/70 p-4;
+}
+
+.network-hero-title {
+  @apply text-xs uppercase tracking-[0.3em] font-semibold text-text;
+}

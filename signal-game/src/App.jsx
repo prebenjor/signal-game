@@ -124,9 +124,13 @@ export default function App() {
     factions: [],
     projects: {},
     buildings: {},
+    activity: [],
+    donations: [],
     membership: null,
     loading: false,
     error: null,
+    activityError: null,
+    donationsError: null,
     leaderboard: [],
     leaderboardError: null,
     buildingsError: null,
@@ -277,6 +281,67 @@ export default function App() {
     };
   }, [supabaseUserId]);
 
+  useEffect(() => {
+    if (!supabaseConfigured || !supabase || !supabaseUserId) return;
+    const factionId = factionState.membership?.faction_id;
+    if (!factionId) {
+      setFactionState((prev) => ({ ...prev, activity: [], donations: [], activityError: null, donationsError: null }));
+      return;
+    }
+    let active = true;
+    const loadLogs = async () => {
+      const [activityRes, donationsRes] = await Promise.all([
+        supabase.from("faction_activity_log").select("*").eq("faction_id", factionId).order("created_at", { ascending: false }).limit(25),
+        supabase.from("faction_donations_log").select("*").eq("faction_id", factionId).order("created_at", { ascending: false }).limit(25),
+      ]);
+      if (!active) return;
+      setFactionState((prev) => ({
+        ...prev,
+        activity: activityRes.data || [],
+        donations: donationsRes.data || [],
+        activityError: activityRes.error?.message || null,
+        donationsError: donationsRes.error?.message || null,
+      }));
+    };
+    loadLogs();
+
+    const upsertLog = (list, record) => {
+      const next = list.filter((row) => row.id !== record.id);
+      next.unshift(record);
+      return next.slice(0, 25);
+    };
+
+    const channel = supabase
+      .channel(`faction_logs_${factionId}`)
+      .on("postgres_changes", { event: "*", schema: "public", table: "faction_activity_log", filter: `faction_id=eq.${factionId}` }, (payload) => {
+        const record = payload.new || payload.old;
+        if (!record?.id) return;
+        setFactionState((prev) => {
+          const next = payload.eventType === "DELETE"
+            ? prev.activity.filter((row) => row.id !== record.id)
+            : upsertLog(prev.activity, record);
+          return { ...prev, activity: next };
+        });
+      })
+      .on("postgres_changes", { event: "*", schema: "public", table: "faction_donations_log", filter: `faction_id=eq.${factionId}` }, (payload) => {
+        const record = payload.new || payload.old;
+        if (!record?.id) return;
+        setFactionState((prev) => {
+          const next = payload.eventType === "DELETE"
+            ? prev.donations.filter((row) => row.id !== record.id)
+            : upsertLog(prev.donations, record);
+          return { ...prev, donations: next };
+        });
+        refreshLeaderboard();
+      })
+      .subscribe();
+
+    return () => {
+      active = false;
+      supabase.removeChannel(channel);
+    };
+  }, [supabaseUserId, factionState.membership?.faction_id]);
+
   // Persist current in-memory state to storage (localStorage + cookie).
   const persistState = () => {
     try {
@@ -300,7 +365,7 @@ export default function App() {
     if (!supabaseUserId) return { ok: false, message: "Signing in? try again." };
     const { data, error } = await supabase
       .from("faction_members")
-      .upsert({ user_id: supabaseUserId, faction_id: factionId, joined_at: new Date().toISOString() })
+      .upsert({ user_id: supabaseUserId, faction_id: factionId, callsign: state.profile.name.trim(), joined_at: new Date().toISOString() })
       .select("*")
       .maybeSingle();
     if (error) {
@@ -312,6 +377,17 @@ export default function App() {
     log(`Aligned with ${name}.`);
     return { ok: true, message: `Aligned with ${name}.` };
   }
+
+  useEffect(() => {
+    if (!supabaseReady || !supabase || !supabaseUserId) return;
+    if (!factionState.membership?.faction_id) return;
+    const callsign = state.profile?.name?.trim();
+    if (!callsign) return;
+    supabase
+      .from("faction_members")
+      .update({ callsign })
+      .eq("user_id", supabaseUserId);
+  }, [supabaseReady, supabaseUserId, factionState.membership?.faction_id, state.profile?.name]);
 
   async function donateFaction(resource, amount) {
     const value = Math.floor(Number(amount));
@@ -1536,6 +1612,10 @@ function biomeBuildingById(id) { return Object.values(BIOME_BUILDINGS).flat().fi
                 projects={factionState.projects}
                 buildings={factionState.buildings}
                 buildingsError={factionState.buildingsError}
+                activity={factionState.activity}
+                donations={factionState.donations}
+                activityError={factionState.activityError}
+                donationsError={factionState.donationsError}
                 membership={factionState.membership}
                 loading={factionState.loading}
                 error={factionState.error}
