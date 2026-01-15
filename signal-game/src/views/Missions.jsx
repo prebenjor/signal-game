@@ -21,14 +21,29 @@ export default function MissionsView({ state, startMission, setAutoLaunch, setSe
   };
 
   return (
-    <section className="panel space-y-3">
-      <div>
-        <div className="text-lg font-semibold">Missions</div>
-        <div className="text-muted text-sm">Biome-specific hazards and salvage. Burn fuel to cut transit time. Debris Field is your early fuel/research trickle.</div>
+    <section className="panel space-y-4 mission-command">
+      <div className="relative overflow-hidden rounded-2xl border border-sky-400/20 bg-slate-950/80 p-4 mission-banner">
+        <div className="absolute inset-0 bg-[radial-gradient(circle_at_top,_rgba(56,189,248,0.18),transparent_60%)]" />
+        <div className="absolute inset-x-0 bottom-0 h-12 bg-gradient-to-t from-slate-950/90 to-transparent" />
+        <div className="relative z-10 flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
+          <div>
+            <div className="text-xs uppercase tracking-[0.2em] text-sky-200/70">Mission Control</div>
+            <div className="text-2xl font-semibold">Missions</div>
+            <div className="text-sm text-muted mt-1">Biome-specific hazards and salvage. Burn fuel to cut transit time. Debris Field is your early fuel/research trickle.</div>
+          </div>
+          <div className="flex flex-wrap gap-2 text-xs">
+            <span className="tag">Range Tier {hubRange}</span>
+            <span className="tag">Efficiency {efficiencyPct}%</span>
+            <span className="tag">Selected {selectedBody.name}</span>
+          </div>
+        </div>
       </div>
-      <div className="card space-y-3">
+      <div className="rounded-2xl border border-white/10 bg-slate-950/70 p-4 space-y-3 mission-deck">
         <div className="row row-between">
-          <div className="font-semibold">Mission Operations Deck</div>
+          <div>
+            <div className="font-semibold">Mission Operations Deck</div>
+            <div className="text-xs text-muted">Targeting, launch routing, and live ops telemetry.</div>
+          </div>
           <div className="flex flex-wrap gap-2">
             {missionTabs.map((tab) => (
               <button key={tab.id} className={`tab ${pane === tab.id ? "active" : ""}`} onClick={() => setPane(tab.id)}>
@@ -40,7 +55,7 @@ export default function MissionsView({ state, startMission, setAutoLaunch, setSe
 
         {pane === "targeting" && (
           <div className="grid md:grid-cols-2 gap-3">
-            <div className="card">
+            <div className="card mission-panel">
               <div className="font-semibold mb-1">Target Locks</div>
               <div className="list max-h-[420px] overflow-y-auto pr-1">
                 {bodies.map((b) => {
@@ -65,7 +80,7 @@ export default function MissionsView({ state, startMission, setAutoLaunch, setSe
               </div>
             </div>
 
-            <div className="card space-y-2">
+            <div className="card space-y-2 mission-panel">
               <div className="font-semibold">Target Intel</div>
               <div className="row-item">
                 <div className="row-details">
@@ -105,24 +120,28 @@ export default function MissionsView({ state, startMission, setAutoLaunch, setSe
         {pane === "active" && (
           <div className="space-y-2">
             <div className="font-semibold">Active Operations</div>
-            <ActiveMissions
-              state={state}
-              bodies={bodies}
-              missionModeById={missionModeById}
-              formatDuration={formatDuration}
-            />
+            <div className="card mission-panel">
+              <ActiveMissions
+                state={state}
+                bodies={bodies}
+                missionModeById={missionModeById}
+                formatDuration={formatDuration}
+              />
+            </div>
           </div>
         )}
 
         {pane === "intel" && (
           <div className="space-y-2">
             <div className="font-semibold">Operational Intel</div>
-            <ul className="text-sm text-muted list-disc list-inside space-y-1">
-              <li>Fuel boost reduces travel time by 3s per step and reduces returns on long routes.</li>
-              <li>Stance selection tunes hazard and reward balance; specialists push a specific output.</li>
-              <li>Depletion lowers yields on repeated runs, rotate targets to recover efficiency.</li>
-              <li>Command over-capacity increases travel time and reduces cargo return.</li>
-            </ul>
+            <div className="card mission-panel">
+              <ul className="text-sm text-muted list-disc list-inside space-y-1">
+                <li>Fuel boost reduces travel time by 3s per step and reduces returns on long routes.</li>
+                <li>Stance selection tunes hazard and reward balance; specialists push a specific output.</li>
+                <li>Depletion lowers yields on repeated runs, rotate targets to recover efficiency.</li>
+                <li>Command over-capacity increases travel time and reduces cargo return.</li>
+              </ul>
+            </div>
           </div>
         )}
       </div>
@@ -156,7 +175,7 @@ function MissionLaunch({ state, startMission, setAutoLaunch, format, missionMode
         <span className="tag">Slots {active.length}/{slots}</span>
       </div>
 
-      <div className="card space-y-2">
+      <div className="card space-y-2 mission-panel">
         <div className="font-semibold">Launch Settings</div>
         <div className="row-item">
           <div className="row-details">
@@ -185,7 +204,7 @@ function MissionLaunch({ state, startMission, setAutoLaunch, format, missionMode
         </div>
       </div>
 
-      <div className="card space-y-2">
+      <div className="card space-y-2 mission-panel">
         <div className="font-semibold">Cargo Projection</div>
         <div className="text-sm">{Object.entries(forecast).map(([k, v]) => `${format(v)} ${k}`).join(" - ")}</div>
         <div className="text-xs text-muted">Hazard {Math.round(hazard * 100)}% | Failure risk ~{failChance}% | Travel {formatDuration(travelMs)} | Mode {mode?.name}</div>
@@ -194,7 +213,7 @@ function MissionLaunch({ state, startMission, setAutoLaunch, format, missionMode
         <button className="btn btn-primary w-full" onClick={() => startMission(body.id, fuelBoost, modeId, specialist)}>Deploy</button>
       </div>
 
-      <div className="card space-y-2">
+      <div className="card space-y-2 mission-panel">
         <div className="font-semibold">Auto-deploy</div>
         <div className="row row-between">
           <div className="text-sm text-muted">Deploy this target automatically when slots are free.</div>
