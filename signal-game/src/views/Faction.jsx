@@ -113,6 +113,7 @@ const resourceLabel = (id) => RESOURCE_OPTIONS.find((opt) => opt.id === id)?.lab
 
 export default function FactionView({
   profileName,
+  currentUserId,
   supabaseReady,
   factions,
   projects,
@@ -219,6 +220,7 @@ export default function FactionView({
   const leaderboardRows = useMemo(() => leaderboard || [], [leaderboard]);
   const formatPilot = (row) => {
     if (!row) return "Pilot";
+    if (currentUserId && row.user_id === currentUserId && profileName?.trim()) return profileName.trim();
     if (row.callsign) return row.callsign;
     const id = row.user_id || "";
     return id ? `Pilot ${id.slice(0, 6)}` : "Pilot";
@@ -254,13 +256,6 @@ export default function FactionView({
         : "Relay";
     return `${formatPilot(row)} donated ${format(row?.amount || 0)} ${resourceLabel(row?.resource)} to ${target}.`;
   };
-
-  const canTestRpc =
-    supabaseReady &&
-    !!onDonate &&
-    !needsName &&
-    !!membership?.faction_id &&
-    (resources?.metal || 0) >= 1;
 
   return (
     <section className="panel network-panel space-y-3">
@@ -298,12 +293,6 @@ export default function FactionView({
               )}
               {status && <div className="text-xs text-muted">{status}</div>}
               {error && <div className="text-xs text-amber-300">Faction sync issue: {error}</div>}
-              <button className="btn" disabled={!canTestRpc} onClick={() => onDonate("metal", 1)}>
-                Relay diagnostic (donate 1 metal)
-              </button>
-              {!canTestRpc && (
-                <div className="text-xs text-muted">Join a faction and keep 1 metal to ping the relay.</div>
-              )}
             </div>
             <div className="card space-y-2">
               <div className="font-semibold">Your Alignment</div>

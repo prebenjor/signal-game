@@ -407,6 +407,16 @@ export default function App() {
       log(`Donation failed: ${error.message}`);
       return { ok: false, message: `Donation failed: ${error.message}` };
     }
+    setFactionState((prev) => {
+      const factionId = prev.membership?.faction_id;
+      if (!factionId) return prev;
+      const project = prev.projects?.[factionId];
+      if (!project) return prev;
+      const progress = { ...(project.progress || {}) };
+      progress[resource] = (progress[resource] || 0) + value;
+      const nextProjects = { ...prev.projects, [factionId]: { ...project, progress, updated_at: new Date().toISOString() } };
+      return { ...prev, projects: nextProjects };
+    });
     log(`Donated ${value} ${resource} to faction project.`);
     refreshLeaderboard();
     return { ok: true, message: "Donation sent." };
@@ -1607,6 +1617,7 @@ function biomeBuildingById(id) { return Object.values(BIOME_BUILDINGS).flat().fi
             {state.tab === 'faction' && (
               <FactionView
                 profileName={state.profile?.name}
+                currentUserId={supabaseUserId}
                 supabaseReady={supabaseReady}
                 factions={factionState.factions}
                 projects={factionState.projects}
