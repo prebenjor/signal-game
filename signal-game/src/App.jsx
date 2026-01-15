@@ -369,12 +369,14 @@ export default function App() {
         });
       })
       .subscribe();
+    const pollId = setInterval(loadLogs, 5000);
     const pruneId = setInterval(() => {
       setFactionState((prev) => ({ ...prev, chat: trimChat(prev.chat || []) }));
     }, 60 * 1000);
 
     return () => {
       active = false;
+      clearInterval(pollId);
       clearInterval(pruneId);
       supabase.removeChannel(channel);
     };
@@ -542,7 +544,7 @@ export default function App() {
   useEffect(() => {
     const onKey = (e) => {
       if (["INPUT","TEXTAREA"].includes(e.target.tagName) || e.target.isContentEditable) return;
-      if (e.code === "Space" || e.key === " ") { e.preventDefault(); collectSignal(); }
+      if (e.code === "Space" || e.key === " " || e.key === "Spacebar") { e.preventDefault(); collectSignal(); }
       else if (e.code.startsWith("Digit")) {
         const num = Number(e.key);
         const idx = num === 0 ? TAB_ORDER.length - 1 : num - 1;
@@ -1766,7 +1768,6 @@ function ActionBar({ state, onCollect, onPulse, onLab, format, formatDuration })
       <div className="text-xs text-muted flex flex-wrap gap-3">
         <span>Pulse cost {format(pulseCostValue)} signal</span>
         <span>Lab cost {costText(labCostValue, format)}</span>
-        <span>Space: collect</span>
       </div>
     </div>
   );
@@ -2084,7 +2085,6 @@ function HubView({ state, buildHub, buyHubUpgrade, crewBonusText, ascend, format
               <ul className="text-sm text-muted list-disc list-inside space-y-1">
                 {briefing.map((b, i) => <li key={i}>{b}</li>)}
               </ul>
-              <div className="text-xs text-muted">Space: Collect | 1-9: Tabs | 0: Account | Arrow keys: cycle tabs</div>
             </div>
           )}
         </div>

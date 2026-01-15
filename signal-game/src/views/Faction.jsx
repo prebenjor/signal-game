@@ -629,17 +629,18 @@ export default function FactionView({
             {!!activeFaction && !chatRows.length && !chatError && (
               <div className="text-xs text-muted">No transmissions yet.</div>
             )}
-            <div ref={chatListRef} className="list max-h-72 overflow-y-auto">
+            <div ref={chatListRef} className="max-h-72 overflow-y-auto space-y-2">
               {chatRows.map((row) => (
-                <div key={row.id} className="row-item">
-                  <div className="row-details">
-                    <div className="row-title">{row.message || ""}</div>
-                    <div className="row-meta">{formatPilot(row)} | {formatLogTime(row.created_at)}</div>
+                <div key={row.id} className="rounded-lg border border-white/10 bg-slate-950/70 p-3">
+                  <div className="flex items-center justify-between text-[11px] text-muted uppercase tracking-wide">
+                    <span>{formatPilot(row)}</span>
+                    <span>{formatLogTime(row.created_at)}</span>
                   </div>
+                  <div className="text-sm text-white mt-1">{row.message || ""}</div>
                 </div>
               ))}
             </div>
-            <div className="row">
+            <div className="row gap-2">
               <input
                 className="flex-1 rounded-lg border border-white/10 bg-slate-900 px-3 py-2 text-sm text-white"
                 placeholder={needsName ? "Set callsign to transmit" : "Type transmission"}
