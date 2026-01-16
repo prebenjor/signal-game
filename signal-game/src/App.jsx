@@ -1181,13 +1181,12 @@ export default function App() {
 
   function buyHubUpgrade(id) {
     const def = HUB_UPGRADES.find((u) => u.id === id); if (!def) return;
-    const level = state.hubUpgrades[id] || 0;
-    const totalLevels = hubTotalLevel(state);
-    const unlockAt = (level + 1) * HUB_TIER_STEP;
-    if (totalLevels < unlockAt) {
-      log(`Upgrade locked. Reach Nexus level ${unlockAt} to unlock tier ${level + 1}.`);
+    const status = hubUpgradeUnlockStatus(state, def);
+    if (!status.unlocked) {
+      log(`Upgrade locked. ${status.reasons[0] || "Advance the Nexus tier."}`);
       return;
     }
+    const level = state.hubUpgrades[id] || 0;
     const cost = scaledUpgradeCost(def.cost, level);
     if (!canAfford(cost)) { log("Not enough resources."); return; }
     spend(cost);
@@ -1833,22 +1832,48 @@ function HubView({ state, buildHub, buyHubUpgrade, crewBonusText, ascend, format
     { id: "all", label: "All Bays" },
     { id: "materials", label: "Materials" },
     { id: "power", label: "Power" },
+    { id: "fuel", label: "Fuel" },
     { id: "life", label: "Life Support" },
     { id: "signal", label: "Signal" },
     { id: "logistics", label: "Logistics" },
   ];
   const availableBuildings = HUB_BUILDINGS.filter((b) => hubTierUnlockStatus(state, b.tier || 0).unlocked);
+  const fuelBuildOptions = availableBuildings.filter((b) => (b.prod?.fuel || 0) > 0 || (b.cons?.fuel || 0) > 0);
   const buildCategoryCounts = availableBuildings.reduce((acc, b) => {
     const key = b.category || "misc";
     acc[key] = (acc[key] || 0) + 1;
     return acc;
   }, { all: availableBuildings.length });
+  buildCategoryCounts.fuel = fuelBuildOptions.length;
   const buildOptions = buildCategory === "all"
     ? availableBuildings
-    : availableBuildings.filter((b) => b.category === buildCategory);
+    : buildCategory === "fuel"
+      ? fuelBuildOptions
+      : availableBuildings.filter((b) => b.category === buildCategory);
   const tierList = Array.from(new Set(HUB_BUILDINGS.map((b) => b.tier || 0))).sort((a, b) => a - b);
   const nextTier = tierList.find((tier) => !hubTierUnlockStatus(state, tier).unlocked);
   const nextTierStatus = nextTier !== undefined ? hubTierUnlockStatus(state, nextTier) : null;
+  const fuelReserve = state.resources.fuel || 0;
+  const fuelRate = state.rates.fuel || 0;
+  const metalReserve = state.resources.metal || 0;
+  const metalRate = state.rates.metal || 0;
+  const organicsReserve = state.resources.organics || 0;
+  const organicsRate = state.rates.organics || 0;
+  const foodReserve = state.resources.food || 0;
+  const foodRate = state.rates.food || 0;
+  const habitatReserve = state.resources.habitat || 0;
+  const habitatRate = state.rates.habitat || 0;
+  const fuelProducerDefs = HUB_BUILDINGS.filter((b) => (b.prod?.fuel || 0) > 0);
+  const fuelConsumerDefs = HUB_BUILDINGS.filter((b) => (b.cons?.fuel || 0) > 0);
+  const fuelRoutingDefs = HUB_BUILDINGS.filter((b) => b.id === "nav_console");
+  const fuelUpgradeDefs = HUB_UPGRADES.filter((u) => u.id === "fuel_farm" || u.id === "supply_depot");
+  const hubFuelProd = fuelProducerDefs.reduce((sum, b) => sum + (state.hubBuildings?.[b.id] || 0) * (b.prod?.fuel || 0), 0);
+  const hubFuelCons = fuelConsumerDefs.reduce((sum, b) => sum + (state.hubBuildings?.[b.id] || 0) * (b.cons?.fuel || 0), 0);
+  const materialProducerDefs = HUB_BUILDINGS.filter((b) => (b.prod?.metal || 0) > 0 || (b.prod?.organics || 0) > 0);
+  const lifeProducerDefs = HUB_BUILDINGS.filter((b) => (b.prod?.food || 0) > 0 || (b.prod?.habitat || 0) > 0 || (b.prod?.morale || 0) > 0);
+  const lifeUpgradeDefs = HUB_UPGRADES.filter((u) => u.id === "habitat_wing");
+  const hubFoodProd = lifeProducerDefs.reduce((sum, b) => sum + (state.hubBuildings?.[b.id] || 0) * (b.prod?.food || 0), 0);
+  const hubHabProd = lifeProducerDefs.reduce((sum, b) => sum + (state.hubBuildings?.[b.id] || 0) * (b.prod?.habitat || 0), 0);
   const briefing = [
     "Start with hub fabrication: Salvage Dock + Biofilter Vats establish metal and organics flow.",
     "Signal is a progress meter. Raise it via uplinks to unlock missions, bases, and tech tiers.",
@@ -1862,6 +1887,9 @@ function HubView({ state, buildHub, buyHubUpgrade, crewBonusText, ascend, format
   const hubTabs = [
     { id: "build", label: "Fabrication" },
     { id: "upgrades", label: "Upgrades" },
+    { id: "materials", label: "Materials Flow" },
+    { id: "life", label: "Life Support" },
+    { id: "fuel", label: "Fuel Systems" },
     { id: "range", label: "Range Uplink" },
     { id: "prestige", label: "Prestige Protocols" },
     { id: "briefing", label: "Briefing" },
@@ -2077,22 +2105,255 @@ function HubView({ state, buildHub, buyHubUpgrade, crewBonusText, ascend, format
             <div className="list max-h-[520px] overflow-y-auto pr-1">
               {HUB_UPGRADES.map((u) => {
                 const level = state.hubUpgrades[u.id] || 0;
-                const unlockAt = (level + 1) * HUB_TIER_STEP;
-                const unlocked = hubLevels >= unlockAt;
+                const status = hubUpgradeUnlockStatus(state, u);
                 const cost = scaledUpgradeCost(u.cost, level);
                 return (
                   <div key={u.id} className="row-item">
                     <div className="row-details">
                       <div className="row-title">{u.name} <span className="tag">Tier {level}</span></div>
                       <div className="row-meta">{u.desc}</div>
-                      <div className="row-meta text-xs text-muted">Unlocks at Nexus level {unlockAt}</div>
+                      <div className="row-meta text-xs text-muted">
+                        {status.unlocked ? `Unlocked at Nexus level ${status.unlockAt}` : `Unlock: ${status.reasons.join(" | ")}`}
+                      </div>
                     </div>
-                    <button className="btn" disabled={!unlocked || !canAffordUI(state.resources, cost)} onClick={() => buyHubUpgrade(u.id)}>
-                      {unlocked ? `Upgrade (${costText(cost, format)})` : "Locked"}
+                    <button className="btn" disabled={!status.unlocked || !canAffordUI(state.resources, cost)} onClick={() => buyHubUpgrade(u.id)}>
+                      {status.unlocked ? `Upgrade (${costText(cost, format)})` : "Locked"}
                     </button>
                   </div>
                 );
               })}
+            </div>
+          )}
+
+          {pane === "materials" && (
+            <div className="space-y-3">
+              <div className="grid md:grid-cols-2 gap-3">
+                <div className="card space-y-2">
+                  <div className="font-semibold">Metal Reserve</div>
+                  <div className="text-2xl font-semibold">{format(metalReserve)}</div>
+                  <div className="text-xs text-muted">Net {format(metalRate)}/tick ({metalRate >= 0 ? "surplus" : "deficit"}).</div>
+                </div>
+                <div className="card space-y-2">
+                  <div className="font-semibold">Organics Reserve</div>
+                  <div className="text-2xl font-semibold">{format(organicsReserve)}</div>
+                  <div className="text-xs text-muted">Net {format(organicsRate)}/tick ({organicsRate >= 0 ? "surplus" : "deficit"}).</div>
+                  <div className="text-xs text-muted">Organics feed fuel refinement and life support growth.</div>
+                </div>
+              </div>
+              <div className="card space-y-2">
+                <div className="font-semibold">Material Producers</div>
+                <div className="list">
+                  {materialProducerDefs.map((b) => {
+                    const level = state.hubBuildings[b.id] || 0;
+                    const cost = scaledHubCost(b.cost, level);
+                    const status = hubBuildingUnlockStatus(state, b);
+                    const can = status.unlocked && canAffordUI(state.resources, cost);
+                    const output = [];
+                    if (b.prod?.metal) output.push(`+${format(b.prod.metal)} metal/tick`);
+                    if (b.prod?.organics) output.push(`+${format(b.prod.organics)} organics/tick`);
+                    return (
+                      <div key={b.id} className={`row-item ${!status.unlocked ? "opacity-60" : ""}`}>
+                        <div className="row-details">
+                          <div className="row-title">{b.name} <span className="tag">Lv {level}</span></div>
+                          <div className="row-meta">{b.desc}</div>
+                          <div className="row-meta text-xs text-muted">Output: {output.join(" | ")} per level</div>
+                          {!status.unlocked && <div className="row-meta text-xs text-muted">Unlock: {status.reasons.join(" | ")}</div>}
+                        </div>
+                        <button className="btn" disabled={!can} onClick={() => buildHub(b.id)}>
+                          {status.unlocked ? `Build (${costText(cost, format)})` : "Locked"}
+                        </button>
+                      </div>
+                    );
+                  })}
+                  {!materialProducerDefs.length && <div className="text-muted text-sm">No material bays unlocked yet.</div>}
+                </div>
+              </div>
+            </div>
+          )}
+
+          {pane === "life" && (
+            <div className="space-y-3">
+              <div className="grid md:grid-cols-2 gap-3">
+                <div className="card space-y-2">
+                  <div className="font-semibold">Food Stores</div>
+                  <div className="text-2xl font-semibold">{format(foodReserve)}</div>
+                  <div className="text-xs text-muted">Net {format(foodRate)}/tick ({foodRate >= 0 ? "surplus" : "deficit"}).</div>
+                  <div className="text-xs text-muted">Hub production {format(hubFoodProd)}/tick.</div>
+                  <div className="text-xs text-muted">Upkeep: {(state.workers.total * 0.2).toFixed(1)} food/tick.</div>
+                </div>
+                <div className="card space-y-2">
+                  <div className="font-semibold">Habitat Capacity</div>
+                  <div className="text-2xl font-semibold">{format(habitatReserve)}</div>
+                  <div className="text-xs text-muted">Net {format(habitatRate)}/tick ({habitatRate >= 0 ? "surplus" : "deficit"}).</div>
+                  <div className="text-xs text-muted">Hub production {format(hubHabProd)}/tick.</div>
+                  <div className="text-xs text-muted">Active crew: {state.workers.total} | Morale {Math.round((state.workers.satisfaction || 1) * 100)}%.</div>
+                </div>
+              </div>
+              <div className="card space-y-2">
+                <div className="font-semibold">Life Support Producers</div>
+                <div className="list">
+                  {lifeProducerDefs.map((b) => {
+                    const level = state.hubBuildings[b.id] || 0;
+                    const cost = scaledHubCost(b.cost, level);
+                    const status = hubBuildingUnlockStatus(state, b);
+                    const can = status.unlocked && canAffordUI(state.resources, cost);
+                    const output = [];
+                    if (b.prod?.food) output.push(`+${format(b.prod.food)} food/tick`);
+                    if (b.prod?.habitat) output.push(`+${format(b.prod.habitat)} habitat/tick`);
+                    if (b.prod?.morale) output.push(`+${(b.prod.morale * 100).toFixed(1)}% morale/tick`);
+                    return (
+                      <div key={b.id} className={`row-item ${!status.unlocked ? "opacity-60" : ""}`}>
+                        <div className="row-details">
+                          <div className="row-title">{b.name} <span className="tag">Lv {level}</span></div>
+                          <div className="row-meta">{b.desc}</div>
+                          <div className="row-meta text-xs text-muted">Output: {output.join(" | ")} per level</div>
+                          {!status.unlocked && <div className="row-meta text-xs text-muted">Unlock: {status.reasons.join(" | ")}</div>}
+                        </div>
+                        <button className="btn" disabled={!can} onClick={() => buildHub(b.id)}>
+                          {status.unlocked ? `Build (${costText(cost, format)})` : "Locked"}
+                        </button>
+                      </div>
+                    );
+                  })}
+                  {lifeUpgradeDefs.map((u) => {
+                    const level = state.hubUpgrades[u.id] || 0;
+                    const status = hubUpgradeUnlockStatus(state, u);
+                    const cost = scaledUpgradeCost(u.cost, level);
+                    const can = status.unlocked && canAffordUI(state.resources, cost);
+                    return (
+                      <div key={u.id} className="row-item">
+                        <div className="row-details">
+                          <div className="row-title">{u.name} <span className="tag">Tier {level}</span></div>
+                          <div className="row-meta">{u.desc}</div>
+                          {!status.unlocked && <div className="row-meta text-xs text-muted">Unlock: {status.reasons.join(" | ")}</div>}
+                        </div>
+                        <button className="btn" disabled={!can} onClick={() => buyHubUpgrade(u.id)}>
+                          {status.unlocked ? `Upgrade (${costText(cost, format)})` : "Locked"}
+                        </button>
+                      </div>
+                    );
+                  })}
+                  {!lifeProducerDefs.length && !lifeUpgradeDefs.length && (
+                    <div className="text-muted text-sm">Life support bays unlock as the Nexus grows.</div>
+                  )}
+                </div>
+              </div>
+            </div>
+          )}
+
+          {pane === "fuel" && (
+            <div className="space-y-3">
+              <div className="grid md:grid-cols-2 gap-3">
+                <div className="card space-y-2">
+                  <div className="font-semibold">Fuel Reserve</div>
+                  <div className="text-2xl font-semibold">{format(fuelReserve)}</div>
+                  <div className="text-xs text-muted">Net {format(fuelRate)}/tick ({fuelRate >= 0 ? "surplus" : "deficit"}).</div>
+                  <div className="text-xs text-muted">Hub production {format(hubFuelProd)}/tick | Hub burn {format(hubFuelCons)}/tick.</div>
+                </div>
+                <div className="card space-y-2">
+                  <div className="font-semibold">Fuel Routing</div>
+                  <div className="text-xs text-muted">Mission fuel cost: {Math.round((hubMods.fuelMult || 1) * 100)}%.</div>
+                  <div className="text-xs text-muted">Travel efficiency: {Math.round(hubTravel * 100)}% (Nav Console and Logistics Hub).</div>
+                  <div className="text-xs text-muted">Refineries convert organics to fuel; reactors burn fuel for power.</div>
+                </div>
+              </div>
+
+              <div className="card space-y-2">
+                <div className="font-semibold">Fuel Producers</div>
+                <div className="list">
+                  {fuelProducerDefs.map((b) => {
+                    const level = state.hubBuildings[b.id] || 0;
+                    const cost = scaledHubCost(b.cost, level);
+                    const status = hubBuildingUnlockStatus(state, b);
+                    const can = status.unlocked && canAffordUI(state.resources, cost);
+                    return (
+                      <div key={b.id} className={`row-item ${!status.unlocked ? "opacity-60" : ""}`}>
+                        <div className="row-details">
+                          <div className="row-title">{b.name} <span className="tag">Lv {level}</span></div>
+                          <div className="row-meta">{b.desc}</div>
+                          <div className="row-meta text-xs text-muted">Output: +{format(b.prod?.fuel || 0)} fuel/tick per level</div>
+                          {!status.unlocked && <div className="row-meta text-xs text-muted">Unlock: {status.reasons.join(" | ")}</div>}
+                        </div>
+                        <button className="btn" disabled={!can} onClick={() => buildHub(b.id)}>
+                          {status.unlocked ? `Build (${costText(cost, format)})` : "Locked"}
+                        </button>
+                      </div>
+                    );
+                  })}
+                  {!fuelProducerDefs.length && <div className="text-muted text-sm">No fuel producers unlocked yet.</div>}
+                </div>
+              </div>
+
+              <div className="card space-y-2">
+                <div className="font-semibold">Fuel Consumers</div>
+                <div className="list">
+                  {fuelConsumerDefs.map((b) => {
+                    const level = state.hubBuildings[b.id] || 0;
+                    const cost = scaledHubCost(b.cost, level);
+                    const status = hubBuildingUnlockStatus(state, b);
+                    const can = status.unlocked && canAffordUI(state.resources, cost);
+                    return (
+                      <div key={b.id} className={`row-item ${!status.unlocked ? "opacity-60" : ""}`}>
+                        <div className="row-details">
+                          <div className="row-title">{b.name} <span className="tag">Lv {level}</span></div>
+                          <div className="row-meta">{b.desc}</div>
+                          <div className="row-meta text-xs text-muted">Burn: -{format(b.cons?.fuel || 0)} fuel/tick per level</div>
+                          {!status.unlocked && <div className="row-meta text-xs text-muted">Unlock: {status.reasons.join(" | ")}</div>}
+                        </div>
+                        <button className="btn" disabled={!can} onClick={() => buildHub(b.id)}>
+                          {status.unlocked ? `Build (${costText(cost, format)})` : "Locked"}
+                        </button>
+                      </div>
+                    );
+                  })}
+                  {!fuelConsumerDefs.length && <div className="text-muted text-sm">No fuel consumers online yet.</div>}
+                </div>
+              </div>
+
+              <div className="card space-y-2">
+                <div className="font-semibold">Fuel Routing & Efficiency</div>
+                <div className="list">
+                  {fuelRoutingDefs.map((b) => {
+                    const level = state.hubBuildings[b.id] || 0;
+                    const cost = scaledHubCost(b.cost, level);
+                    const status = hubBuildingUnlockStatus(state, b);
+                    const can = status.unlocked && canAffordUI(state.resources, cost);
+                    return (
+                      <div key={b.id} className={`row-item ${!status.unlocked ? "opacity-60" : ""}`}>
+                        <div className="row-details">
+                          <div className="row-title">{b.name} <span className="tag">Lv {level}</span></div>
+                          <div className="row-meta">{b.desc}</div>
+                          {!status.unlocked && <div className="row-meta text-xs text-muted">Unlock: {status.reasons.join(" | ")}</div>}
+                        </div>
+                        <button className="btn" disabled={!can} onClick={() => buildHub(b.id)}>
+                          {status.unlocked ? `Build (${costText(cost, format)})` : "Locked"}
+                        </button>
+                      </div>
+                    );
+                  })}
+                  {fuelUpgradeDefs.map((u) => {
+                    const level = state.hubUpgrades[u.id] || 0;
+                    const status = hubUpgradeUnlockStatus(state, u);
+                    const cost = scaledUpgradeCost(u.cost, level);
+                    const can = status.unlocked && canAffordUI(state.resources, cost);
+                    return (
+                      <div key={u.id} className="row-item">
+                        <div className="row-details">
+                          <div className="row-title">{u.name} <span className="tag">Tier {level}</span></div>
+                          <div className="row-meta">{u.desc}</div>
+                          {!status.unlocked && <div className="row-meta text-xs text-muted">Unlock: {status.reasons.join(" | ")}</div>}
+                        </div>
+                        <button className="btn" disabled={!can} onClick={() => buyHubUpgrade(u.id)}>
+                          {status.unlocked ? `Upgrade (${costText(cost, format)})` : "Locked"}
+                        </button>
+                      </div>
+                    );
+                  })}
+                  {!fuelRoutingDefs.length && !fuelUpgradeDefs.length && (
+                    <div className="text-muted text-sm">Fuel routing upgrades unlock as the Nexus grows.</div>
+                  )}
+                </div>
+              </div>
             </div>
           )}
 
@@ -3424,6 +3685,24 @@ function hubBuildingUnlockStatus(stateObj, def) {
     if (level < (req.level || 1)) reasons.push(`${name} Lv ${level}/${req.level}`);
   });
   return { unlocked: reasons.length === 0, reasons };
+}
+function hubUpgradeUnlockStatus(stateObj, def) {
+  const level = stateObj.hubUpgrades?.[def.id] || 0;
+  const unlockAt = (level + 1) * HUB_TIER_STEP;
+  const hubLevel = hubTotalLevel(stateObj);
+  const reasons = [];
+  if (hubLevel < unlockAt) reasons.push(`Nexus level ${hubLevel}/${unlockAt}`);
+  const unlock = def.unlock || {};
+  if (unlock.signal && (stateObj.resources?.signal || 0) < unlock.signal) reasons.push(`Signal ${Math.floor(stateObj.resources.signal || 0)}/${unlock.signal}`);
+  if (unlock.missions && (stateObj.milestones?.missionsDone || 0) < unlock.missions) reasons.push(`Missions ${stateObj.milestones?.missionsDone || 0}/${unlock.missions}`);
+  if (unlock.tech && !stateObj.tech?.[unlock.tech]) reasons.push(`Tech: ${unlock.tech}`);
+  if (unlock.milestone && !(stateObj.milestonesUnlocked || []).includes(unlock.milestone)) reasons.push("Milestone not met");
+  (def.requires || []).forEach((req) => {
+    const lvl = stateObj.hubBuildings?.[req.id] || 0;
+    const name = HUB_BUILDINGS.find((b) => b.id === req.id)?.name || req.id;
+    if (lvl < (req.level || 1)) reasons.push(`${name} Lv ${lvl}/${req.level}`);
+  });
+  return { unlocked: reasons.length === 0, reasons, unlockAt };
 }
 function isUnlockedUI(state, body) {
   if ((body.tier || 1) > hubRange(state)) return false;

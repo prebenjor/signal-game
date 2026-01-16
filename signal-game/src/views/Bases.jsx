@@ -149,6 +149,8 @@ export default function BasesView({
                     ))}
                   </select>
                 </div>
+                {!!body.focus?.length && <div className="text-xs text-muted">Site focus: {body.focus.join(" | ")}</div>}
+                {body.reason && <div className="text-xs text-muted">{body.reason}</div>}
                 <div className="flex flex-wrap gap-2">
                   <span className="tag">Travel {formatDuration(body.travel * 1000)}</span>
                   <span className="tag">Hazard {(body.hazard * 100).toFixed(0)}%</span>

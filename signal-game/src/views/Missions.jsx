@@ -44,6 +44,15 @@ export default function MissionsView({ state, startMission, setAutoLaunch, setSe
     if (delta === 0) return "0%";
     return `${delta > 0 ? "+" : ""}${delta}%`;
   };
+  const yieldOrder = ["metal", "organics", "fuel", "food", "research", "rare", "signal"];
+  const formatYields = (resources) => {
+    const entries = Object.entries(resources || {}).sort((a, b) => {
+      const aIdx = yieldOrder.indexOf(a[0]);
+      const bIdx = yieldOrder.indexOf(b[0]);
+      return (aIdx === -1 ? 999 : aIdx) - (bIdx === -1 ? 999 : bIdx);
+    });
+    return entries.map(([key, value]) => `${format(value)} ${key}`).join(" | ");
+  };
 
   return (
     <section className="panel space-y-4 mission-command">
@@ -104,6 +113,8 @@ export default function MissionsView({ state, startMission, setAutoLaunch, setSe
                         </div>
                         <div className="row-meta">{b.type.toUpperCase()} - Travel {formatDuration(b.travel * 1000)} - Hazard {(b.hazard * 100).toFixed(0)}%</div>
                         <div className="row-meta text-xs text-muted">Tier {b.tier} | Efficiency {efficiencyLabel}%</div>
+                        {b.resources && <div className="row-meta text-xs text-muted">Primary yields: {formatYields(b.resources)}</div>}
+                        {b.reason && <div className="row-meta text-xs text-muted">{b.reason}</div>}
                         {!!requirements.length && <div className="row-meta text-xs text-muted">Unlock: {requirements.join(" | ")}</div>}
                       </div>
                       <button className="btn" disabled={locked} onClick={() => setSelected(b.id)}>Lock</button>
@@ -123,6 +134,9 @@ export default function MissionsView({ state, startMission, setAutoLaunch, setSe
                 {rangeLocked && <span className="tag">Beyond Range</span>}
               </div>
               <div className="text-xs text-muted">Efficiency {efficiencyPct}% | Range Tier {selectedBody.tier || 1}</div>
+              {!!selectedBody.focus?.length && <div className="text-xs text-muted">Focus: {selectedBody.focus.join(" | ")}</div>}
+              {selectedBody.resources && <div className="text-xs text-muted">Primary yields: {formatYields(selectedBody.resources)}</div>}
+              {selectedBody.reason && <div className="text-xs text-muted">{selectedBody.reason}</div>}
               <div className="text-xs text-muted">Base modifiers: Cargo {formatBonus(bonuses.cargo || 1)} | Travel {formatBonus(bonuses.travel || 1)} | Hazard {formatBonus(bonuses.hazard || 1)}</div>
               <div className="text-xs text-muted">Range Tier {hubRange} opens higher targets. Extend range via Hub Scan Array, Tech (Deep Scan/Rift Mapping), and Relay Anchors.</div>
             </div>
