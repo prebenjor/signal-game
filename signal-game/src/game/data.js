@@ -59,17 +59,31 @@ export const HUB_UPGRADES = [
   { id: "habitat_wing", name: "Habitat Wing", desc: "+2 habitat/tick, +0.01 morale/tick", cost: { metal: 220, organics: 110, food: 30 } },
 ];
 
+export const HUB_BUILDING_TIERS = {
+  0: { signal: 0, hubLevel: 0 },
+  1: { signal: 40, hubLevel: 3 },
+  2: { signal: 120, hubLevel: 8, missions: 2 },
+  3: { signal: 240, hubLevel: 15, missions: 5 },
+};
 export const HUB_BUILDINGS = [
-  { id: "salvage_dock", name: "Salvage Dock", desc: "+2 metal/tick", cost: { fuel: 8 }, prod: { metal: 2 }, cons: {} },
-  { id: "biofilter_vats", name: "Biofilter Vats", desc: "+2 organics/tick", cost: { metal: 20 }, prod: { organics: 2 }, cons: {} },
-  { id: "signal_uplink", name: "Signal Uplink", desc: "+2 signal/tick", cost: { metal: 30, organics: 10 }, prod: { signal: 2 }, cons: { power: 1 } },
-  { id: "refinery", name: "Fuel Refinery", desc: "+1 fuel/tick", cost: { metal: 90, organics: 16 }, prod: { fuel: 1 }, cons: {} },
-  { id: "reactor", name: "Reactor", desc: "+3 power/tick, -1 fuel", cost: { metal: 140, fuel: 35 }, prod: { power: 3 }, cons: { fuel: 1 } },
-  { id: "hab", name: "Hab Module", desc: "+3 habitat", cost: { metal: 120, organics: 40 }, prod: { habitat: 3 }, cons: {} },
-  { id: "hydroponics", name: "Hydroponics Bay", desc: "+2 food/tick", cost: { metal: 110, organics: 35 }, prod: { food: 2 }, cons: { power: 1 } },
-  { id: "rec", name: "Rec Dome", desc: "Boosts morale", cost: { metal: 90, organics: 60 }, prod: { morale: 0.02 }, cons: { power: 1 } },
-  { id: "array", name: "Comms Array", desc: "+3 signal/tick", cost: { metal: 180, fuel: 16 }, prod: { signal: 3 }, cons: { power: 1 } },
-  { id: "nav_console", name: "Nav Console", desc: "-1% mission travel time per level", cost: { metal: 160, fuel: 24, research: 18 }, prod: {}, cons: { power: 1 }, travelMult: 0.99 },
+  { id: "salvage_dock", name: "Salvage Dock", desc: "+2 metal/tick", cost: { fuel: 6 }, prod: { metal: 2 }, cons: {}, tier: 0, category: "materials" },
+  { id: "biofilter_vats", name: "Biofilter Vats", desc: "+2 organics/tick", cost: { metal: 20 }, prod: { organics: 2 }, cons: {}, tier: 0, category: "life" },
+  { id: "reactor", name: "Micro Reactor", desc: "+3 power/tick, -1 fuel", cost: { metal: 120, fuel: 6 }, prod: { power: 3 }, cons: { fuel: 1 }, tier: 0, category: "power" },
+  { id: "signal_uplink", name: "Signal Uplink", desc: "+2 signal/tick", cost: { metal: 30, organics: 10 }, prod: { signal: 2 }, cons: { power: 1 }, tier: 0, category: "signal" },
+  { id: "refinery", name: "Fuel Refinery", desc: "+1 fuel/tick", cost: { metal: 90, organics: 16 }, prod: { fuel: 1 }, cons: { power: 1 }, tier: 1, category: "logistics" },
+  { id: "hab", name: "Hab Module", desc: "+3 habitat", cost: { metal: 120, organics: 40 }, prod: { habitat: 3 }, cons: { power: 1 }, tier: 1, category: "life" },
+  { id: "hydroponics", name: "Hydroponics Bay", desc: "+2 food/tick", cost: { metal: 110, organics: 35 }, prod: { food: 2 }, cons: { power: 1 }, tier: 1, category: "life" },
+  { id: "rec", name: "Rec Dome", desc: "Boosts morale", cost: { metal: 90, organics: 60 }, prod: { morale: 0.02 }, cons: { power: 1 }, tier: 1, category: "life" },
+  { id: "array", name: "Comms Array", desc: "+3 signal/tick", cost: { metal: 180, fuel: 16 }, prod: { signal: 3 }, cons: { power: 1 }, tier: 1, category: "signal" },
+  { id: "nav_console", name: "Nav Console", desc: "-1% mission travel time per level", cost: { metal: 160, fuel: 24, research: 18 }, prod: {}, cons: { power: 1 }, travelMult: 0.99, tier: 1, category: "logistics" },
+  { id: "alloy_foundry", name: "Alloy Foundry", desc: "+5 metal/tick", cost: { metal: 260, fuel: 40 }, prod: { metal: 5 }, cons: { power: 2 }, tier: 2, category: "materials", unlock: { requires: [{ id: "salvage_dock", level: 3 }] } },
+  { id: "bioforge", name: "Bioforge", desc: "+3 organics/tick, +1 food/tick", cost: { metal: 240, organics: 80 }, prod: { organics: 3, food: 1 }, cons: { power: 2 }, tier: 2, category: "life", unlock: { requires: [{ id: "biofilter_vats", level: 3 }] } },
+  { id: "power_core", name: "Power Core", desc: "+8 power/tick, -2 fuel", cost: { metal: 280, fuel: 80, research: 30 }, prod: { power: 8 }, cons: { fuel: 2 }, tier: 2, category: "power", unlock: { requires: [{ id: "reactor", level: 3 }] } },
+  { id: "signal_amplifier", name: "Signal Amplifier", desc: "+5 signal/tick", cost: { metal: 260, organics: 60, fuel: 30 }, prod: { signal: 5 }, cons: { power: 2 }, tier: 2, category: "signal", unlock: { requires: [{ id: "signal_uplink", level: 3 }] } },
+  { id: "logistics_hub", name: "Logistics Hub", desc: "+2 fuel/tick, -3% travel time", cost: { metal: 420, fuel: 120, organics: 60 }, prod: { fuel: 2 }, cons: { power: 2 }, travelMult: 0.97, tier: 3, category: "logistics", unlock: { requires: [{ id: "refinery", level: 3 }] } },
+  { id: "hab_ring", name: "Habitat Ring", desc: "+8 habitat, +0.05 morale/tick", cost: { metal: 420, organics: 160, fuel: 80 }, prod: { habitat: 8, morale: 0.05 }, cons: { power: 2 }, tier: 3, category: "life", unlock: { requires: [{ id: "hab", level: 3 }] } },
+  { id: "fusion_core", name: "Fusion Core", desc: "+16 power/tick, -4 fuel", cost: { metal: 520, fuel: 180, research: 80 }, prod: { power: 16 }, cons: { fuel: 4 }, tier: 3, category: "power", unlock: { requires: [{ id: "power_core", level: 2 }] } },
+  { id: "deep_array", name: "Deep Array", desc: "+8 signal/tick, +0.2 research/tick", cost: { metal: 480, fuel: 120, research: 100 }, prod: { signal: 8, research: 0.2 }, cons: { power: 3 }, tier: 3, category: "signal", unlock: { requires: [{ id: "signal_amplifier", level: 2 }] } },
 ];
 export const BIOME_BUILDINGS = {
   asteroid: [
@@ -212,10 +226,10 @@ export const WIKI_ENTRIES = [
 
 export const MISSION_MODES = [
   { id: "balanced", name: "Balanced", desc: "Standard risk and rewards.", hazard: 0, durationMs: 0, reward: {} },
-  { id: "survey", name: "Survey", desc: "+60% research, slower travel, lower cargo", hazard: 0.04, durationMs: 8000, reward: { research: 1.6, all: 0.9 } },
-  { id: "salvage", name: "Salvage", desc: "+30% metal/organics cargo, small hazard bump", hazard: 0.06, durationMs: 0, reward: { metal: 1.3, organics: 1.3 } },
-  { id: "secure", name: "Secure", desc: "-35% hazard, longer flight, -10% cargo", hazard: -0.35, durationMs: 6000, reward: { all: 0.9 } },
-  { id: "relay", name: "Relay", desc: "+25% fuel & signal cargo, modest hazard", hazard: 0.08, durationMs: -2000, reward: { fuel: 1.25, signal: 1.25 } },
+  { id: "survey", name: "Survey", desc: "+60% research, slower travel, lower cargo", hazard: 0.04, durationMs: 8000, reward: { research: 1.6, all: 0.9 }, unlock: { missions: 2 } },
+  { id: "salvage", name: "Salvage", desc: "+30% metal/organics cargo, small hazard bump", hazard: 0.06, durationMs: 0, reward: { metal: 1.3, organics: 1.3 }, unlock: { missions: 4 } },
+  { id: "secure", name: "Secure", desc: "-35% hazard, longer flight, -10% cargo", hazard: -0.35, durationMs: 6000, reward: { all: 0.9 }, unlock: { missions: 6 } },
+  { id: "relay", name: "Relay", desc: "+25% fuel & signal cargo, modest hazard", hazard: 0.08, durationMs: -2000, reward: { fuel: 1.25, signal: 1.25 }, unlock: { missions: 8, signal: 240 } },
 ];
 export const SYSTEM_NAME_PARTS = {
   prefix: ["Astra", "Helix", "Orion", "Vanta", "Nyx", "Vega", "Argo", "Lumen", "Cinder", "Atlas"],

@@ -1,7 +1,7 @@
 // Missions view: handles target selection, launch config, specialists, auto-launch, and showing active missions.
-import { useState } from "react";
+import { useEffect, useState } from "react";
 
-export default function MissionsView({ state, startMission, setAutoLaunch, setSelected, format, missionModeById, missionYield, formatDuration, bodies, missionModes, isUnlockedUI, baseBonuses, hubRange, depletionFactor, missionMods, missionDurationMult }) {
+export default function MissionsView({ state, startMission, setAutoLaunch, setSelected, format, missionModeById, missionYield, formatDuration, bodies, missionModes, isUnlockedUI, baseBonuses, hubRange, depletionFactor, missionMods, missionDurationMult, bodyUnlockMult }) {
   const [pane, setPane] = useState("targeting");
   const missionTabs = [
     { id: "targeting", label: "Target Lattice" },
@@ -14,6 +14,31 @@ export default function MissionsView({ state, startMission, setAutoLaunch, setSe
   const efficiencyPct = Math.round(efficiency * 100);
   const bonuses = baseBonuses ? baseBonuses(selectedBody.id) : { cargo: 1, travel: 1, hazard: 1 };
   const rangeLocked = (selectedBody.tier || 1) > hubRange;
+  const missionsDone = state.milestones?.missionsDone || 0;
+  const signal = state.resources.signal || 0;
+  const techState = state.tech || {};
+  const formatName = (value) => value
+    .split("_")
+    .map((word) => word.charAt(0).toUpperCase() + word.slice(1))
+    .join(" ");
+  const modeUnlocked = (mode) => {
+    if (!mode?.unlock) return true;
+    const unlock = mode.unlock || {};
+    if (unlock.missions && missionsDone < unlock.missions) return false;
+    if (unlock.signal && signal < unlock.signal) return false;
+    if (unlock.tech && !techState[unlock.tech]) return false;
+    return true;
+  };
+  const unlockedModes = missionModes.filter(modeUnlocked);
+  const lockedModes = missionModes.filter((mode) => !modeUnlocked(mode));
+  const modeUnlockText = (mode) => {
+    const unlock = mode.unlock || {};
+    const parts = [];
+    if (unlock.missions) parts.push(`${unlock.missions} missions`);
+    if (unlock.signal) parts.push(`Signal ${unlock.signal}`);
+    if (unlock.tech) parts.push(`Tech: ${formatName(unlock.tech)}`);
+    return parts.length ? parts.join(" · ") : "Locked";
+  };
   const formatBonus = (value) => {
     const delta = Math.round((value - 1) * 100);
     if (delta === 0) return "0%";
@@ -63,6 +88,14 @@ export default function MissionsView({ state, startMission, setAutoLaunch, setSe
                   const bodyRangeLocked = (b.tier || 1) > hubRange;
                   const bodyEfficiency = depletionFactor(b.id);
                   const efficiencyLabel = Math.round(bodyEfficiency * 100);
+                  const requirements = [];
+                  if (bodyRangeLocked) requirements.push(`Range tier ${b.tier}`);
+                  if (b.requireMissions && missionsDone < b.requireMissions) requirements.push(`Missions ${missionsDone}/${b.requireMissions}`);
+                  if (b.requireTech && !techState[b.requireTech]) requirements.push(`Tech: ${formatName(b.requireTech)}`);
+                  if (!bodyRangeLocked && b.unlock) {
+                    const requiredSignal = Math.ceil((b.unlock || 0) * (bodyUnlockMult || 1));
+                    if (signal < requiredSignal) requirements.push(`Signal ${Math.floor(signal)}/${requiredSignal}`);
+                  }
                   return (
                     <div key={b.id} className="row-item">
                       <div className="row-details">
@@ -71,7 +104,7 @@ export default function MissionsView({ state, startMission, setAutoLaunch, setSe
                         </div>
                         <div className="row-meta">{b.type.toUpperCase()} - Travel {formatDuration(b.travel * 1000)} - Hazard {(b.hazard * 100).toFixed(0)}%</div>
                         <div className="row-meta text-xs text-muted">Tier {b.tier} | Efficiency {efficiencyLabel}%</div>
-                        {bodyRangeLocked && <div className="row-meta text-xs text-muted">Requires Range Tier {b.tier} (current {hubRange}).</div>}
+                        {!!requirements.length && <div className="row-meta text-xs text-muted">Unlock: {requirements.join(" · ")}</div>}
                       </div>
                       <button className="btn" disabled={locked} onClick={() => setSelected(b.id)}>Lock</button>
                     </div>
@@ -108,7 +141,7 @@ export default function MissionsView({ state, startMission, setAutoLaunch, setSe
               missionYield={missionYield}
               formatDuration={formatDuration}
               bodies={bodies}
-              missionModes={missionModes}
+              missionModes={unlockedModes}
               baseBonuses={baseBonuses}
               depletionFactor={depletionFactor}
               missionMods={missionMods}
@@ -143,6 +176,22 @@ export default function MissionsView({ state, startMission, setAutoLaunch, setSe
                 <li>Fragment shards sometimes surface in mission cargo; higher tiers and side objectives improve odds.</li>
               </ul>
             </div>
+            {!!lockedModes.length && (
+              <div className="card mission-panel space-y-2">
+                <div className="font-semibold">Stance Unlocks</div>
+                <div className="text-xs text-muted">Additional stances unlock after sorties and uplink milestones.</div>
+                <div className="list">
+                  {lockedModes.map((mode) => (
+                    <div key={mode.id} className="row-item">
+                      <div className="row-details">
+                        <div className="row-title">{mode.name}</div>
+                        <div className="row-meta text-xs text-muted">{modeUnlockText(mode)}</div>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
           </div>
         )}
       </div>
@@ -169,6 +218,12 @@ function MissionLaunch({ state, startMission, setAutoLaunch, format, missionMode
   const travelMs = Math.max(15000, ((body.travel * 1000 * (bonuses.travel || 1) * travelMult) - fuelBoost * 3000 + (mode?.durationMs || 0)) * (missionDurationMult || 1) * (state.tech.auto_pilots ? 0.9 : 1));
   const efficiencyPct = Math.round(efficiency * 100);
   const command = missionMods?.command || { used: 0, capacity: 0, over: 0 };
+  useEffect(() => {
+    if (!missionModes.length) return;
+    if (!missionModes.some((m) => m.id === modeId)) {
+      setModeId(missionModes[0].id);
+    }
+  }, [missionModes, modeId]);
   return (
     <div className="space-y-3">
       <div className="row row-between">

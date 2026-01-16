@@ -19,7 +19,7 @@ import CrewView from "./views/Crew";
 import TechView from "./views/Tech";
 import FactionView from "./views/Faction";
 import { supabase, supabaseConfigured } from "./lib/supabase";
-import { STORAGE_KEY, LEGACY_KEY, GAME_TITLE, TICK_MS, SAVE_MS, MAX_EVENTS_PER_BASE, SAVE_VERSION, EVENT_COOLDOWN_MS, FRAGMENT_TOTAL, FRAGMENT_THRESHOLDS, PACE, CREW_FATIGUE, CONTRACT_REFRESH_MS, COST_EXP, HUB_TIER_STEP, HUB_TIER_COST_MULT, HUB_UPGRADE_TIER_MULT, SYSTEM_EVENT_COOLDOWN_MS, MAX_SYSTEM_EVENTS, BODIES, HUB_UPGRADES, HUB_BUILDINGS, BIOME_BUILDINGS, BASE_TRAITS, TECH, BASE_OPS, STARTER_TOUR, CODEX_ENTRIES, WIKI_ENTRIES, MISSION_MODES, SYSTEM_NAME_PARTS, SYSTEM_TRAITS, SYSTEM_SURVEY_STEPS, SURVEY_SEQUENCE, COLONY_ROLES, COLONY_COST, CREW_PROGRAMS, CREW_CONTRACTS, SYSTEM_EVENTS, INTEGRATION_PROJECTS, GALAXY_RULESETS, DOCTRINES, FACTION_OVERRIDES } from "./game/data";
+import { STORAGE_KEY, LEGACY_KEY, GAME_TITLE, TICK_MS, SAVE_MS, MAX_EVENTS_PER_BASE, SAVE_VERSION, EVENT_COOLDOWN_MS, FRAGMENT_TOTAL, FRAGMENT_THRESHOLDS, PACE, CREW_FATIGUE, CONTRACT_REFRESH_MS, COST_EXP, HUB_TIER_STEP, HUB_TIER_COST_MULT, HUB_UPGRADE_TIER_MULT, SYSTEM_EVENT_COOLDOWN_MS, MAX_SYSTEM_EVENTS, BODIES, HUB_UPGRADES, HUB_BUILDINGS, HUB_BUILDING_TIERS, BIOME_BUILDINGS, BASE_TRAITS, TECH, BASE_OPS, STARTER_TOUR, CODEX_ENTRIES, WIKI_ENTRIES, MISSION_MODES, SYSTEM_NAME_PARTS, SYSTEM_TRAITS, SYSTEM_SURVEY_STEPS, SURVEY_SEQUENCE, COLONY_ROLES, COLONY_COST, CREW_PROGRAMS, CREW_CONTRACTS, SYSTEM_EVENTS, INTEGRATION_PROJECTS, GALAXY_RULESETS, DOCTRINES, FACTION_OVERRIDES } from "./game/data";
 
 function seedCrewRoster(workers) {
   const assigned = workers?.assigned || { miner: 0, botanist: 0, engineer: 0 };
@@ -1114,7 +1114,7 @@ export default function App() {
     if (!state.milestones?.firstLaunch) fuelCost = 0;
     if (state.resources.fuel < fuelCost) { log("Not enough fuel."); return; }
     bumpResources({ fuel: -fuelCost });
-    const mode = missionModeById(modeId);
+    const mode = isMissionModeUnlocked(state, missionModeById(modeId)) ? missionModeById(modeId) : firstUnlockedMissionMode(state);
     const bonuses = baseBonuses(state, body.id);
     const hubBonus = hubMissionBonuses(state);
     const hazardBase = body.hazard - (state.tech.hazard_gear ? 0.25 : 0) - (state.tech.shielding ? 0.2 : 0) + (mode?.hazard || 0) + (specialist === "engineer" ? -0.1 : 0);
@@ -1124,7 +1124,7 @@ export default function App() {
     const objective = Math.random() < objectiveChance ? makeObjective(body) : null;
     const efficiency = depletionFactor(state, body.id);
     const variance = Number(randomBetween(0.9, 1.1).toFixed(2));
-    const mission = { bodyId: body.id, endsAt: Date.now() + duration, hazard, mode: modeId, specialist, objective, efficiency, variance };
+    const mission = { bodyId: body.id, endsAt: Date.now() + duration, hazard, mode: mode.id, specialist, objective, efficiency, variance };
     dispatch({ type: "UPDATE", patch: { missions: { active: [...(state.missions.active || []), mission] } } });
     unlockCodex("mission_ops");
     unlockCodex("local_ops");
@@ -1168,6 +1168,8 @@ export default function App() {
   // Build/level hub structures; scales cost by COST_EXP.hub.
   function buildHub(id) {
     const def = HUB_BUILDINGS.find((b) => b.id === id); if (!def) return;
+    const status = hubBuildingUnlockStatus(state, def);
+    if (!status.unlocked) { log(`Fabrication locked. ${status.reasons[0] || "Advance the Nexus tier."}`); return; }
     const level = state.hubBuildings[id] || 0;
     const cost = scaledHubCost(def.cost, level);
     if (!canAfford(cost)) { log("Not enough resources."); return; }
@@ -1566,6 +1568,7 @@ function biomeBuildingById(id) { return Object.values(BIOME_BUILDINGS).flat().fi
                 formatDuration={formatDuration}
                 bodies={BODIES}
                 missionModes={MISSION_MODES}
+                bodyUnlockMult={PACE.bodyUnlockMult}
                 isUnlockedUI={isUnlockedUI}
                 hubRange={hubRange(state)}
                 depletionFactor={(id) => depletionFactor(state, id)}
@@ -1805,6 +1808,7 @@ function AccountView({ state, exportProfile, importProfile, compact, setCompact,
 
 function HubView({ state, buildHub, buyHubUpgrade, crewBonusText, ascend, format, supabaseReady }) {
   const [pane, setPane] = useState("build");
+  const [buildCategory, setBuildCategory] = useState("all");
   const command = commandUsage(state);
   const hubLevels = hubTotalLevel(state);
   const hubTier = Math.floor(hubLevels / HUB_TIER_STEP);
@@ -1824,6 +1828,21 @@ function HubView({ state, buildHub, buyHubUpgrade, crewBonusText, ascend, format
   const moraleFill = clamp(state.workers.satisfaction || 0, 0, 1);
   const canPrestige = (state.milestonesUnlocked || []).includes("M4_PRESTIGE_UNLOCK");
   const unlockHints = unlockHintText(state, supabaseReady);
+  const buildCategories = [
+    { id: "all", label: "All Bays" },
+    { id: "materials", label: "Materials" },
+    { id: "power", label: "Power" },
+    { id: "life", label: "Life Support" },
+    { id: "signal", label: "Signal" },
+    { id: "logistics", label: "Logistics" },
+  ];
+  const availableBuildings = HUB_BUILDINGS.filter((b) => hubTierUnlockStatus(state, b.tier || 0).unlocked);
+  const buildOptions = buildCategory === "all"
+    ? availableBuildings
+    : availableBuildings.filter((b) => b.category === buildCategory);
+  const tierList = Array.from(new Set(HUB_BUILDINGS.map((b) => b.tier || 0))).sort((a, b) => a - b);
+  const nextTier = tierList.find((tier) => !hubTierUnlockStatus(state, tier).unlocked);
+  const nextTierStatus = nextTier !== undefined ? hubTierUnlockStatus(state, nextTier) : null;
   const briefing = [
     "Start with hub fabrication: Salvage Dock + Biofilter Vats establish metal and organics flow.",
     "Signal is a progress meter. Raise it via uplinks to unlock missions, bases, and tech tiers.",
@@ -2004,23 +2023,47 @@ function HubView({ state, buildHub, buyHubUpgrade, crewBonusText, ascend, format
           </div>
 
           {pane === "build" && (
-            <div className="list max-h-[520px] overflow-y-auto pr-1">
-              {HUB_BUILDINGS.map((b) => {
-                const level = state.hubBuildings[b.id] || 0;
-                const cost = scaledHubCost(b.cost, level);
-                const can = canAffordUI(state.resources, cost);
-                return (
-                  <div key={b.id} className="row-item">
-                    <div className="row-details">
-                      <div className="row-title">{b.name} <span className="tag">Lv {level}</span></div>
-                      <div className="row-meta">{b.desc}</div>
-                      <div className="row-meta text-xs text-muted">Crew bonus: {crewBonusText(b.id)}</div>
-                      <div className="row-meta text-xs text-muted">Next cost: {costText(cost, format)}</div>
+            <div className="space-y-3">
+              <div className="row row-between">
+                <div className="text-xs text-muted">Fabrication lanes</div>
+                <div className="flex flex-wrap gap-2">
+                  {buildCategories.map((tab) => (
+                    <button key={tab.id} className={`tab ${buildCategory === tab.id ? "active" : ""}`} onClick={() => setBuildCategory(tab.id)}>
+                      {tab.label}
+                    </button>
+                  ))}
+                </div>
+              </div>
+              {nextTierStatus && (
+                <div className="card space-y-1">
+                  <div className="font-semibold">Tier {nextTier} Unlock</div>
+                  <div className="text-xs text-muted">Advance the hub to surface the next fabrication tier.</div>
+                  <div className="text-xs text-muted">{nextTierStatus.reasons.join(" · ")}</div>
+                </div>
+              )}
+              <div className="list max-h-[520px] overflow-y-auto pr-1">
+                {buildOptions.map((b) => {
+                  const level = state.hubBuildings[b.id] || 0;
+                  const cost = scaledHubCost(b.cost, level);
+                  const status = hubBuildingUnlockStatus(state, b);
+                  const can = status.unlocked && canAffordUI(state.resources, cost);
+                  return (
+                    <div key={b.id} className={`row-item ${!status.unlocked ? "opacity-60" : ""}`}>
+                      <div className="row-details">
+                        <div className="row-title">{b.name} <span className="tag">Lv {level}</span> <span className="tag">Tier {b.tier ?? 0}</span></div>
+                        <div className="row-meta">{b.desc}</div>
+                        <div className="row-meta text-xs text-muted">Crew bonus: {crewBonusText(b.id)}</div>
+                        <div className="row-meta text-xs text-muted">Next cost: {costText(cost, format)}</div>
+                        {!status.unlocked && <div className="row-meta text-xs text-muted">Unlock: {status.reasons.join(" · ")}</div>}
+                      </div>
+                      <button className="btn" disabled={!can} onClick={() => buildHub(b.id)}>
+                        {status.unlocked ? `Build (${costText(cost, format)})` : "Locked"}
+                      </button>
                     </div>
-                    <button className="btn" disabled={!can} onClick={() => buildHub(b.id)}>Build ({costText(cost, format)})</button>
-                  </div>
-                );
-              })}
+                  );
+                })}
+                {!buildOptions.length && <div className="text-muted text-sm">No bays available in this lane yet.</div>}
+              </div>
             </div>
           )}
 
@@ -2581,6 +2624,18 @@ function focusBoost(focus, resourceKey) {
 }
 
 function missionModeById(id) { return MISSION_MODES.find((m) => m.id === id) || MISSION_MODES[0]; }
+function isMissionModeUnlocked(stateObj, mode) {
+  if (!mode?.unlock) return true;
+  const unlock = mode.unlock || {};
+  if (unlock.missions && (stateObj.milestones?.missionsDone || 0) < unlock.missions) return false;
+  if (unlock.signal && (stateObj.resources.signal || 0) < unlock.signal) return false;
+  if (unlock.tech && !stateObj.tech?.[unlock.tech]) return false;
+  if (unlock.milestone && !(stateObj.milestonesUnlocked || []).includes(unlock.milestone)) return false;
+  return true;
+}
+function firstUnlockedMissionMode(stateObj) {
+  return MISSION_MODES.find((mode) => isMissionModeUnlocked(stateObj, mode)) || MISSION_MODES[0];
+}
 function loadSavedState() {
   try {
     const raw = localStorage.getItem(STORAGE_KEY) || localStorage.getItem(LEGACY_KEY);
@@ -3334,6 +3389,36 @@ function hasPrereqs(state, tech) { return (tech.requires || []).every((id) => st
 function canAffordUI(resources, cost) { return Object.entries(cost).every(([k, v]) => (resources[k] || 0) >= v); }
 function costText(cost, format) { return Object.entries(cost).map(([k, v]) => `${format(v)} ${k}`).join(', '); }
 function formatDuration(ms) { const sec = Math.max(0, Math.ceil(ms / 1000)); const m = Math.floor(sec / 60); const s = sec % 60; return m > 0 ? `${m}m ${s}s` : `${s}s`; }
+function hubTierUnlockStatus(stateObj, tier) {
+  const rules = HUB_BUILDING_TIERS?.[tier] || {};
+  const reasons = [];
+  const hubLevel = hubTotalLevel(stateObj);
+  const missionsDone = stateObj.milestones?.missionsDone || 0;
+  const signal = stateObj.resources?.signal || 0;
+  if (rules.signal && signal < rules.signal) reasons.push(`Signal ${Math.floor(signal)}/${rules.signal}`);
+  if (rules.hubLevel && hubLevel < rules.hubLevel) reasons.push(`Nexus level ${hubLevel}/${rules.hubLevel}`);
+  if (rules.missions && missionsDone < rules.missions) reasons.push(`Missions ${missionsDone}/${rules.missions}`);
+  if (rules.tech && !stateObj.tech?.[rules.tech]) reasons.push(`Tech: ${rules.tech}`);
+  if (rules.milestone && !(stateObj.milestonesUnlocked || []).includes(rules.milestone)) reasons.push("Milestone not met");
+  return { unlocked: reasons.length === 0, reasons };
+}
+function hubBuildingUnlockStatus(stateObj, def) {
+  const tierStatus = hubTierUnlockStatus(stateObj, def.tier || 0);
+  if (!tierStatus.unlocked) return tierStatus;
+  const reasons = [];
+  const unlock = def.unlock || {};
+  if (unlock.signal && (stateObj.resources?.signal || 0) < unlock.signal) reasons.push(`Signal ${Math.floor(stateObj.resources.signal || 0)}/${unlock.signal}`);
+  if (unlock.hubLevel && hubTotalLevel(stateObj) < unlock.hubLevel) reasons.push(`Nexus level ${hubTotalLevel(stateObj)}/${unlock.hubLevel}`);
+  if (unlock.missions && (stateObj.milestones?.missionsDone || 0) < unlock.missions) reasons.push(`Missions ${stateObj.milestones?.missionsDone || 0}/${unlock.missions}`);
+  if (unlock.tech && !stateObj.tech?.[unlock.tech]) reasons.push(`Tech: ${unlock.tech}`);
+  if (unlock.milestone && !(stateObj.milestonesUnlocked || []).includes(unlock.milestone)) reasons.push("Milestone not met");
+  (unlock.requires || []).forEach((req) => {
+    const level = stateObj.hubBuildings?.[req.id] || 0;
+    const name = HUB_BUILDINGS.find((b) => b.id === req.id)?.name || req.id;
+    if (level < (req.level || 1)) reasons.push(`${name} Lv ${level}/${req.level}`);
+  });
+  return { unlocked: reasons.length === 0, reasons };
+}
 function isUnlockedUI(state, body) {
   if ((body.tier || 1) > hubRange(state)) return false;
   if (body.requireTech && !state.tech[body.requireTech]) return false;
