@@ -37,7 +37,7 @@ export default function MissionsView({ state, startMission, setAutoLaunch, setSe
     if (unlock.missions) parts.push(`${unlock.missions} missions`);
     if (unlock.signal) parts.push(`Signal ${unlock.signal}`);
     if (unlock.tech) parts.push(`Tech: ${formatName(unlock.tech)}`);
-    return parts.length ? parts.join(" · ") : "Locked";
+    return parts.length ? parts.join(" | ") : "Locked";
   };
   const formatBonus = (value) => {
     const delta = Math.round((value - 1) * 100);
@@ -104,7 +104,7 @@ export default function MissionsView({ state, startMission, setAutoLaunch, setSe
                         </div>
                         <div className="row-meta">{b.type.toUpperCase()} - Travel {formatDuration(b.travel * 1000)} - Hazard {(b.hazard * 100).toFixed(0)}%</div>
                         <div className="row-meta text-xs text-muted">Tier {b.tier} | Efficiency {efficiencyLabel}%</div>
-                        {!!requirements.length && <div className="row-meta text-xs text-muted">Unlock: {requirements.join(" · ")}</div>}
+                        {!!requirements.length && <div className="row-meta text-xs text-muted">Unlock: {requirements.join(" | ")}</div>}
                       </div>
                       <button className="btn" disabled={locked} onClick={() => setSelected(b.id)}>Lock</button>
                     </div>

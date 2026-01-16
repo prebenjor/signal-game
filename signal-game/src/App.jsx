@@ -1808,7 +1808,8 @@ function AccountView({ state, exportProfile, importProfile, compact, setCompact,
 
 function HubView({ state, buildHub, buyHubUpgrade, crewBonusText, ascend, format, supabaseReady }) {
   const [pane, setPane] = useState("build");
-  const [buildCategory, setBuildCategory] = useState("all");
+  const initialCategory = (state.resources.power || 0) <= 0 && !(state.hubBuildings?.reactor) ? "power" : "all";
+  const [buildCategory, setBuildCategory] = useState(initialCategory);
   const command = commandUsage(state);
   const hubLevels = hubTotalLevel(state);
   const hubTier = Math.floor(hubLevels / HUB_TIER_STEP);
@@ -1837,6 +1838,11 @@ function HubView({ state, buildHub, buyHubUpgrade, crewBonusText, ascend, format
     { id: "logistics", label: "Logistics" },
   ];
   const availableBuildings = HUB_BUILDINGS.filter((b) => hubTierUnlockStatus(state, b.tier || 0).unlocked);
+  const buildCategoryCounts = availableBuildings.reduce((acc, b) => {
+    const key = b.category || "misc";
+    acc[key] = (acc[key] || 0) + 1;
+    return acc;
+  }, { all: availableBuildings.length });
   const buildOptions = buildCategory === "all"
     ? availableBuildings
     : availableBuildings.filter((b) => b.category === buildCategory);
@@ -1986,7 +1992,7 @@ function HubView({ state, buildHub, buyHubUpgrade, crewBonusText, ascend, format
                   <div key={hint.id} className="row-item">
                     <div className="row-details">
                       <div className="row-title">{hint.title}</div>
-                      <div className="row-meta text-xs text-muted">{hint.reqs.join(" · ")}</div>
+                      <div className="row-meta text-xs text-muted">{hint.reqs.join(" | ")}</div>
                     </div>
                   </div>
                 ))}
@@ -2029,7 +2035,7 @@ function HubView({ state, buildHub, buyHubUpgrade, crewBonusText, ascend, format
                 <div className="flex flex-wrap gap-2">
                   {buildCategories.map((tab) => (
                     <button key={tab.id} className={`tab ${buildCategory === tab.id ? "active" : ""}`} onClick={() => setBuildCategory(tab.id)}>
-                      {tab.label}
+                      {tab.label}{buildCategoryCounts[tab.id] ? ` (${buildCategoryCounts[tab.id]})` : ""}
                     </button>
                   ))}
                 </div>
@@ -2038,7 +2044,7 @@ function HubView({ state, buildHub, buyHubUpgrade, crewBonusText, ascend, format
                 <div className="card space-y-1">
                   <div className="font-semibold">Tier {nextTier} Unlock</div>
                   <div className="text-xs text-muted">Advance the hub to surface the next fabrication tier.</div>
-                  <div className="text-xs text-muted">{nextTierStatus.reasons.join(" · ")}</div>
+                  <div className="text-xs text-muted">{nextTierStatus.reasons.join(" | ")}</div>
                 </div>
               )}
               <div className="list max-h-[520px] overflow-y-auto pr-1">
@@ -2054,7 +2060,7 @@ function HubView({ state, buildHub, buyHubUpgrade, crewBonusText, ascend, format
                         <div className="row-meta">{b.desc}</div>
                         <div className="row-meta text-xs text-muted">Crew bonus: {crewBonusText(b.id)}</div>
                         <div className="row-meta text-xs text-muted">Next cost: {costText(cost, format)}</div>
-                        {!status.unlocked && <div className="row-meta text-xs text-muted">Unlock: {status.reasons.join(" · ")}</div>}
+                        {!status.unlocked && <div className="row-meta text-xs text-muted">Unlock: {status.reasons.join(" | ")}</div>}
                       </div>
                       <button className="btn" disabled={!can} onClick={() => buildHub(b.id)}>
                         {status.unlocked ? `Build (${costText(cost, format)})` : "Locked"}
