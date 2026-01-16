@@ -114,6 +114,7 @@ export default function BasesView({
             <div className="font-semibold">Outpost Operations Deck</div>
             <div className="text-xs text-muted">Site-level controls, fabrication, and field protocols.</div>
           </div>
+          <div className="text-xs text-muted">Each site is tuned to its biome. Build for the resource chain your hub lacks.</div>
           <div className="flex flex-wrap gap-2">
             {tabOrder.map((key) => (
               <button key={key} className={`tab ${pane === key ? "active" : ""}`} onClick={() => setPane(key)}>

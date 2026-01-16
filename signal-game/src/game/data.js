@@ -18,14 +18,14 @@ export const FRAGMENT_THRESHOLDS = [
   { id: "FRAG_100", percent: 1, title: "The Reconstruction", codexEntryId: "veil_reconstruction", message: "Fragments converge. The Veil is complete." },
 ];
 export const PACE = {
-  costExp: { hub: 1.18, base: 1.22, crew: 1.25 },
-  techCostMult: 1.4,
-  techUnlockMult: 1.5,
-  bodyUnlockMult: 1.5,
-  missionDurationMult: 1.6,
-  missionYieldMult: 0.85,
-  surveyDurationMult: 1.5,
-  integrationDurationMult: 1.6,
+  costExp: { hub: 1.16, base: 1.2, crew: 1.22 },
+  techCostMult: 1.6,
+  techUnlockMult: 1.7,
+  bodyUnlockMult: 1.7,
+  missionDurationMult: 2.0,
+  missionYieldMult: 0.6,
+  surveyDurationMult: 1.8,
+  integrationDurationMult: 1.9,
 };
 export const CREW_FATIGUE = { gain: 0.00006, recovery: 0.0001 };
 export const CONTRACT_REFRESH_MS = 180000;
@@ -68,7 +68,7 @@ export const HUB_BUILDING_TIERS = {
 export const HUB_BUILDINGS = [
   { id: "salvage_dock", name: "Salvage Dock", desc: "+2 metal/tick", cost: { fuel: 8 }, prod: { metal: 2 }, cons: {}, tier: 0, category: "materials" },
   { id: "biofilter_vats", name: "Biofilter Vats", desc: "+2 organics/tick", cost: { metal: 25 }, prod: { organics: 2 }, cons: {}, tier: 0, category: "life" },
-  { id: "reactor", name: "Micro Reactor", desc: "+3 power/tick, -1 fuel", cost: { metal: 140, fuel: 8 }, prod: { power: 3 }, cons: { fuel: 1 }, tier: 0, category: "power", unlock: { requires: [{ id: "salvage_dock", level: 1 }] } },
+  { id: "reactor", name: "Micro Reactor", desc: "+3 power/tick, -1 fuel", cost: { metal: 100, fuel: 6 }, prod: { power: 3 }, cons: { fuel: 1 }, tier: 0, category: "power", unlock: { requires: [{ id: "salvage_dock", level: 1 }] } },
   { id: "signal_uplink", name: "Signal Uplink", desc: "+2 signal/tick", cost: { metal: 40, organics: 12 }, prod: { signal: 2 }, cons: { power: 1 }, tier: 0, category: "signal", unlock: { requires: [{ id: "reactor", level: 1 }] } },
   { id: "refinery", name: "Fuel Refinery", desc: "+1 fuel/tick", cost: { metal: 110, organics: 20 }, prod: { fuel: 1 }, cons: { power: 1 }, tier: 1, category: "logistics", unlock: { requires: [{ id: "biofilter_vats", level: 2 }] } },
   { id: "hab", name: "Hab Module", desc: "+3 habitat", cost: { metal: 140, organics: 50 }, prod: { habitat: 3 }, cons: { power: 1 }, tier: 1, category: "life", unlock: { requires: [{ id: "biofilter_vats", level: 1 }] } },
@@ -80,7 +80,9 @@ export const HUB_BUILDINGS = [
   { id: "bioforge", name: "Bioforge", desc: "+3 organics/tick, +1 food/tick", cost: { metal: 280, organics: 100 }, prod: { organics: 3, food: 1 }, cons: { power: 2 }, tier: 2, category: "life", unlock: { requires: [{ id: "biofilter_vats", level: 3 }] } },
   { id: "power_core", name: "Power Core", desc: "+10 power/tick, -2 fuel", cost: { metal: 320, fuel: 90, research: 40 }, prod: { power: 10 }, cons: { fuel: 2 }, tier: 2, category: "power", unlock: { requires: [{ id: "reactor", level: 3 }] } },
   { id: "signal_amplifier", name: "Signal Amplifier", desc: "+5 signal/tick", cost: { metal: 300, organics: 80, fuel: 40 }, prod: { signal: 5 }, cons: { power: 2 }, tier: 2, category: "signal", unlock: { requires: [{ id: "signal_uplink", level: 3 }] } },
+  { id: "catalyst_cracker", name: "Catalyst Cracker", desc: "+2 fuel/tick, -1 organics", cost: { metal: 320, fuel: 40, organics: 60 }, prod: { fuel: 2 }, cons: { power: 1, organics: 1 }, tier: 2, category: "logistics", unlock: { requires: [{ id: "refinery", level: 2 }] } },
   { id: "logistics_hub", name: "Logistics Hub", desc: "+3 fuel/tick, -3% travel time", cost: { metal: 520, fuel: 160, organics: 80 }, prod: { fuel: 3 }, cons: { power: 2 }, travelMult: 0.97, tier: 3, category: "logistics", unlock: { requires: [{ id: "refinery", level: 3 }] } },
+  { id: "synthesis_stack", name: "Synthesis Stack", desc: "+5 fuel/tick, -2 organics", cost: { metal: 640, fuel: 140, organics: 180, research: 80 }, prod: { fuel: 5 }, cons: { power: 2, organics: 2 }, tier: 3, category: "logistics", unlock: { requires: [{ id: "catalyst_cracker", level: 2 }] } },
   { id: "hab_ring", name: "Habitat Ring", desc: "+10 habitat, +0.05 morale/tick", cost: { metal: 520, organics: 200, fuel: 100 }, prod: { habitat: 10, morale: 0.05 }, cons: { power: 2 }, tier: 3, category: "life", unlock: { requires: [{ id: "hab", level: 3 }] } },
   { id: "fusion_core", name: "Fusion Core", desc: "+18 power/tick, -4 fuel", cost: { metal: 700, fuel: 220, research: 110 }, prod: { power: 18 }, cons: { fuel: 4 }, tier: 3, category: "power", unlock: { requires: [{ id: "power_core", level: 2 }] } },
   { id: "deep_array", name: "Deep Array", desc: "+8 signal/tick, +0.2 research/tick", cost: { metal: 600, fuel: 160, research: 140 }, prod: { signal: 8, research: 0.2 }, cons: { power: 3 }, tier: 3, category: "signal", unlock: { requires: [{ id: "signal_amplifier", level: 2 }] } },

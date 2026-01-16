@@ -666,6 +666,11 @@ export default function App() {
     const projectedPower = (state.resources.power || 0) + projected.power;
     const powerGate = projectedPower <= 0;
     const rates = sumRates(powerGate);
+    const fuelShort = (state.resources.fuel || 0) <= 0 && (rates.fuel || 0) <= 0;
+    if (fuelShort) {
+      rates.signal *= 0.8;
+      rates.research *= 0.85;
+    }
     rates.morale = (rates.morale || 0) + (traitMods.morale || 0);
     const saturation = signalSaturation(state);
     if (rates.signal > 0 && saturation.factor < 1) rates.signal *= saturation.factor;
@@ -1119,7 +1124,8 @@ export default function App() {
     const hubBonus = hubMissionBonuses(state);
     const hazardBase = body.hazard - (state.tech.hazard_gear ? 0.25 : 0) - (state.tech.shielding ? 0.2 : 0) + (mode?.hazard || 0) + (specialist === "engineer" ? -0.1 : 0);
     const hazard = Math.max(0, hazardBase * (bonuses.hazard || 1) * (missionMods.hazardMult || 1) * (crewMods.hazardMult || 1) * (hubMods.hazardMult || 1));
-    const duration = Math.max(15000, ((body.travel * 1000 * (bonuses.travel || 1) * (hubBonus.travel || 1) * (missionMods.travelMult || 1) * (crewMods.travelMult || 1)) - fuelBoost * 3000 + (mode?.durationMs || 0)) * (state.tech.auto_pilots ? 0.9 : 1) * PACE.missionDurationMult);
+    const lowFuelPenalty = (state.resources.fuel - fuelCost) <= 5 ? 1.2 : 1;
+    const duration = Math.max(15000, ((body.travel * 1000 * (bonuses.travel || 1) * (hubBonus.travel || 1) * (missionMods.travelMult || 1) * (crewMods.travelMult || 1)) - fuelBoost * 3000 + (mode?.durationMs || 0)) * (state.tech.auto_pilots ? 0.9 : 1) * lowFuelPenalty * PACE.missionDurationMult);
     const objectiveChance = Math.min(0.55, 0.3 + (missionMods.objectiveBonus || 0) + (crewMods.objectiveBonus || 0));
     const objective = Math.random() < objectiveChance ? makeObjective(body) : null;
     const efficiency = depletionFactor(state, body.id);
@@ -1838,7 +1844,7 @@ function HubView({ state, buildHub, buyHubUpgrade, crewBonusText, ascend, format
     { id: "logistics", label: "Logistics" },
   ];
   const availableBuildings = HUB_BUILDINGS.filter((b) => hubTierUnlockStatus(state, b.tier || 0).unlocked);
-  const fuelBuildOptions = availableBuildings.filter((b) => (b.prod?.fuel || 0) > 0 || (b.cons?.fuel || 0) > 0);
+  const fuelBuildOptions = availableBuildings.filter((b) => (b.prod?.fuel || 0) > 0);
   const buildCategoryCounts = availableBuildings.reduce((acc, b) => {
     const key = b.category || "misc";
     acc[key] = (acc[key] || 0) + 1;
@@ -1864,11 +1870,10 @@ function HubView({ state, buildHub, buyHubUpgrade, crewBonusText, ascend, format
   const habitatReserve = state.resources.habitat || 0;
   const habitatRate = state.rates.habitat || 0;
   const fuelProducerDefs = HUB_BUILDINGS.filter((b) => (b.prod?.fuel || 0) > 0);
-  const fuelConsumerDefs = HUB_BUILDINGS.filter((b) => (b.cons?.fuel || 0) > 0);
   const fuelRoutingDefs = HUB_BUILDINGS.filter((b) => b.id === "nav_console");
   const fuelUpgradeDefs = HUB_UPGRADES.filter((u) => u.id === "fuel_farm" || u.id === "supply_depot");
   const hubFuelProd = fuelProducerDefs.reduce((sum, b) => sum + (state.hubBuildings?.[b.id] || 0) * (b.prod?.fuel || 0), 0);
-  const hubFuelCons = fuelConsumerDefs.reduce((sum, b) => sum + (state.hubBuildings?.[b.id] || 0) * (b.cons?.fuel || 0), 0);
+  const hubFuelCons = HUB_BUILDINGS.reduce((sum, b) => sum + (state.hubBuildings?.[b.id] || 0) * (b.cons?.fuel || 0), 0);
   const materialProducerDefs = HUB_BUILDINGS.filter((b) => (b.prod?.metal || 0) > 0 || (b.prod?.organics || 0) > 0);
   const lifeProducerDefs = HUB_BUILDINGS.filter((b) => (b.prod?.food || 0) > 0 || (b.prod?.habitat || 0) > 0 || (b.prod?.morale || 0) > 0);
   const lifeUpgradeDefs = HUB_UPGRADES.filter((u) => u.id === "habitat_wing");
@@ -2254,7 +2259,7 @@ function HubView({ state, buildHub, buyHubUpgrade, crewBonusText, ascend, format
                   <div className="font-semibold">Fuel Routing</div>
                   <div className="text-xs text-muted">Mission fuel cost: {Math.round((hubMods.fuelMult || 1) * 100)}%.</div>
                   <div className="text-xs text-muted">Travel efficiency: {Math.round(hubTravel * 100)}% (Nav Console and Logistics Hub).</div>
-                  <div className="text-xs text-muted">Refineries convert organics to fuel; reactors burn fuel for power.</div>
+                  <div className="text-xs text-muted">Refineries convert organics to fuel. Power bays consume fuel - tune them in Fabrication.</div>
                 </div>
               </div>
 
@@ -2285,29 +2290,8 @@ function HubView({ state, buildHub, buyHubUpgrade, crewBonusText, ascend, format
               </div>
 
               <div className="card space-y-2">
-                <div className="font-semibold">Fuel Consumers</div>
-                <div className="list">
-                  {fuelConsumerDefs.map((b) => {
-                    const level = state.hubBuildings[b.id] || 0;
-                    const cost = scaledHubCost(b.cost, level);
-                    const status = hubBuildingUnlockStatus(state, b);
-                    const can = status.unlocked && canAffordUI(state.resources, cost);
-                    return (
-                      <div key={b.id} className={`row-item ${!status.unlocked ? "opacity-60" : ""}`}>
-                        <div className="row-details">
-                          <div className="row-title">{b.name} <span className="tag">Lv {level}</span></div>
-                          <div className="row-meta">{b.desc}</div>
-                          <div className="row-meta text-xs text-muted">Burn: -{format(b.cons?.fuel || 0)} fuel/tick per level</div>
-                          {!status.unlocked && <div className="row-meta text-xs text-muted">Unlock: {status.reasons.join(" | ")}</div>}
-                        </div>
-                        <button className="btn" disabled={!can} onClick={() => buildHub(b.id)}>
-                          {status.unlocked ? `Build (${costText(cost, format)})` : "Locked"}
-                        </button>
-                      </div>
-                    );
-                  })}
-                  {!fuelConsumerDefs.length && <div className="text-muted text-sm">No fuel consumers online yet.</div>}
-                </div>
+                <div className="font-semibold">Fuel Pressure</div>
+                <div className="text-xs text-muted">Power bays draw fuel each tick; keep reserves above 0 to avoid output penalties.</div>
               </div>
 
               <div className="card space-y-2">
@@ -2978,19 +2962,22 @@ function aggregateEventMods(base) {
 }
 function computeMorale(resources, rates, state, currentBase, eventMods, powerGate) {
   const foodUpkeep = state.workers.total * 0.2;
-  const foodFactor = clamp((resources.food / Math.max(1, foodUpkeep)) * 0.9, 0.4, 1.25);
+  const foodFactor = clamp((resources.food / Math.max(1, foodUpkeep)) * 0.9, 0.35, 1.25);
   const habitatFactor = clamp((resources.habitat || 0) / Math.max(1, state.workers.total), 0.5, 1.2);
-  const powerFactor = powerGate ? 0.5 : 1;
+  const powerFactor = powerGate ? 0.4 : 1;
   const unassigned = state.workers.total - Object.values(state.workers.assigned).reduce((a, b) => a + b, 0);
   const restFactor = clamp(0.9 + unassigned * 0.04, 0.85, 1.15);
   const missionHazard = (state.missions.active || []).reduce((acc, m) => acc + (m.hazard || 0), 0) / Math.max(1, (state.missions.active || []).length);
   const hazardPenalty = missionHazard * 0.3;
+  const foodDebt = Math.max(0, foodUpkeep - (resources.food || 0));
+  const foodPenalty = clamp(foodDebt / Math.max(1, foodUpkeep), 0, 1) * 0.25;
+  const powerPenalty = powerGate ? 0.15 : 0;
   const eventPenalty = (currentBase.events || []).length * 0.04 + (eventMods.moralePenalty || 0);
   const fatiguePenalty = (crewFatigueStats(state).avgAssigned || 0) * 0.08;
   const crewMods = crewProgramModifiers(state);
   const contractMods = crewContractModifiers(state);
   const crewBonus = (crewMods.moraleBonus || 0) + (contractMods.moraleBonus || 0);
-  const baseMorale = (foodFactor * 0.4) + (habitatFactor * 0.2) + (powerFactor * 0.15) + (restFactor * 0.15) - hazardPenalty - eventPenalty - fatiguePenalty;
+  const baseMorale = (foodFactor * 0.4) + (habitatFactor * 0.2) + (powerFactor * 0.15) + (restFactor * 0.15) - hazardPenalty - eventPenalty - fatiguePenalty - foodPenalty - powerPenalty;
   return clamp(baseMorale + (rates.morale || 0) + crewBonus, 0.35, 1.3);
 }
 function randomBetween(min, max) { return min + Math.random() * (max - min); }
@@ -3227,9 +3214,9 @@ const MILESTONES = [
 ];
 function bottleneckReport(stateObj, rates) {
   const alerts = [];
-  if ((stateObj.resources.power || 0) <= 0 && (rates.power || 0) < 0) alerts.push("Power deficit is gating production.");
-  if ((stateObj.resources.food || 0) <= 0 && (rates.food || 0) <= 0) alerts.push("Food is below upkeep, morale will drop.");
-  if ((stateObj.resources.fuel || 0) <= 0 && (rates.fuel || 0) <= 0) alerts.push("Fuel is scarce, missions and projects may stall.");
+  if ((stateObj.resources.power || 0) <= 0 && (rates.power || 0) < 0) alerts.push("Power collapse: powered production halted and morale slipping.");
+  if ((stateObj.resources.food || 0) <= 0 && (rates.food || 0) <= 0) alerts.push("Food deficit: crew morale dropping, output penalties stacking.");
+  if ((stateObj.resources.fuel || 0) <= 0 && (rates.fuel || 0) <= 0) alerts.push("Fuel dry: logistics slowdown, intel throughput reduced, travel stretched.");
   if (alerts.length) return alerts;
   const drains = Object.entries(rates || {}).filter(([, v]) => v < 0);
   if (!drains.length) return ["No immediate bottlenecks detected."];

@@ -78,6 +78,7 @@ export default function MissionsView({ state, startMission, setAutoLaunch, setSe
             <div className="font-semibold">Mission Operations Deck</div>
             <div className="text-xs text-muted">Targeting, launch routing, and live ops telemetry.</div>
           </div>
+          <div className="text-xs text-muted">Each biome feeds a different bottleneck. Use Target Intel to pick the right supply chain.</div>
           <div className="flex flex-wrap gap-2">
             {missionTabs.map((tab) => (
               <button key={tab.id} className={`tab ${pane === tab.id ? "active" : ""}`} onClick={() => setPane(tab.id)}>
