@@ -123,7 +123,7 @@ export default function TechView({ state, buyTech, format, techDefs, hasPrereqs,
             <div className="font-semibold">Lab Notes</div>
             <div className="tech-panel card">
               <ul className="text-sm text-muted list-disc list-inside space-y-1">
-                <li>Signal thresholds reveal deeper tiers. Keep scanning to surface new nodes.</li>
+                <li>Signal thresholds reveal deeper tiers. Raise signal via uplinks and hubs to surface new nodes.</li>
                 <li>Some branches require multiple prerequisites, plan your routes.</li>
                 <li>Tech multipliers scale costs; prioritize core unlocks before wide expansion.</li>
               </ul>

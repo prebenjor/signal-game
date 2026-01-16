@@ -1,6 +1,6 @@
-# Signal Frontier
+# Beyond The Veil
 
-Signal Frontier is a single-page idle/strategy game built with Vite + React + Tailwind + Framer Motion. You collect signal, launch missions to asteroids/planets, build outposts, recruit crew, research tech, and prestige for long-term boosts. It saves locally and supports profile export/import.
+Beyond The Veil is a single-page idle/strategy game built with Vite + React + Tailwind + Framer Motion. You collect signal, launch missions to asteroids/planets, build outposts, recruit crew, research tech, and prestige for long-term boosts while uncovering fragments of a sleeping entity. It saves locally and supports profile export/import.
 
 ## Play Loop
 - Collect signal and run pulse scans for early resources.
@@ -9,6 +9,7 @@ Signal Frontier is a single-page idle/strategy game built with Vite + React + Ta
 - Establish bases per biome, resolve events, and run local ops to boost production.
 - Recruit crew, assign roles, and research branching tech to unlock new targets and efficiencies.
 - Prestige to reset with production bonuses; progress auto-saves locally (plus export/import).
+- Recover fragments through missions to advance the Veil milestones and unlock codex entries.
 
 ## Build/Deploy
 - Dev: `npm install` then `npm run dev` inside `signal-game/`.

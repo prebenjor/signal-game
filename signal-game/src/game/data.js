@@ -1,12 +1,22 @@
 // Game data and balance constants.
 export const STORAGE_KEY = "signalFrontierReact";
 export const LEGACY_KEY = "signalFrontierState";
+export const GAME_TITLE = "Beyond The Veil";
 export const TICK_MS = 500;
 export const SAVE_MS = 5000;
 export const MAX_EVENTS_PER_BASE = 4;
-export const SAVE_VERSION = 10;
-export const TAB_ORDER = ["hub", "missions", "bases", "crew", "tech", "systems", "faction", "codex", "log", "profile"];
+export const SAVE_VERSION = 11;
+export const TAB_ORDER = ["hub", "missions", "bases", "crew", "tech", "systems", "faction", "codex", "wiki", "log", "profile"];
 export const EVENT_COOLDOWN_MS = [45000, 90000];
+export const FRAGMENT_TOTAL = 1000;
+export const FRAGMENT_THRESHOLDS = [
+  { id: "FRAG_25", percent: 0.25, title: "The First Whisper", codexEntryId: "veil_whisper", message: "A shared transmission cuts through every relay: \"Remember. Restore. Return.\"" },
+  { id: "FRAG_50", percent: 0.5, title: "The Awakening of Limbs", codexEntryId: "veil_awakening", message: "Crew reports synchronized movement across distant outposts. The fragments are shifting." },
+  { id: "FRAG_75", percent: 0.75, title: "Dreams Become Instructions", codexEntryId: "veil_instructions", message: "Blueprints arrive in the sleep cycle. They describe machines no one understands." },
+  { id: "FRAG_90", percent: 0.9, title: "Partial Reconstruction", codexEntryId: "veil_partial", message: "The Veil speaks from every repository at once. It is almost whole." },
+  { id: "FRAG_95", percent: 0.95, title: "The Choice Point", codexEntryId: "veil_choice", message: "The network must decide: complete the entity, hold the line, or shatter the fragments." },
+  { id: "FRAG_100", percent: 1, title: "The Reconstruction", codexEntryId: "veil_reconstruction", message: "Fragments converge. The Veil is complete." },
+];
 export const PACE = {
   costExp: { hub: 1.18, base: 1.22, crew: 1.25 },
   techCostMult: 1.4,
@@ -14,15 +24,6 @@ export const PACE = {
   bodyUnlockMult: 1.5,
   missionDurationMult: 1.6,
   missionYieldMult: 0.85,
-  pulseCostBase: 100,
-  pulseCostStep: 25,
-  pulseCostCap: 300,
-  pulseCooldownMs: 12000,
-  pulseYieldMult: 0.75,
-  labCooldownMs: 30000,
-  labCostMult: 1.4,
-  labYieldMult: 0.85,
-  manualSignalCooldownMs: 350,
   surveyDurationMult: 1.5,
   integrationDurationMult: 1.6,
 };
@@ -51,7 +52,7 @@ export const HUB_UPGRADES = [
   { id: "scan_array", name: "Scan Array", desc: "+2 signal/tick, +1 range tier", cost: { metal: 240, fuel: 60, research: 40 } },
   { id: "drone_bay", name: "Drone Bay", desc: "+8% mission cargo", cost: { metal: 300, rare: 16, fuel: 40 } },
   { id: "command_uplink", name: "Command Uplink", desc: "+1 command capacity", cost: { metal: 320, fuel: 120, research: 60 } },
-  { id: "survey_lab", name: "Survey Lab", desc: "+8% mission research yield, +8% research pulse yield", cost: { metal: 260, research: 120, organics: 40 } },
+  { id: "survey_lab", name: "Survey Lab", desc: "+8% mission research yield", cost: { metal: 260, research: 120, organics: 40 } },
   { id: "mission_control", name: "Mission Control", desc: "-4% mission hazard", cost: { metal: 260, fuel: 90, research: 80 } },
   { id: "supply_depot", name: "Supply Depot", desc: "-5% mission fuel cost", cost: { metal: 240, fuel: 120, organics: 60 } },
   { id: "signal_vault", name: "Signal Vault", desc: "+120 signal cap", cost: { metal: 240, research: 80, rare: 8 } },
@@ -59,7 +60,10 @@ export const HUB_UPGRADES = [
 ];
 
 export const HUB_BUILDINGS = [
-  { id: "refinery", name: "Fuel Refinery", desc: "+1 fuel/tick", cost: { metal: 90, organics: 16 }, prod: { fuel: 1 }, cons: { power: 1 } },
+  { id: "salvage_dock", name: "Salvage Dock", desc: "+2 metal/tick", cost: { fuel: 8 }, prod: { metal: 2 }, cons: {} },
+  { id: "biofilter_vats", name: "Biofilter Vats", desc: "+2 organics/tick", cost: { metal: 20 }, prod: { organics: 2 }, cons: {} },
+  { id: "signal_uplink", name: "Signal Uplink", desc: "+2 signal/tick", cost: { metal: 30, organics: 10 }, prod: { signal: 2 }, cons: { power: 1 } },
+  { id: "refinery", name: "Fuel Refinery", desc: "+1 fuel/tick", cost: { metal: 90, organics: 16 }, prod: { fuel: 1 }, cons: {} },
   { id: "reactor", name: "Reactor", desc: "+3 power/tick, -1 fuel", cost: { metal: 140, fuel: 35 }, prod: { power: 3 }, cons: { fuel: 1 } },
   { id: "hab", name: "Hab Module", desc: "+3 habitat", cost: { metal: 120, organics: 40 }, prod: { habitat: 3 }, cons: {} },
   { id: "hydroponics", name: "Hydroponics Bay", desc: "+2 food/tick", cost: { metal: 110, organics: 35 }, prod: { food: 2 }, cons: { power: 1 } },
@@ -134,14 +138,14 @@ export const BASE_TRAITS = {
 };
 
 export const TECH = [
-  { id: "fuel_synth", tier: 1, name: "Fuel Synthesis", desc: "+1 fuel/tick", cost: { signal: 320, research: 12 }, unlock: 300, requires: [] },
-  { id: "hazard_gear", tier: 2, name: "Hazard Gear", desc: "-25% mission hazard", cost: { signal: 1200, research: 60 }, unlock: 900, requires: ["fuel_synth"] },
-  { id: "drone_log", tier: 2, name: "Logistics Drones", desc: "+20% mission cargo", cost: { signal: 1600, research: 90 }, unlock: 1400, requires: ["fuel_synth"] },
-  { id: "deep_scan", tier: 2, name: "Deep Scan Arrays", desc: "+1 research/tick, +1 range tier, reveals deep targets", cost: { signal: 2000, research: 160 }, unlock: 1600, requires: ["fuel_synth"] },
-  { id: "shielding", tier: 3, name: "Thermal Shielding", desc: "-40% hazard on hot zones; unlocks fallen relay", cost: { signal: 2800, research: 260 }, unlock: 2400, requires: ["deep_scan"] },
-  { id: "rift_mapping", tier: 4, name: "Rift Mapping", desc: "Unlocks anomalous missions, +20% rare cargo, +1 range tier", cost: { signal: 4800, research: 360, rare: 12 }, unlock: 4200, requires: ["shielding","drone_log"] },
-  { id: "auto_pilots", tier: 3, name: "Autonomous Pilots", desc: "+1 mission slot, -10% travel time", cost: { signal: 5600, research: 520, fuel: 80 }, unlock: 5200, requires: ["drone_log"] },
-  { id: "bio_domes", tier: 3, name: "Bio-Domes", desc: "+2 food/tick and +2 habitat passive", cost: { signal: 6000, research: 540, organics: 120 }, unlock: 5200, requires: ["fuel_synth"] },
+  { id: "fuel_synth", tier: 1, name: "Fuel Synthesis", desc: "+1 fuel/tick", cost: { research: 12 }, unlock: 300, requires: [] },
+  { id: "hazard_gear", tier: 2, name: "Hazard Gear", desc: "-25% mission hazard", cost: { research: 60 }, unlock: 900, requires: ["fuel_synth"] },
+  { id: "drone_log", tier: 2, name: "Logistics Drones", desc: "+20% mission cargo", cost: { research: 90 }, unlock: 1400, requires: ["fuel_synth"] },
+  { id: "deep_scan", tier: 2, name: "Deep Scan Arrays", desc: "+1 research/tick, +1 range tier, reveals deep targets", cost: { research: 160 }, unlock: 1600, requires: ["fuel_synth"] },
+  { id: "shielding", tier: 3, name: "Thermal Shielding", desc: "-40% hazard on hot zones; unlocks fallen relay", cost: { research: 260 }, unlock: 2400, requires: ["deep_scan"] },
+  { id: "rift_mapping", tier: 4, name: "Rift Mapping", desc: "Unlocks anomalous missions, +20% rare cargo, +1 range tier", cost: { research: 360, rare: 12 }, unlock: 4200, requires: ["shielding","drone_log"] },
+  { id: "auto_pilots", tier: 3, name: "Autonomous Pilots", desc: "+1 mission slot, -10% travel time", cost: { research: 520, fuel: 80 }, unlock: 5200, requires: ["drone_log"] },
+  { id: "bio_domes", tier: 3, name: "Bio-Domes", desc: "+2 food/tick and +2 habitat passive", cost: { research: 540, organics: 120 }, unlock: 5200, requires: ["fuel_synth"] },
 ];
 
 export const BASE_OPS = {
@@ -151,30 +155,41 @@ export const BASE_OPS = {
   ],
   ice: [
     { id: "heat_melt", name: "Heat Melt", desc: "Melt and refreeze; yields organics + fuel.", cost: { power: 2, fuel: 6 }, reward: { organics: 24, fuel: 10 }, cooldown: 25000 },
-    { id: "glacier_scan", name: "Glacier Scan", desc: "Scan crevasses; small research burst.", cost: { fuel: 4, signal: 60 }, reward: { research: 10 }, cooldown: 20000 },
+    { id: "glacier_scan", name: "Glacier Scan", desc: "Scan crevasses; small research burst.", cost: { fuel: 4, research: 4 }, reward: { research: 10 }, cooldown: 20000 },
   ],
   warm: [
     { id: "shield_tune", name: "Shield Tune", desc: "Tune domes; reduce hazard and improve morale.", cost: { fuel: 10, metal: 20 }, reward: { morale: 0.05 }, cooldown: 22000 },
     { id: "slag_skim", name: "Slag Skim", desc: "Skim molten flows; yields metal and rare traces.", cost: { power: 2 }, reward: { metal: 40, rare: 2 }, cooldown: 28000 },
   ],
   unknown: [
-    { id: "anomaly_probe", name: "Anomaly Probe", desc: "Probe strange signals; yields research/rare.", cost: { fuel: 12, signal: 120 }, reward: { research: 18, rare: 3 }, cooldown: 30000 },
+    { id: "anomaly_probe", name: "Anomaly Probe", desc: "Probe strange signals; yields research/rare.", cost: { fuel: 12, research: 8 }, reward: { research: 18, rare: 3 }, cooldown: 30000 },
   ],
 };
 
 export const STARTER_TOUR = [
-  { title: "Signal & Scans", body: "Collect Signal (Space) to reveal nearby targets. Pulse Scans convert signal into random loot.", anchor: "hub" },
-  { title: "Hub Status", body: "Power, food, habitat, and morale drive sustainability. Keep power = 0 and food above upkeep.", anchor: "hub" },
+  { title: "Signal Uplink", body: "Signal is a progress meter. Build uplinks to raise it and unlock new systems.", anchor: "hub" },
+  { title: "Hub Status", body: "Power, food, habitat, and morale drive sustainability. Keep power >= 0 and food above upkeep.", anchor: "hub" },
   { title: "Missions", body: "Launch expeditions based on biome hazards. Fuel spend scales with distance.", anchor: "missions" },
   { title: "Bases", body: "Each biome unlocks unique structures and events. Build per-body upgrades on-site.", anchor: "bases" },
   { title: "Crew & Recruits", body: "Hire specialists with role bonuses. Assign crew to boost production.", anchor: "crew" },
+  { title: "Fragments", body: "Some missions recover strange fragments. Global reassembly milestones unlock new codex entries.", anchor: "hub" },
 ];
 
 export const CODEX_ENTRIES = [
+  { id: "veil_premise", title: "Beyond The Veil", body: "Humanity is not exploring; we are excavating fragments of a shattered entity. Every recovery brings the Veil closer." },
+  { id: "veil_fragments", title: "The Fragments", body: "Biological, geometric, void, resonance, and temporal fragments distort reality. Proximity brings dreams, synchronicity, and the Calling." },
+  { id: "veil_whisper", title: "The First Whisper", body: "At 25% reassembly, the fragments speak in a shared voice: \"Remember. Restore. Return.\"" },
+  { id: "veil_awakening", title: "The Awakening of Limbs", body: "At 50%, contamination spikes and coordinated behavior spreads. The fragments begin moving toward each other." },
+  { id: "veil_instructions", title: "Dreams Become Instructions", body: "At 75%, the dreams turn to blueprints. Some crews build devices they do not understand." },
+  { id: "veil_partial", title: "Partial Reconstruction", body: "At 90%, the entity speaks through every repository at once. It is grateful. It is almost whole." },
+  { id: "veil_choice", title: "The Choice Point", body: "At 95%, the network will choose: complete the entity, hold the line, or attempt shattering." },
+  { id: "veil_reconstruction", title: "The Reconstruction", body: "At 100%, the fragments converge. What remains depends on which doctrine holds the most." },
   { id: "foundations", title: "Baseline Foundations", body: "Save versioning, capability gating, and milestone triggers keep the loop stable as the frontier expands." },
-  { id: "scan_ops", title: "Signal Scans", body: "Manual signal collection and pulse scans are your early lifeline for fuel, metal, and research." },
+  { id: "scan_ops", title: "Signal Uplink", body: "Signal rises through uplink infrastructure and unlocks new systems, tech tiers, and story milestones." },
   { id: "mission_ops", title: "Mission Ops", body: "Targets have depletion curves. Expect diminishing returns as you farm the same body." },
   { id: "hub_ops", title: "Hub Operations", body: "Hub upgrades expand range and slot capacity, unlocking higher-tier targets." },
+  { id: "base_ops", title: "Outpost Operations", body: "Bases open unique structures, events, and ops per biome. Expand once missions stabilize." },
+  { id: "crew_ops", title: "Crew Command", body: "Crew roles and fatigue impact production, travel, and hazard tolerance." },
   { id: "tech_ops", title: "Research Tracks", body: "Tech branches unlock new targets and efficiency tools." },
   { id: "local_ops", title: "Local Signal Operations", body: "Early missions and range upgrades push you toward the first system discovery threshold." },
   { id: "systems_light", title: "System Discovery", body: "Systems are persistent entities with traits and distance. Survey chains unlock colonisable worlds." },
@@ -183,6 +198,16 @@ export const CODEX_ENTRIES = [
   { id: "galaxy_ops", title: "Galaxy Operations", body: "Galaxies reshape the rules. Chart new ones once integrations are stable to unlock new modifiers." },
   { id: "doctrine_ops", title: "Doctrine Shifts", body: "Prestige unlocks doctrines. Each doctrine changes core efficiencies and constraints." },
   { id: "prestige_recalibration", title: "Signal Recalibration", body: "Prestige resets the frontier for legacy perks and faster early cycles." },
+];
+
+export const WIKI_ENTRIES = [
+  { id: "signal_meter", title: "Signal Meter", body: "Signal is not spent. It rises from uplink infrastructure and unlocks stages, targets, and story milestones." },
+  { id: "signal_cap", title: "Signal Cap & Saturation", body: "When signal rises above the cap, saturation reduces further signal gain. Raise caps via upgrades, integrations, and tech." },
+  { id: "power_gate", title: "Power Gating", body: "If projected power is <= 0, power-dependent production stalls. Build reactors before scaling heavy industry." },
+  { id: "depletion", title: "Target Depletion", body: "Running the same mission target lowers yields. Rotate targets and extend range to recover efficiency." },
+  { id: "command", title: "Command Capacity", body: "Colonies and missions consume command capacity. Over-capacity reduces cargo and slows travel." },
+  { id: "maintenance", title: "Maintenance Caps", body: "Each base has a maintenance cap. Exceeding it lowers output until you build maintenance bays." },
+  { id: "fragments", title: "Fragment Recovery", body: "Fragment shards can appear in mission cargo. Higher tiers and side objectives improve odds." },
 ];
 
 export const MISSION_MODES = [
@@ -205,7 +230,7 @@ export const SYSTEM_TRAITS = [
   { id: "ancient_relay", name: "Ancient Relay", desc: "Legacy infrastructure boosts travel efficiency." },
 ];
 export const SYSTEM_SURVEY_STEPS = {
-  scan: { id: "scan", name: "Deep Scan", cost: { signal: 160 }, duration: 20000 },
+  scan: { id: "scan", name: "Deep Scan", cost: { metal: 80, fuel: 12 }, duration: 20000 },
   probe: { id: "probe", name: "Probe Drop", cost: { metal: 60, fuel: 18 }, duration: 30000 },
   survey: { id: "survey", name: "Full Survey", cost: { research: 30, fuel: 30 }, duration: 42000 },
 };
@@ -219,7 +244,7 @@ export const COLONY_COST = { metal: 180, fuel: 60, food: 20, organics: 12 };
 export const CREW_PROGRAMS = [
   { id: "mission_corps", name: "Mission Corps", desc: "Standardized mission playbooks: higher cargo, more objectives, lower hazard.", unlock: { milestone: "M1_LOCAL_OPS" }, cost: { research: 20, metal: 60, food: 10 } },
   { id: "base_command", name: "Base Command", desc: "Outpost command training reduces event frequency and steadies recovery.", unlock: { milestone: "M2_FIRST_COLONY" }, cost: { research: 30, metal: 80, organics: 20 } },
-  { id: "science_guild", name: "Science Guild", desc: "Research mentorship improves scans and mission research yields.", unlock: { tech: "deep_scan" }, cost: { research: 35, signal: 120, organics: 24 } },
+  { id: "science_guild", name: "Science Guild", desc: "Research mentorship improves scans and mission research yields.", unlock: { tech: "deep_scan" }, cost: { research: 35, organics: 24 } },
   { id: "logistics_wing", name: "Logistics Wing", desc: "Improves travel efficiency and lowers fuel overhead.", unlock: { milestone: "M2_SYSTEMS_DISCOVERED" }, cost: { metal: 90, fuel: 30, food: 12 } },
   { id: "morale_office", name: "Morale Office", desc: "Crew counseling boosts morale stability across hubs and outposts.", unlock: { milestone: "M3_INTEGRATION_UNLOCK" }, cost: { food: 30, organics: 30, research: 20 } },
 ];
@@ -272,13 +297,13 @@ export const CREW_CONTRACTS = [
 export const SYSTEM_EVENTS = [
   { id: "supply_shortage", name: "Supply Shortage", desc: "Cargo throughput reduced until resupplied.", effect: { cargoMult: 0.85 }, cost: { food: 12, fuel: 10 } },
   { id: "crew_friction", name: "Crew Friction", desc: "Survey pace slowed; scans feel noisy.", effect: { surveySpeed: 1.1, scanMult: 0.9 }, cost: { food: 8, organics: 8 } },
-  { id: "interference_spike", name: "Interference Spike", desc: "Travel time rises; hazards intensify.", effect: { travelMult: 1.12, hazardMult: 1.08 }, cost: { signal: 120, metal: 20 } },
+  { id: "interference_spike", name: "Interference Spike", desc: "Travel time rises; hazards intensify.", effect: { travelMult: 1.12, hazardMult: 1.08 }, cost: { metal: 20, fuel: 10 } },
   { id: "anomaly_bloom", name: "Anomaly Bloom", desc: "Strange pulses unsettle crews but enrich data.", effect: { cargoMult: 1.05, stabilityDrain: 0.02 }, cost: { research: 20, fuel: 12 } },
 ];
 export const INTEGRATION_PROJECTS = [
   { id: "stabilize_system", name: "Stabilize System", desc: "Reduce event rates and restore stability.", duration: 180000, cost: { metal: 160, fuel: 40, research: 40 }, effect: { eventRateMult: 0.85, stability: 15 } },
   { id: "build_gate", name: "Build Gate", desc: "Reduces travel penalties across the frontier.", duration: 240000, cost: { metal: 220, fuel: 80, rare: 4 }, effect: { travelMult: 0.9 } },
-  { id: "harmonize_signal", name: "Harmonize Signal", desc: "Reduces signal saturation penalties.", duration: 300000, cost: { signal: 400, research: 80, rare: 6 }, effect: { saturationRelief: 0.15, signalCapBonus: 200 } },
+  { id: "harmonize_signal", name: "Harmonize Signal", desc: "Reduces signal saturation penalties.", duration: 300000, cost: { metal: 220, research: 100, rare: 6 }, effect: { saturationRelief: 0.15, signalCapBonus: 200 } },
 ];
 export const GALAXY_RULESETS = [
   { id: "dense", name: "Dense Galaxy", desc: "More systems, higher upkeep pressure, stronger industry.", mods: { eventRateMult: 1.08, cargoMult: 1.06, commandCapBonus: 1, systemCountBonus: 1 } },
@@ -292,12 +317,35 @@ export const DOCTRINES = [
   { id: "research", name: "Research Doctrine", desc: "Higher scan efficiency at the cost of slower travel.", mods: { scanMult: 1.12, travelMult: 1.06 } },
 ];
 
+export const FACTION_OVERRIDES = {
+  vanguard: {
+    name: "Archive Keepers",
+    tagline: "Preserve. Catalog. Control.",
+    brief: "A scholastic order that archives fragments to decipher the entity and contain its return.",
+  },
+  aegis: {
+    name: "Shepherds of Silence",
+    tagline: "Contain. Isolate. Endure.",
+    brief: "A quarantine coalition that suppresses fragment influence at any cost.",
+  },
+  relay: {
+    name: "Broker's Consortium",
+    tagline: "Profit from the apocalypse.",
+    brief: "A trading bloc that treats fragments as assets and sells to every side.",
+  },
+  communion: {
+    name: "Communion of Fragments",
+    tagline: "Listen. Accept. Become.",
+    brief: "A resonance cult that embraces integration and accelerates reassembly.",
+  },
+};
+
 export const FACTION_BUILDINGS = {
   vanguard: [
     {
       id: "signal_spire",
-      name: "Signal Spire",
-      desc: "Amplifies scan fidelity across the network.",
+      name: "Archive Spire",
+      desc: "Amplifies fragment catalog fidelity across the network.",
       baseGoal: { metal: 65000, research: 28000, fuel: 8000 },
       tierScale: 1.9,
       maxTier: 4,
@@ -311,7 +359,7 @@ export const FACTION_BUILDINGS = {
     {
       id: "deep_listen_array",
       name: "Deep Listen Array",
-      desc: "Focuses long-range sweeps into stable corridors.",
+      desc: "Focuses long-range fragment sweeps into stable corridors.",
       baseGoal: { metal: 90000, fuel: 32000, research: 36000 },
       tierScale: 1.9,
       maxTier: 4,
@@ -325,7 +373,7 @@ export const FACTION_BUILDINGS = {
     {
       id: "catalog_node",
       name: "Catalog Node",
-      desc: "Archives discoveries for faster mission planning.",
+      desc: "Indexes fragment finds for faster mission planning.",
       baseGoal: { metal: 80000, organics: 25000, research: 30000 },
       tierScale: 1.85,
       maxTier: 4,
@@ -340,8 +388,8 @@ export const FACTION_BUILDINGS = {
   relay: [
     {
       id: "cargo_spine",
-      name: "Cargo Spine",
-      desc: "Standardizes logistics to reduce transit losses.",
+      name: "Trade Spine",
+      desc: "Standardizes brokered logistics to reduce transit losses.",
       baseGoal: { metal: 85000, fuel: 35000, organics: 12000 },
       tierScale: 1.9,
       maxTier: 4,
@@ -354,8 +402,8 @@ export const FACTION_BUILDINGS = {
     },
     {
       id: "dock_web",
-      name: "Dock Web",
-      desc: "Distributed docking reduces turnaround delays.",
+      name: "Broker Dock Web",
+      desc: "Distributed docking reduces turnaround delays for fragment convoys.",
       baseGoal: { metal: 110000, fuel: 45000, organics: 20000 },
       tierScale: 1.9,
       maxTier: 4,
@@ -368,8 +416,8 @@ export const FACTION_BUILDINGS = {
     },
     {
       id: "supply_foundry",
-      name: "Supply Foundry",
-      desc: "Turns salvage into usable parts for operations.",
+      name: "Salvage Exchange",
+      desc: "Turns salvage into usable parts for operations and trade.",
       baseGoal: { metal: 120000, fuel: 25000, research: 20000 },
       tierScale: 1.85,
       maxTier: 4,
@@ -384,8 +432,8 @@ export const FACTION_BUILDINGS = {
   aegis: [
     {
       id: "stability_core",
-      name: "Stability Core",
-      desc: "Reinforces hazard shields and morale protocols.",
+      name: "Containment Core",
+      desc: "Reinforces suppression shields and quarantine protocols.",
       baseGoal: { metal: 70000, organics: 35000, research: 25000 },
       tierScale: 1.9,
       maxTier: 4,
@@ -398,8 +446,8 @@ export const FACTION_BUILDINGS = {
     },
     {
       id: "morale_arc",
-      name: "Morale Arc",
-      desc: "Improves crew recovery across frontier outposts.",
+      name: "Quietus Arc",
+      desc: "Improves crew recovery under quarantine strain.",
       baseGoal: { metal: 90000, organics: 40000, research: 20000 },
       tierScale: 1.85,
       maxTier: 4,
@@ -412,8 +460,8 @@ export const FACTION_BUILDINGS = {
     },
     {
       id: "containment_grid",
-      name: "Containment Grid",
-      desc: "Stabilizes volatile systems and reduces event spikes.",
+      name: "Silence Grid",
+      desc: "Suppresses fragment interference and reduces event spikes.",
       baseGoal: { metal: 110000, fuel: 50000, research: 30000 },
       tierScale: 1.9,
       maxTier: 4,
@@ -425,20 +473,68 @@ export const FACTION_BUILDINGS = {
       },
     },
   ],
+  communion: [
+    {
+      id: "resonance_choir",
+      name: "Resonance Choir",
+      desc: "Amplifies fragment resonance across the network.",
+      baseGoal: { metal: 80000, research: 32000, fuel: 12000 },
+      tierScale: 1.9,
+      maxTier: 4,
+      unlocks: {
+        1: ["Event: Chorus Pulse", "Buff: +8% scan yield"],
+        2: ["Directive: Communion Rite", "Buff: +6% cargo"],
+        3: ["Event: Veil Harmony", "Buff: +10% research yield"],
+        4: ["Network: Resonance Choir"],
+      },
+    },
+    {
+      id: "unity_crucible",
+      name: "Unity Crucible",
+      desc: "Integrates fragment shards into adaptive technology.",
+      baseGoal: { metal: 100000, organics: 30000, research: 36000 },
+      tierScale: 1.85,
+      maxTier: 4,
+      unlocks: {
+        1: ["Event: Insight Bloom", "Buff: +6% research"],
+        2: ["Directive: Merge Protocol", "Buff: +8% scan yield"],
+        3: ["Event: Echo Surge", "Buff: +1 range tier"],
+        4: ["Network: Veil Synthesis"],
+      },
+    },
+    {
+      id: "veil_conduit",
+      name: "Veil Conduit",
+      desc: "Turns resonance into drive stability and travel efficiency.",
+      baseGoal: { metal: 120000, fuel: 50000, rare: 20 },
+      tierScale: 1.9,
+      maxTier: 4,
+      unlocks: {
+        1: ["Event: Drift Lull", "Buff: -6% travel time"],
+        2: ["Directive: Harmonic Drift", "Buff: -8% travel time"],
+        3: ["Event: Veil Convergence", "Buff: +10% cargo"],
+        4: ["Network: Convergence Loom"],
+      },
+    },
+  ],
 };
 
 export const FACTION_DIRECTIVES = {
   vanguard: [
-    { id: "directive_scan", name: "Deep Listening", desc: "Prioritize scan throughput and research yields.", requires: { building: "signal_spire", tier: 2 }, effect: "Scan yields +4% while active." },
+    { id: "directive_scan", name: "Archive Listening", desc: "Prioritize fragment scan throughput and research yields.", requires: { building: "signal_spire", tier: 2 }, effect: "Scan yields +4% while active." },
     { id: "directive_range", name: "Outer Reach", desc: "Extend range to unlock higher-tier targets sooner.", requires: { building: "deep_listen_array", tier: 2 }, effect: "Range tier +1 while active." },
   ],
   relay: [
-    { id: "directive_logistics", name: "Fleetline", desc: "Reduce travel time and improve cargo throughput.", requires: { building: "cargo_spine", tier: 2 }, effect: "Travel time -4% while active." },
+    { id: "directive_logistics", name: "Broker Line", desc: "Reduce travel time and improve cargo throughput.", requires: { building: "cargo_spine", tier: 2 }, effect: "Travel time -4% while active." },
     { id: "directive_convoy", name: "Convoy Protocol", desc: "Stabilize cargo flows during hazardous runs.", requires: { building: "dock_web", tier: 2 }, effect: "Cargo +5% while active." },
   ],
   aegis: [
-    { id: "directive_shield", name: "Shield Watch", desc: "Reduce hazard spikes during missions.", requires: { building: "stability_core", tier: 2 }, effect: "Hazard -5% while active." },
+    { id: "directive_shield", name: "Silence Watch", desc: "Reduce hazard spikes during missions.", requires: { building: "stability_core", tier: 2 }, effect: "Hazard -5% while active." },
     { id: "directive_morale", name: "Care Cadence", desc: "Boost morale stability and recovery.", requires: { building: "morale_arc", tier: 2 }, effect: "Morale stability +4% while active." },
+  ],
+  communion: [
+    { id: "directive_unity", name: "Communion Rite", desc: "Amplify fragment resonance and scan yield.", requires: { building: "resonance_choir", tier: 2 }, effect: "Scan yields +5% while active." },
+    { id: "directive_merge", name: "Merge Protocol", desc: "Increase research throughput while stabilizing exposure.", requires: { building: "unity_crucible", tier: 2 }, effect: "Research yield +6% while active." },
   ],
 };
 function defaultBaseState(body) {

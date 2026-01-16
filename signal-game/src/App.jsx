@@ -19,7 +19,7 @@ import CrewView from "./views/Crew";
 import TechView from "./views/Tech";
 import FactionView from "./views/Faction";
 import { supabase, supabaseConfigured } from "./lib/supabase";
-import { STORAGE_KEY, LEGACY_KEY, TICK_MS, SAVE_MS, MAX_EVENTS_PER_BASE, SAVE_VERSION, TAB_ORDER, EVENT_COOLDOWN_MS, PACE, CREW_FATIGUE, CONTRACT_REFRESH_MS, COST_EXP, HUB_TIER_STEP, HUB_TIER_COST_MULT, HUB_UPGRADE_TIER_MULT, SYSTEM_EVENT_COOLDOWN_MS, MAX_SYSTEM_EVENTS, BODIES, HUB_UPGRADES, HUB_BUILDINGS, BIOME_BUILDINGS, BASE_TRAITS, TECH, BASE_OPS, STARTER_TOUR, CODEX_ENTRIES, MISSION_MODES, SYSTEM_NAME_PARTS, SYSTEM_TRAITS, SYSTEM_SURVEY_STEPS, SURVEY_SEQUENCE, COLONY_ROLES, COLONY_COST, CREW_PROGRAMS, CREW_CONTRACTS, SYSTEM_EVENTS, INTEGRATION_PROJECTS, GALAXY_RULESETS, DOCTRINES } from "./game/data";
+import { STORAGE_KEY, LEGACY_KEY, GAME_TITLE, TICK_MS, SAVE_MS, MAX_EVENTS_PER_BASE, SAVE_VERSION, EVENT_COOLDOWN_MS, FRAGMENT_TOTAL, FRAGMENT_THRESHOLDS, PACE, CREW_FATIGUE, CONTRACT_REFRESH_MS, COST_EXP, HUB_TIER_STEP, HUB_TIER_COST_MULT, HUB_UPGRADE_TIER_MULT, SYSTEM_EVENT_COOLDOWN_MS, MAX_SYSTEM_EVENTS, BODIES, HUB_UPGRADES, HUB_BUILDINGS, BIOME_BUILDINGS, BASE_TRAITS, TECH, BASE_OPS, STARTER_TOUR, CODEX_ENTRIES, WIKI_ENTRIES, MISSION_MODES, SYSTEM_NAME_PARTS, SYSTEM_TRAITS, SYSTEM_SURVEY_STEPS, SURVEY_SEQUENCE, COLONY_ROLES, COLONY_COST, CREW_PROGRAMS, CREW_CONTRACTS, SYSTEM_EVENTS, INTEGRATION_PROJECTS, GALAXY_RULESETS, DOCTRINES, FACTION_OVERRIDES } from "./game/data";
 
 function seedCrewRoster(workers) {
   const assigned = workers?.assigned || { miner: 0, botanist: 0, engineer: 0 };
@@ -53,6 +53,7 @@ const initialState = {
   profile: { name: "" },
   resources: { signal: 0, research: 2, metal: 0, organics: 0, fuel: 12, power: 0, food: 0, habitat: 0, morale: 0, rare: 0 },
   rates: { signal: 0, research: 0, metal: 0, organics: 0, fuel: 0, power: 0, food: 0, morale: 0 },
+  fragments: { recovered: 0 },
   workers: { total: 3, assigned: { miner: 1, botanist: 1, engineer: 1 }, bonus: { miner: 0, botanist: 0, engineer: 0 }, satisfaction: 1 },
   hubBuildings: {},
   hubUpgrades: {},
@@ -71,8 +72,6 @@ const initialState = {
   crewRoster: seedCrewRoster({ total: 3, assigned: { miner: 1, botanist: 1, engineer: 1 } }),
   crewContracts: [],
   nextContractAt: 0,
-  hubOps: { autoPulse: false, autoPulseMinSignal: 150, autoLab: false, autoLabMinSignal: 120, autoLabMinMetal: 40, reserveSignal: 70, reserveMetal: 0 },
-  hubOpsLog: [],
   autoLaunch: { enabled: false, bodyId: null, mode: "balanced", specialist: "none" },
   selectedBody: "debris",
   recruits: [],
@@ -83,14 +82,25 @@ const initialState = {
   codexUnlocked: [],
   tourStep: 0,
   tourSeen: false,
-  labReadyAt: 0,
-  pulseCount: 0,
-  pulseReadyAt: 0,
   prestige: { points: 0, runs: 0, boost: 1 },
 };
 
 function clamp(v, min, max) {
   return Math.min(max, Math.max(min, v));
+}
+
+function fragmentProgress(stateObj) {
+  const recovered = Math.max(0, Math.floor(stateObj.fragments?.recovered || 0));
+  const total = Math.max(1, FRAGMENT_TOTAL);
+  const percent = clamp(recovered / total, 0, 1);
+  const next = FRAGMENT_THRESHOLDS.find((threshold) => percent < threshold.percent) || null;
+  return { recovered, total, percent, next };
+}
+
+function fragmentMilestoneIds(recovered) {
+  const total = Math.max(1, FRAGMENT_TOTAL);
+  const percent = clamp((recovered || 0) / total, 0, 1);
+  return FRAGMENT_THRESHOLDS.filter((threshold) => percent >= threshold.percent).map((threshold) => `M6_${threshold.id}`);
 }
 
 function reducer(state, action) {
@@ -139,15 +149,16 @@ export default function App() {
   });
   const [profileNameDraft, setProfileNameDraft] = useState(initState.profile?.name || "");
   const stateRef = useRef(state);
-  const manualSignalRef = useRef(0);
   const leaderboardRefreshRef = useRef(0);
   const currentBody = selectedBody();
   const currentBase = useMemo(() => ensureBaseState(state.bases[state.selectedBody], currentBody), [state.bases, state.selectedBody]);
   const currentTraits = baseTraitList(currentBase);
   const currentMaintenance = baseMaintenanceStats(currentBase);
-  const capabilities = deriveCapabilities(state);
-  const missionMods = colonyModifiers(state);
   const supabaseReady = supabaseConfigured && !!supabase;
+  const capabilities = deriveCapabilities(state);
+  const navTabs = buildNavTabs(capabilities, supabaseReady);
+  const tabOrder = navTabs.map((tab) => tab.id);
+  const missionMods = colonyModifiers(state);
   const CHAT_RETENTION_MS = 4 * 60 * 60 * 1000;
 
   useEffect(() => {
@@ -413,7 +424,7 @@ export default function App() {
       return { ok: false, message: `Join failed: ${error.message}` };
     }
     setFactionState((prev) => ({ ...prev, membership: data }));
-    const name = factionState.factions.find((f) => f.id === factionId)?.name || "faction";
+    const name = FACTION_OVERRIDES[factionId]?.name || factionState.factions.find((f) => f.id === factionId)?.name || "faction";
     log(`Aligned with ${name}.`);
     return { ok: true, message: `Aligned with ${name}.` };
   }
@@ -538,17 +549,20 @@ export default function App() {
   }, []);
 
   useEffect(() => { const id = setInterval(() => setTick((t) => t + 1), TICK_MS); return () => clearInterval(id); }, []);
-  useEffect(() => { applyProduction(); resolveMissions(); processSystems(); processEvents(); processCrew(); processHubOps(); processMilestones(); ensureSystems(); }, [tick]);
+  useEffect(() => { applyProduction(); resolveMissions(); processSystems(); processEvents(); processCrew(); processMilestones(); ensureSystems(); }, [tick]);
   useEffect(() => { ensureGalaxy(); }, [state.systems.length, state.milestonesUnlocked]);
+  useEffect(() => {
+    if (state.tab === "profile") return;
+    if (!tabOrder.includes(state.tab)) dispatch({ type: "SET_TAB", tab: "hub" });
+  }, [state.tab, tabOrder]);
 
   useEffect(() => {
     const onKey = (e) => {
       if (["INPUT","TEXTAREA"].includes(e.target.tagName) || e.target.isContentEditable) return;
-      if (e.code === "Space" || e.key === " " || e.key === "Spacebar") { e.preventDefault(); collectSignal(); }
-      else if (e.code.startsWith("Digit")) {
+      if (e.code.startsWith("Digit")) {
         const num = Number(e.key);
-        const idx = num === 0 ? TAB_ORDER.length - 1 : num - 1;
-        if (idx >= 0 && idx < TAB_ORDER.length) dispatch({ type: "SET_TAB", tab: TAB_ORDER[idx] });
+        const idx = num === 0 ? tabOrder.length - 1 : num - 1;
+        if (idx >= 0 && idx < tabOrder.length) dispatch({ type: "SET_TAB", tab: tabOrder[idx] });
       }
       else if (e.code === "ArrowRight") cycleTab(1);
       else if (e.code === "ArrowLeft") cycleTab(-1);
@@ -557,37 +571,11 @@ export default function App() {
     return () => window.removeEventListener("keydown", onKey);
   });
 
-  function cycleTab(delta) { const idx = TAB_ORDER.indexOf(state.tab); const next = (idx + delta + TAB_ORDER.length) % TAB_ORDER.length; dispatch({ type: "SET_TAB", tab: TAB_ORDER[next] }); }
-
-  // Primary click action; scales later via upgrades/bonuses.
-  function collectSignal() {
-    const now = Date.now();
-    if (now - manualSignalRef.current < PACE.manualSignalCooldownMs) return;
-    manualSignalRef.current = now;
-    bumpResources({ signal: 1 });
-    unlockCodex("scan_ops");
-    log("Manual signal calibration.");
-  }
-
-  function pulseScan(silent = false) {
-    const cost = pulseCost(state);
-    const cdMs = PACE.pulseCooldownMs;
-    if (Date.now() < (state.pulseReadyAt || 0)) { if (!silent) log("Pulse scanner cooling down."); return { ok: false, reason: "cooldown" }; }
-    if (state.resources.signal < cost) { if (!silent) log("Not enough signal for pulse scan."); return { ok: false, reason: "signal" }; }
-    bumpResources({ signal: -cost });
-    unlockCodex("scan_ops");
-    const rewardPool = ["metal","fuel","research"];
-    const type = rewardPool[Math.floor(Math.random() * rewardPool.length)];
-    const baseAmount = type === "research" ? 5 : type === "fuel" ? 12 : 18;
-    const crewMods = crewProgramModifiers(state);
-    const focusMods = crewFocusModifiers(state);
-    const contractMods = crewContractModifiers(state);
-    const scanMult = (colonyModifiers(state).scanMult || 1) * (crewMods.scanMult || 1) * (focusMods.scanMult || 1) * (contractMods.scanMult || 1);
-    const amount = Math.floor(baseAmount * scanMult * PACE.pulseYieldMult);
-    bumpResources({ [type]: amount });
-    dispatch({ type: "UPDATE", patch: { pulseReadyAt: Date.now() + cdMs, pulseCount: (state.pulseCount || 0) + 1 } });
-    if (!silent) log(`Pulse scan recovered ${amount} ${type} (cost ${cost}).`);
-    return { ok: true, type, amount, cost };
+  function cycleTab(delta) {
+    if (!tabOrder.length) return;
+    const idx = Math.max(0, tabOrder.indexOf(state.tab));
+    const next = (idx + delta + tabOrder.length) % tabOrder.length;
+    dispatch({ type: "SET_TAB", tab: tabOrder[next] });
   }
 
   // Apply resource delta; used across economy adjustments.
@@ -603,6 +591,28 @@ export default function App() {
     unlocked.add(id);
     dispatch({ type: "UPDATE", patch: { codexUnlocked: Array.from(unlocked) } });
     if (message) log(message);
+  }
+
+  function rollFragmentDiscovery(body, efficiency, success, hadObjective) {
+    const tier = body?.tier || 1;
+    const baseChance = 0.03 + tier * 0.01;
+    const objectiveBonus = hadObjective ? 0.04 : 0;
+    const successBonus = success === "full" ? 0.04 : success === "partial" ? 0.02 : 0;
+    const chance = clamp((baseChance + objectiveBonus + successBonus) * (efficiency || 1), 0, 0.35);
+    if (Math.random() > chance) return 0;
+    const baseYield = 1 + Math.floor(tier * (success === "full" ? 0.6 : 0.35));
+    return Math.max(1, baseYield);
+  }
+
+  function awardFragments(amount, body) {
+    if (!amount) return;
+    const recovered = Math.min(FRAGMENT_TOTAL, (state.fragments?.recovered || 0) + amount);
+    dispatch({ type: "UPDATE", patch: { fragments: { ...state.fragments, recovered } } });
+    if (!(state.fragments?.recovered || 0)) {
+      unlockCodex("veil_premise");
+      unlockCodex("veil_fragments");
+    }
+    log(`Recovered ${amount} fragment shard${amount === 1 ? "" : "s"} near ${body?.name || "unknown space"}.`);
   }
 
   // Per-tick production: aggregates hub/base output, morale, focus, hazards, and power gating.
@@ -709,9 +719,11 @@ export default function App() {
       const efficiency = m.efficiency || depletionFactor(state, body.id);
       let cargo = missionYield(state, body, m.mode, m.specialist, efficiency);
       if (m.variance && m.variance !== 1) cargo = scaleCargo(cargo, m.variance);
+      let acceptedObjective = false;
       if (m.objective) {
         const choice = window.confirm(`Side Objective: ${m.objective.desc}.\nTake the risk for ${m.objective.rewardText}?`);
         if (choice) {
+          acceptedObjective = true;
           cargo = combineCargo(cargo, m.objective.reward);
           if (Math.random() < m.objective.failRisk) {
             cargo = reduceCargo(cargo, 0.5);
@@ -728,8 +740,12 @@ export default function App() {
         const salvage = reduceCargo(cargo, 0.2); bumpResources(salvage); log(`Mission to ${body.name} failed. Salvaged ${Object.keys(salvage).length ? "scrap" : "nothing"}.`);
       } else if (roll < partial) {
         const haul = reduceCargo(cargo, 0.65); bumpResources(haul); log(`Mission to ${body.name} returned partially due to hazard.`);
+        const shards = rollFragmentDiscovery(body, efficiency, "partial", acceptedObjective);
+        awardFragments(shards, body);
       } else {
         bumpResources(cargo); log(`Mission from ${body.name} returned with cargo.`);
+        const shards = rollFragmentDiscovery(body, efficiency, "full", acceptedObjective);
+        awardFragments(shards, body);
       }
       if ((state.colonies || []).length && m.hazard >= 0.2) {
         const colonySystems = (state.colonies || []).map((c) => c.systemId);
@@ -759,7 +775,7 @@ export default function App() {
 
     // Auto-launch if enabled and slots free
     const slots = 1 + (state.hubUpgrades.launch_bay || 0) + (state.tech.auto_pilots ? 1 : 0);
-    if (state.autoLaunch?.enabled && (remaining.length < slots)) {
+    if (state.autoLaunch?.enabled && capabilities.missions && (remaining.length < slots)) {
       const target = state.autoLaunch.bodyId || state.selectedBody;
       const modeId = state.autoLaunch.mode || "balanced";
       const specialist = state.autoLaunch.specialist || "none";
@@ -857,30 +873,6 @@ export default function App() {
     }
 
     if (changed) dispatch({ type: "UPDATE", patch: { crewRoster, workers, crewContracts, nextContractAt } });
-  }
-
-  function processHubOps() {
-    const ops = state.hubOps || {};
-    if (ops.autoPulse) {
-      const cost = pulseCost(state);
-      const reserve = ops.reserveSignal || 0;
-      const minSignal = Math.max(cost, ops.autoPulseMinSignal || 0, reserve + cost);
-      if (Date.now() >= (state.pulseReadyAt || 0) && (state.resources.signal || 0) >= minSignal) {
-        const result = pulseScan(true);
-        if (result?.ok) logOps(`Auto Pulse Sweep: +${result.amount} ${result.type} (cost ${result.cost})`);
-      }
-    }
-    if (ops.autoLab) {
-      const reserveSignal = ops.reserveSignal || 0;
-      const reserveMetal = ops.reserveMetal || 0;
-      const labCostValue = labCost();
-      const minSignal = Math.max(labCostValue.signal || 0, ops.autoLabMinSignal || 0, reserveSignal + (labCostValue.signal || 0));
-      const minMetal = Math.max(labCostValue.metal || 0, ops.autoLabMinMetal || 0, reserveMetal + (labCostValue.metal || 0));
-      if (Date.now() >= (state.labReadyAt || 0) && (state.resources.signal || 0) >= minSignal && (state.resources.metal || 0) >= minMetal) {
-        const result = runLabPulse(true);
-        if (result?.ok) logOps(`Auto Research Cycle: +${result.research} research`);
-      }
-    }
   }
 
   function processSystems() {
@@ -1109,6 +1101,7 @@ export default function App() {
 
   // Launch mission with stance/specialist; charges fuel logistics and schedules resolution.
   function startMission(bodyId, fuelBoost = 0, modeId = "balanced", specialist = "none", silent = false) {
+    if (!capabilities.missions) { log("Missions console locked."); return; }
     const body = BODIES.find((b) => b.id === bodyId && isUnlocked(b));
     if (!body) { log("Target locked."); return; }
     const slots = 1 + (state.hubUpgrades.launch_bay || 0) + (state.tech.auto_pilots ? 1 : 0);
@@ -1144,15 +1137,6 @@ export default function App() {
     log(payload.enabled ? `Auto-launch enabled for ${BODIES.find((b) => b.id === payload.bodyId)?.name || "target"}.` : "Auto-launch disabled.");
   }
 
-  function setHubOps(patch) {
-    dispatch({ type: "UPDATE", patch: { hubOps: { ...state.hubOps, ...patch } } });
-  }
-
-  function logOps(text) {
-    const next = [...(state.hubOpsLog || []), { text, time: Date.now() }].slice(-8);
-    dispatch({ type: "UPDATE", patch: { hubOpsLog: next } });
-  }
-
   function processMilestones() {
     const unlocked = new Set(state.milestonesUnlocked || []);
     const codexUnlocked = new Set(state.codexUnlocked || []);
@@ -1162,7 +1146,7 @@ export default function App() {
       if (m.condition(state)) {
         unlocked.add(m.id);
         if (m.codexEntryId) codexUnlocked.add(m.codexEntryId);
-        log(`Milestone unlocked: ${m.title}.`);
+        log(m.message || `Milestone unlocked: ${m.title}.`);
         changed = true;
       }
     });
@@ -1258,23 +1242,6 @@ export default function App() {
     log(`Tech unlocked: ${def.name}.`);
   }
 
-  function runLabPulse(silent = false) {
-    const cooldownMs = PACE.labCooldownMs;
-    if (Date.now() < (state.labReadyAt || 0)) { if (!silent) log("Research lab recalibrating."); return { ok: false, reason: "cooldown" }; }
-    const cost = labCost();
-    if (!canAfford(cost)) { if (!silent) log("Need signal + metal for research pulse."); return { ok: false, reason: "resources" }; }
-    spend(cost);
-    const crewMods = crewProgramModifiers(state);
-    const focusMods = crewFocusModifiers(state);
-    const contractMods = crewContractModifiers(state);
-    const hubResearch = 1 + (state.hubUpgrades?.survey_lab || 0) * 0.08;
-    const gain = Math.floor(6 * (crewMods.researchMult || 1) * (focusMods.researchMult || 1) * (contractMods.researchMult || 1) * hubResearch * PACE.labYieldMult);
-    bumpResources({ research: gain });
-    dispatch({ type: "UPDATE", patch: { labReadyAt: Date.now() + cooldownMs } });
-    if (!silent) log("Research pulse completed. New data archived.");
-    return { ok: true, cost, research: gain };
-  }
-
   // Prestige Protocol/reset with boost based on total value.
   function ascend() {
     if (!(state.milestonesUnlocked || []).includes("M4_PRESTIGE_UNLOCK")) {
@@ -1284,7 +1251,17 @@ export default function App() {
     const totalValue = (state.resources.signal || 0) + (state.resources.metal || 0) + (state.resources.research || 0) * 5 + (state.resources.rare || 0) * 20;
     const points = Math.max(1, Math.floor(totalValue / 5000));
     const prestige = { points: (state.prestige?.points || 0) + points, runs: (state.prestige?.runs || 0) + 1, boost: 1 + ((state.prestige?.points || 0) + points) * 0.02 };
-    const resetState = { ...initialState, prestige };
+    const fragmentStats = fragmentProgress(state);
+    const fragmentMilestones = fragmentMilestoneIds(fragmentStats.recovered);
+    const fragmentCodex = FRAGMENT_THRESHOLDS.filter((t) => fragmentStats.percent >= t.percent).map((t) => t.codexEntryId).filter(Boolean);
+    if (fragmentStats.recovered > 0) fragmentCodex.push("veil_premise", "veil_fragments");
+    const resetState = {
+      ...initialState,
+      prestige,
+      fragments: { ...(state.fragments || { recovered: 0 }) },
+      milestonesUnlocked: fragmentMilestones,
+      codexUnlocked: Array.from(new Set(fragmentCodex)),
+    };
     localStorage.setItem(STORAGE_KEY, JSON.stringify(resetState));
     dispatch({ type: "LOAD", payload: resetState });
     log(`Ascended for ${points} prestige. Global production boost now ${Math.round((prestige.boost - 1) * 100)}%.`);
@@ -1538,7 +1515,7 @@ function biomeBuildingById(id) { return Object.values(BIOME_BUILDINGS).flat().fi
         <header className="panel flex flex-col gap-3">
           <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-3">
             <div>
-              <div className="inline-flex px-3 py-1 rounded-full bg-white/10 border border-white/10 text-xs tracking-[0.1em] font-semibold">Signal Frontier</div>
+              <div className="inline-flex px-3 py-1 rounded-full bg-white/10 border border-white/10 text-xs tracking-[0.1em] font-semibold">{GAME_TITLE}</div>
               <div className="text-muted text-sm mt-1">Scan, settle, and build outposts across the void.</div>
             </div>
             <div className="flex items-center gap-2">
@@ -1553,26 +1530,13 @@ function biomeBuildingById(id) { return Object.values(BIOME_BUILDINGS).flat().fi
           </div>
           <ResourceBar resources={state.resources} rates={state.rates} format={format} />
         </header>
-        <ActionBar state={state} onCollect={collectSignal} onPulse={pulseScan} onLab={runLabPulse} format={format} formatDuration={formatDuration} />
-
         <div className="flex flex-col md:flex-row gap-4">
           <nav className="md:w-48 w-full flex md:flex-col flex-wrap gap-2 overflow-x-auto pb-1">
-            {[
-              { id: "hub", label: "Hub" },
-              { id: "missions", label: "Missions" },
-              { id: "bases", label: "Bases" },
-              { id: "crew", label: "Crew" },
-              { id: "tech", label: "Tech" },
-              { id: "systems", label: "Systems", locked: !capabilities.systems },
-              { id: "faction", label: "Faction" },
-              { id: "codex", label: "Codex" },
-              { id: "log", label: "Log" },
-            ].map((tab) => (
+            {navTabs.map((tab) => (
               <button
                 key={tab.id}
-                className={`tab w-full md:w-full text-left whitespace-nowrap ${state.tab === tab.id ? 'active' : ''} ${tab.locked ? 'opacity-50 cursor-not-allowed' : ''}`}
-                onClick={() => !tab.locked && dispatch({ type: 'SET_TAB', tab: tab.id })}
-                disabled={tab.locked}
+                className={`tab w-full md:w-full text-left whitespace-nowrap ${state.tab === tab.id ? 'active' : ''}`}
+                onClick={() => dispatch({ type: 'SET_TAB', tab: tab.id })}
               >
                 {tab.label}
               </button>
@@ -1587,7 +1551,7 @@ function biomeBuildingById(id) { return Object.values(BIOME_BUILDINGS).flat().fi
                 crewBonusText={crewBonusText}
                 ascend={ascend}
                 format={format}
-                setHubOps={setHubOps}
+                supabaseReady={supabaseReady}
               />
             )}
             {state.tab === 'missions' && (
@@ -1716,10 +1680,12 @@ function biomeBuildingById(id) { return Object.values(BIOME_BUILDINGS).flat().fi
                 onDonateBuilding={donateFactionBuilding}
                 onSendChat={sendFactionChat}
                 resources={state.resources}
+                fragmentStatus={fragmentProgress(state)}
                 format={format}
               />
             )}
             {state.tab === 'codex' && <CodexView state={state} />}
+            {state.tab === 'wiki' && <WikiView />}
             {state.tab === 'log' && <LogView log={state.log} />}
             {state.tab === 'profile' && (
               <AccountView
@@ -1758,30 +1724,6 @@ function ResourceBar({ resources, rates, format }) {
           <span className="text-[11px] text-muted">{`${format(rates[e.key] || 0)}/tick`}</span>
         </div>
       ))}
-    </div>
-  );
-}
-
-function ActionBar({ state, onCollect, onPulse, onLab, format, formatDuration }) {
-  const pulseCostValue = pulseCost(state);
-  const labCostValue = labCost();
-  const pulseCd = Math.max(0, (state.pulseReadyAt || 0) - Date.now());
-  const labCd = Math.max(0, (state.labReadyAt || 0) - Date.now());
-  return (
-    <div className="panel sticky top-3 z-20 flex flex-wrap items-center gap-2 justify-between py-2">
-      <div className="flex flex-wrap gap-2 items-center">
-        <button className="btn btn-primary" onClick={onCollect} title="Collect Signal (Space)">Collect</button>
-        <button className="btn" disabled={state.resources.signal < pulseCostValue || pulseCd > 0} onClick={onPulse} title="Pulse Scan">
-          Scan {pulseCd > 0 ? `(${formatDuration(pulseCd)})` : ""}
-        </button>
-        <button className="btn" onClick={onLab} disabled={labCd > 0} title="Pulse Lab">
-          Lab {labCd > 0 ? `(${formatDuration(labCd)})` : ""}
-        </button>
-      </div>
-      <div className="text-xs text-muted flex flex-wrap gap-3">
-        <span>Pulse cost {format(pulseCostValue)} signal</span>
-        <span>Lab cost {costText(labCostValue, format)}</span>
-      </div>
     </div>
   );
 }
@@ -1861,14 +1803,16 @@ function AccountView({ state, exportProfile, importProfile, compact, setCompact,
   );
 }
 
-function HubView({ state, buildHub, buyHubUpgrade, crewBonusText, ascend, format, setHubOps }) {
-  const ops = state.hubOps || { autoPulse: false, autoPulseMinSignal: 150, autoLab: false, autoLabMinSignal: 120, autoLabMinMetal: 40, reserveSignal: 70, reserveMetal: 0 };
+function HubView({ state, buildHub, buyHubUpgrade, crewBonusText, ascend, format, supabaseReady }) {
   const [pane, setPane] = useState("build");
   const command = commandUsage(state);
   const hubLevels = hubTotalLevel(state);
   const hubTier = Math.floor(hubLevels / HUB_TIER_STEP);
   const hubMods = hubUpgradeMods(state);
   const hubTravel = hubMissionBonuses(state).travel || 1;
+  const fragmentStatus = fragmentProgress(state);
+  const fragmentPercent = Math.round(fragmentStatus.percent * 100);
+  const fragmentNext = fragmentStatus.next;
   const missionSlots = 1 + (state.hubUpgrades.launch_bay || 0) + (state.tech.auto_pilots ? 1 : 0);
   const cargoBoost = (state.hubUpgrades.drone_bay || 0) * 8;
   const researchBoost = (state.hubUpgrades.survey_lab || 0) * 8;
@@ -1879,13 +1823,15 @@ function HubView({ state, buildHub, buyHubUpgrade, crewBonusText, ascend, format
   const commandFill = clamp((command.used || 0) / Math.max(1, command.capacity || 1), 0, 1);
   const moraleFill = clamp(state.workers.satisfaction || 0, 0, 1);
   const canPrestige = (state.milestonesUnlocked || []).includes("M4_PRESTIGE_UNLOCK");
+  const unlockHints = unlockHintText(state, supabaseReady);
   const briefing = [
-    "Collect Signal, then fire a Pulse Scan (cost ramps, cooldown lengthens) to transmute signal into metal/fuel/research.",
-    "First launch is fuel-free; Debris sorties return early research and fuel.",
-    "Stand up a Fuel Refinery or Fuel Cracker early to keep sorties flowing.",
+    "Start with hub fabrication: Salvage Dock + Biofilter Vats establish metal and organics flow.",
+    "Signal is a progress meter. Raise it via uplinks to unlock missions, bases, and tech tiers.",
+    "Stand up a Fuel Refinery early to keep sorties flowing once Missions unlock.",
     "Install a Hydroponics Bay to keep food above upkeep and morale stable.",
     "Keep power >= 0 and food positive to prevent morale slippage.",
-    "Use the Research Console if fuel is low to bootstrap research.",
+    "Fragment shards surface in mission cargo and push the Veil toward reassembly.",
+    "Operational consoles appear as milestones unlock. Watch the Nexus for upcoming thresholds.",
   ];
 
   const hubTabs = [
@@ -1893,15 +1839,9 @@ function HubView({ state, buildHub, buyHubUpgrade, crewBonusText, ascend, format
     { id: "upgrades", label: "Upgrades" },
     { id: "range", label: "Range Uplink" },
     { id: "prestige", label: "Prestige Protocols" },
-    { id: "automation", label: "Automation Matrix" },
-    { id: "opslog", label: "Ops Log" },
     { id: "briefing", label: "Briefing" },
   ];
   const activeDoctrine = doctrineById(state.doctrine);
-
-  const setOps = (patch) => {
-    if (setHubOps) setHubOps(patch);
-  };
 
   return (
     <section className="panel space-y-4 hub-bridge">
@@ -1962,7 +1902,7 @@ function HubView({ state, buildHub, buyHubUpgrade, crewBonusText, ascend, format
               <div className="h-2 rounded-full bg-white/10 overflow-hidden">
                 <div className="h-full bg-amber-400" style={{ width: `${commandFill * 100}%` }} />
               </div>
-              <div className="text-xs text-muted">Signal Buffer</div>
+              <div className="text-xs text-muted">Signal Progress</div>
               <div className="h-2 rounded-full bg-white/10 overflow-hidden">
                 <div className="h-full bg-sky-400" style={{ width: `${signalFill * 100}%` }} />
               </div>
@@ -2009,13 +1949,40 @@ function HubView({ state, buildHub, buyHubUpgrade, crewBonusText, ascend, format
                 <strong className="text-sm">{researchBoost > 0 ? `+${researchBoost}%` : "None"}</strong>
               </div>
               <div className="stat-box">
-                <span className="text-muted text-[10px]">Signal Buffer</span>
+                <span className="text-muted text-[10px]">Signal Cap Boost</span>
                 <strong className="text-sm">{hubMods.signalCapBonus > 0 ? `+${hubMods.signalCapBonus}` : "None"}</strong>
               </div>
               <div className="stat-box">
                 <span className="text-muted text-[10px]">Habitat Lift</span>
                 <strong className="text-sm">{hubMods.habitat > 0 ? `+${hubMods.habitat}/t` : "None"}</strong>
               </div>
+            </div>
+          </div>
+          {!!unlockHints.length && (
+            <div className="card space-y-2 hub-bridge-panel">
+              <div className="font-semibold">Next Unlocks</div>
+              <div className="text-xs text-muted">Additional consoles appear as the signal climbs.</div>
+              <div className="list">
+                {unlockHints.map((hint) => (
+                  <div key={hint.id} className="row-item">
+                    <div className="row-details">
+                      <div className="row-title">{hint.title}</div>
+                      <div className="row-meta text-xs text-muted">{hint.reqs.join(" · ")}</div>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+          <div className="card space-y-2 hub-bridge-panel">
+            <div className="font-semibold">Fragment Index</div>
+            <div className="text-xs text-muted">Recovered fragments pull the Veil toward reassembly.</div>
+            <div className="text-sm">{format(fragmentStatus.recovered)} / {format(fragmentStatus.total)} ({fragmentPercent}%)</div>
+            <div className="h-2 rounded-full bg-white/10 overflow-hidden">
+              <div className="h-full bg-indigo-400" style={{ width: `${fragmentPercent}%` }} />
+            </div>
+            <div className="text-xs text-muted">
+              {fragmentNext ? `Next threshold: ${fragmentNext.title} at ${Math.round(fragmentNext.percent * 100)}%.` : "Reassembly complete."}
             </div>
           </div>
 
@@ -2120,99 +2087,6 @@ function HubView({ state, buildHub, buyHubUpgrade, crewBonusText, ascend, format
                 {!state.prestige?.runs && (
                   <div className="text-xs text-muted">Prestige Protocol once to unlock doctrine selection.</div>
                 )}
-              </div>
-            </div>
-          )}
-
-          {pane === "automation" && (
-            <div className="space-y-3">
-              <div className="card space-y-2">
-                <div className="font-semibold">Automation Matrix</div>
-                <div className="row-item">
-                  <div className="row-details">
-                    <div className="row-title">Auto Pulse Sweep</div>
-                    <div className="row-meta">Runs when cooldown clears and signal exceeds threshold.</div>
-                  </div>
-                  <div className="row gap-2">
-                    <input
-                      type="number"
-                      className="w-20 rounded-lg border border-white/10 bg-slate-900 px-2 py-1 text-xs text-white"
-                      value={ops.autoPulseMinSignal}
-                      min={0}
-                      onChange={(e) => setOps({ autoPulseMinSignal: Number(e.target.value) })}
-                    />
-                    <label className="row">
-                      <span className="text-xs">On</span>
-                      <input type="checkbox" checked={!!ops.autoPulse} onChange={(e) => setOps({ autoPulse: e.target.checked })} />
-                    </label>
-                  </div>
-                </div>
-                <div className="row-item">
-                  <div className="row-details">
-                    <div className="row-title">Auto Research Cycle</div>
-                    <div className="row-meta">Runs when the lab is ready and resources exceed thresholds.</div>
-                  </div>
-                  <div className="row gap-2">
-                    <input
-                      type="number"
-                      className="w-20 rounded-lg border border-white/10 bg-slate-900 px-2 py-1 text-xs text-white"
-                      value={ops.autoLabMinSignal}
-                      min={0}
-                      onChange={(e) => setOps({ autoLabMinSignal: Number(e.target.value) })}
-                    />
-                    <input
-                      type="number"
-                      className="w-20 rounded-lg border border-white/10 bg-slate-900 px-2 py-1 text-xs text-white"
-                      value={ops.autoLabMinMetal}
-                      min={0}
-                      onChange={(e) => setOps({ autoLabMinMetal: Number(e.target.value) })}
-                    />
-                    <label className="row">
-                      <span className="text-xs">On</span>
-                      <input type="checkbox" checked={!!ops.autoLab} onChange={(e) => setOps({ autoLab: e.target.checked })} />
-                    </label>
-                  </div>
-                </div>
-                <div className="row-item">
-                  <div className="row-details">
-                    <div className="row-title">Reserve Locks</div>
-                    <div className="row-meta">Automation Matrix keeps these minimums in storage.</div>
-                  </div>
-                  <div className="row gap-2">
-                    <input
-                      type="number"
-                      className="w-20 rounded-lg border border-white/10 bg-slate-900 px-2 py-1 text-xs text-white"
-                      value={ops.reserveSignal}
-                      min={0}
-                      onChange={(e) => setOps({ reserveSignal: Number(e.target.value) })}
-                    />
-                    <input
-                      type="number"
-                      className="w-20 rounded-lg border border-white/10 bg-slate-900 px-2 py-1 text-xs text-white"
-                      value={ops.reserveMetal}
-                      min={0}
-                      onChange={(e) => setOps({ reserveMetal: Number(e.target.value) })}
-                    />
-                  </div>
-                </div>
-                <div className="text-xs text-muted">Thresholds: lab uses signal + metal; pulse uses signal.</div>
-              </div>
-            </div>
-          )}
-
-          {pane === "opslog" && (
-            <div className="space-y-2">
-              <div className="font-semibold">Operations Log</div>
-              <div className="list max-h-[520px] overflow-y-auto pr-1">
-                {(state.hubOpsLog || []).slice().reverse().map((e, i) => (
-                  <div key={i} className="row-item">
-                    <div className="row-details">
-                      <div className="row-title">{e.text}</div>
-                      <div className="row-meta">{new Date(e.time).toLocaleTimeString()}</div>
-                    </div>
-                  </div>
-                ))}
-                {!state.hubOpsLog?.length && <div className="text-muted text-sm">No automated routines yet.</div>}
               </div>
             </div>
           )}
@@ -2637,6 +2511,48 @@ function CodexView({ state }) {
   );
 }
 
+function WikiView() {
+  const [query, setQuery] = useState("");
+  const normalized = query.trim().toLowerCase();
+  const entries = useMemo(() => {
+    if (!normalized) return WIKI_ENTRIES;
+    return WIKI_ENTRIES.filter((entry) => {
+      const text = `${entry.title} ${entry.body}`.toLowerCase();
+      return text.includes(normalized);
+    });
+  }, [normalized]);
+  return (
+    <section className="panel space-y-3">
+      <div className="row row-between">
+        <div>
+          <div className="text-lg font-semibold">Field Manual</div>
+          <div className="text-muted text-sm">Reference for core systems, caps, and progression rules.</div>
+        </div>
+        <div className="text-xs text-muted">{entries.length}/{WIKI_ENTRIES.length} entries</div>
+      </div>
+      <div className="card space-y-2">
+        <input
+          className="w-full rounded-lg border border-white/10 bg-slate-900 px-3 py-2 text-sm text-white"
+          placeholder="Search manual entries"
+          value={query}
+          onChange={(e) => setQuery(e.target.value)}
+        />
+      </div>
+      <div className="list">
+        {entries.map((entry) => (
+          <div key={entry.id} className="row-item">
+            <div className="row-details">
+              <div className="row-title">{entry.title}</div>
+              <div className="row-meta">{entry.body}</div>
+            </div>
+          </div>
+        ))}
+        {!entries.length && <div className="text-muted text-sm">No manual entries match this search.</div>}
+      </div>
+    </section>
+  );
+}
+
 function StarterTour({ tourStep, seen, onStep }) {
   const step = STARTER_TOUR[tourStep];
   return (
@@ -2706,12 +2622,6 @@ function scaleCost(baseCost, mult = 1) {
     out[k] = Math.ceil(v * (mult || 1));
   });
   return out;
-}
-function pulseCost(stateObj) {
-  return Math.min(PACE.pulseCostCap, PACE.pulseCostBase + (stateObj.pulseCount || 0) * PACE.pulseCostStep);
-}
-function labCost() {
-  return scaleCost({ signal: 60, metal: 20 }, PACE.labCostMult);
 }
 function requirementsMet(base, building) {
   const prereqs = building.requires ? building.requires.every((req) => (base.buildings?.[req.id] || 0) >= (req.level || 1)) : true;
@@ -2823,8 +2733,6 @@ function migrateSave(save) {
   let out = { ...save };
   const version = Number.isFinite(out.saveVersion) ? out.saveVersion : 0;
   if (version < 1) {
-    out.hubOps = out.hubOps || { autoPulse: false, autoPulseMinSignal: 150, autoLab: false, autoLabMinSignal: 120, autoLabMinMetal: 40, reserveSignal: 70, reserveMetal: 0 };
-    out.hubOpsLog = out.hubOpsLog || [];
     out.milestonesUnlocked = out.milestonesUnlocked || [];
     out.codexUnlocked = out.codexUnlocked || [];
     out.systems = out.systems || [];
@@ -2868,8 +2776,13 @@ function migrateSave(save) {
     out.crewContracts = out.crewContracts || [];
     out.nextContractAt = out.nextContractAt || 0;
   }
+  if (version < 11) {
+    out.fragments = out.fragments || { recovered: 0 };
+  }
   if (!out.profile) out.profile = { name: "" };
   if (typeof out.profile?.name !== "string") out.profile.name = "";
+  if (!out.fragments) out.fragments = { recovered: 0 };
+  if (!Number.isFinite(out.fragments.recovered)) out.fragments.recovered = 0;
 
   if (!out.crewRoster?.length && out.workers?.total) {
     out.crewRoster = seedCrewRoster(out.workers);
@@ -2960,15 +2873,35 @@ function hubRange(state) {
   const relayBonus = colonyRoleCounts(state).relay || 0;
   return 1 + (state.hubUpgrades.scan_array || 0) + (state.tech.deep_scan ? 1 : 0) + (state.tech.rift_mapping ? 1 : 0) + relayBonus;
 }
+const FRAGMENT_MILESTONES = FRAGMENT_THRESHOLDS.map((threshold) => ({
+  id: `M6_${threshold.id}`,
+  title: threshold.title,
+  codexEntryId: threshold.codexEntryId,
+  message: threshold.message,
+  condition: (state) => fragmentProgress(state).percent >= threshold.percent,
+}));
+const UNLOCKS = {
+  missions: { signal: 60, hubLevel: 4 },
+  tech: { signal: 80, research: 10 },
+  crew: { signal: 90, hubLevel: 6, missions: 2 },
+  bases: { signal: 120, missions: 4 },
+  faction: { signal: 100, missions: 3 },
+};
 const MILESTONES = [
   { id: "M0_FOUNDATIONS", title: "Foundations Online", codexEntryId: "foundations", condition: (state) => true },
-  { id: "M1_LOCAL_OPS", title: "Local Operations", codexEntryId: "local_ops", condition: (state) => (state.milestones?.missionsDone || 0) >= 1 || !!state.milestones?.firstLaunch },
+  { id: "M0_SIGNAL_UPLINK", title: "Signal Uplink Online", codexEntryId: "scan_ops", condition: (state) => (state.hubBuildings?.signal_uplink || 0) >= 1 },
+  { id: "M1_LOCAL_OPS", title: "Local Operations", codexEntryId: "local_ops", condition: (state) => (state.resources.signal || 0) >= UNLOCKS.missions.signal && hubTotalLevel(state) >= UNLOCKS.missions.hubLevel },
+  { id: "M1_TECH_ACCESS", title: "Research Grid Online", codexEntryId: "tech_ops", condition: (state) => (state.resources.signal || 0) >= UNLOCKS.tech.signal && (state.resources.research || 0) >= UNLOCKS.tech.research },
+  { id: "M1_CREW_COMMAND", title: "Crew Command", codexEntryId: "crew_ops", condition: (state) => (state.resources.signal || 0) >= UNLOCKS.crew.signal && hubTotalLevel(state) >= UNLOCKS.crew.hubLevel && (state.milestones?.missionsDone || 0) >= UNLOCKS.crew.missions },
+  { id: "M1_BASES_ONLINE", title: "Outpost Charter", codexEntryId: "base_ops", condition: (state) => (state.resources.signal || 0) >= UNLOCKS.bases.signal && (state.milestones?.missionsDone || 0) >= UNLOCKS.bases.missions },
+  { id: "M1_NETWORK_LINK", title: "Relay Network Access", condition: (state) => (state.resources.signal || 0) >= UNLOCKS.faction.signal && (state.milestones?.missionsDone || 0) >= UNLOCKS.faction.missions },
   { id: "M2_SYSTEMS_DISCOVERED", title: "Systems Unlocked", codexEntryId: "systems_light", condition: (state) => hubRange(state) >= 3 },
   { id: "M2_FIRST_COLONY", title: "First Colony", codexEntryId: "colonies_anchor", condition: (state) => (state.colonies || []).length >= 1 },
   { id: "M3_INTEGRATION_UNLOCK", title: "Integration Projects", codexEntryId: "integration_projects", condition: (state) => (state.systems || []).some((s) => s.integratedAt) },
   { id: "M4_GALAXY_CHARTED", title: "Galaxy Charted", codexEntryId: "galaxy_ops", condition: (state) => galaxyDepth(state) >= 2 },
   { id: "M5_DOCTRINE_SELECTED", title: "Doctrine Selected", codexEntryId: "doctrine_ops", condition: (state) => !!state.doctrine },
   { id: "M4_PRESTIGE_UNLOCK", title: "Prestige Protocol Ready", codexEntryId: "prestige_recalibration", condition: (state) => galaxyDepth(state) >= 2 && (state.systems || []).filter((s) => s.integratedAt).length >= 2 && signalSaturation(state).penalty >= 0.25 },
+  ...FRAGMENT_MILESTONES,
 ];
 function bottleneckReport(stateObj, rates) {
   const alerts = [];
@@ -3416,9 +3349,95 @@ function deriveCapabilities(state) {
   const unlocked = new Set(state.milestonesUnlocked || []);
   const systemsUnlocked = unlocked.has("M2_SYSTEMS_DISCOVERED") || unlocked.has("M1_SYSTEMS_DISCOVERED");
   return {
+    missions: unlocked.has("M1_LOCAL_OPS"),
+    bases: unlocked.has("M1_BASES_ONLINE"),
+    crew: unlocked.has("M1_CREW_COMMAND"),
+    tech: unlocked.has("M1_TECH_ACCESS"),
     systems: systemsUnlocked,
+    faction: unlocked.has("M1_NETWORK_LINK"),
     colonies: unlocked.has("M2_FIRST_COLONY"),
     integration: unlocked.has("M3_INTEGRATION_UNLOCK"),
     prestige: unlocked.has("M4_PRESTIGE_UNLOCK"),
   };
+}
+function buildNavTabs(capabilities, supabaseReady) {
+  const tabs = [{ id: "hub", label: "Hub" }];
+  if (capabilities.missions) tabs.push({ id: "missions", label: "Missions" });
+  if (capabilities.bases) tabs.push({ id: "bases", label: "Bases" });
+  if (capabilities.crew) tabs.push({ id: "crew", label: "Crew" });
+  if (capabilities.tech) tabs.push({ id: "tech", label: "Tech" });
+  if (capabilities.systems) tabs.push({ id: "systems", label: "Systems" });
+  if (capabilities.faction && supabaseReady) tabs.push({ id: "faction", label: "Faction" });
+  tabs.push({ id: "codex", label: "Codex" });
+  tabs.push({ id: "wiki", label: "Wiki" });
+  tabs.push({ id: "log", label: "Log" });
+  return tabs;
+}
+function unlockHintText(state, supabaseReady) {
+  const unlocked = new Set(state.milestonesUnlocked || []);
+  const hubLevel = hubTotalLevel(state);
+  const missionsDone = state.milestones?.missionsDone || 0;
+  const signal = state.resources.signal || 0;
+  const research = state.resources.research || 0;
+  const range = hubRange(state);
+  const hints = [];
+  if (!unlocked.has("M1_LOCAL_OPS")) {
+    hints.push({
+      id: "missions",
+      title: "Missions Console",
+      reqs: [
+        `Signal ${Math.floor(signal)}/${UNLOCKS.missions.signal}`,
+        `Nexus level ${hubLevel}/${UNLOCKS.missions.hubLevel}`,
+      ],
+    });
+  }
+  if (!unlocked.has("M1_TECH_ACCESS")) {
+    hints.push({
+      id: "tech",
+      title: "Research Grid",
+      reqs: [
+        `Signal ${Math.floor(signal)}/${UNLOCKS.tech.signal}`,
+        `Research ${Math.floor(research)}/${UNLOCKS.tech.research}`,
+      ],
+    });
+  }
+  if (!unlocked.has("M1_CREW_COMMAND")) {
+    hints.push({
+      id: "crew",
+      title: "Crew Command",
+      reqs: [
+        `Signal ${Math.floor(signal)}/${UNLOCKS.crew.signal}`,
+        `Nexus level ${hubLevel}/${UNLOCKS.crew.hubLevel}`,
+        `Missions ${missionsDone}/${UNLOCKS.crew.missions}`,
+      ],
+    });
+  }
+  if (!unlocked.has("M1_BASES_ONLINE")) {
+    hints.push({
+      id: "bases",
+      title: "Outpost Charter",
+      reqs: [
+        `Signal ${Math.floor(signal)}/${UNLOCKS.bases.signal}`,
+        `Missions ${missionsDone}/${UNLOCKS.bases.missions}`,
+      ],
+    });
+  }
+  if (supabaseReady && !unlocked.has("M1_NETWORK_LINK")) {
+    hints.push({
+      id: "faction",
+      title: "Relay Network",
+      reqs: [
+        `Signal ${Math.floor(signal)}/${UNLOCKS.faction.signal}`,
+        `Missions ${missionsDone}/${UNLOCKS.faction.missions}`,
+      ],
+    });
+  }
+  if (!unlocked.has("M2_SYSTEMS_DISCOVERED")) {
+    hints.push({
+      id: "systems",
+      title: "Systems Grid",
+      reqs: [`Range tier ${range}/3`],
+    });
+  }
+  return hints;
 }

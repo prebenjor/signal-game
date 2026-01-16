@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
-import { FACTION_BUILDINGS, FACTION_DIRECTIVES } from "../game/data";
+import { FACTION_BUILDINGS, FACTION_DIRECTIVES, FACTION_OVERRIDES } from "../game/data";
 
 const BUFF_LABELS = {
   scanMult: "Scan yield",
@@ -31,13 +31,19 @@ const TABS = [
 ];
 
 const NETWORK_FEATURES = [
-  { id: "convoys", name: "Convoy Runs", desc: "Time-boxed supply convoys that grant shared loot when completed.", status: "Prototype" },
-  { id: "anomaly", name: "Anomaly Broadcasts", desc: "Global scans surface rare targets; factions race for first lock.", status: "Concept" },
-  { id: "faction_ops", name: "Faction Ops", desc: "Scheduled ops where donations unlock temporary buffs or events.", status: "Draft" },
-  { id: "relay_war", name: "Relay Warfronts", desc: "Soft PvP scoreboards where factions compete on stability metrics.", status: "Concept" },
+  { id: "fragment_convoys", name: "Fragment Convoys", desc: "Coordinated recovery runs that boost shard finds for the whole faction.", status: "Prototype" },
+  { id: "veil_echoes", name: "Veil Echoes", desc: "Global signal events that surface fragment-heavy targets.", status: "Concept" },
+  { id: "faction_ops", name: "Faction Operations", desc: "Timed ops where donations unlock temporary relic events.", status: "Draft" },
+  { id: "veil_warfronts", name: "Veil Warfronts", desc: "Soft-competition scoreboards tied to fragment holdings and stability.", status: "Concept" },
 ];
 
 const formatPercent = (value) => `${Math.round(value * 100)}%`;
+
+const applyFactionOverride = (faction) => {
+  if (!faction) return faction;
+  const override = FACTION_OVERRIDES[faction.id];
+  return override ? { ...faction, ...override } : faction;
+};
 
 function formatBuffs(buffs) {
   if (!buffs) return [];
@@ -136,6 +142,7 @@ export default function FactionView({
   onDonateBuilding,
   onSendChat,
   resources,
+  fragmentStatus,
   format,
 }) {
   const needsName = !profileName?.trim();
@@ -149,9 +156,11 @@ export default function FactionView({
   const [status, setStatus] = useState(null);
   const chatListRef = useRef(null);
 
-  const activeFaction = useMemo(() => factions.find((f) => f.id === membership?.faction_id), [factions, membership]);
+  const activeFaction = useMemo(() => applyFactionOverride(factions.find((f) => f.id === membership?.faction_id)), [factions, membership]);
   const activeProject = useMemo(() => projects[membership?.faction_id], [projects, membership]);
   const activeFactionId = membership?.faction_id || null;
+  const fragmentPercent = Math.round((fragmentStatus?.percent || 0) * 100);
+  const fragmentNext = fragmentStatus?.next || null;
   const buffs = useMemo(() => formatBuffs(activeProject?.buff || activeFaction?.buffs || {}), [activeProject, activeFaction]);
   const totals = useMemo(() => projectTotals(activeProject), [activeProject]);
   const buildingDefs = useMemo(() => (activeFactionId ? (FACTION_BUILDINGS[activeFactionId] || []) : []), [activeFactionId]);
@@ -228,11 +237,12 @@ export default function FactionView({
   const standings = useMemo(() => {
     return factions
       .map((faction) => {
+        const display = applyFactionOverride(faction);
         const project = projects[faction.id];
         const totals = projectTotals(project);
         return {
           id: faction.id,
-          name: faction.name,
+          name: display?.name || faction.name,
           percent: totals.percent || 0,
           totalGoal: totals.totalGoal || 0,
           totalProgress: totals.totalProgress || 0,
@@ -341,6 +351,19 @@ export default function FactionView({
               ) : (
                 <div className="text-sm text-muted">Not aligned.</div>
               )}
+            </div>
+          </div>
+          <div className="card space-y-2">
+            <div className="font-semibold">Fragment Ledger</div>
+            <div className="text-sm text-muted">Reassembly progress tracked by your command ledger.</div>
+            <div className="text-sm">
+              {format(fragmentStatus?.recovered || 0)} / {format(fragmentStatus?.total || 0)} ({fragmentPercent}%)
+            </div>
+            <div className="h-2 rounded-full bg-white/10 overflow-hidden">
+              <div className="h-full bg-indigo-400" style={{ width: `${fragmentPercent}%` }} />
+            </div>
+            <div className="text-xs text-muted">
+              {fragmentNext ? `Next threshold: ${fragmentNext.title} at ${Math.round(fragmentNext.percent * 100)}%.` : "Reassembly complete."}
             </div>
           </div>
 
@@ -598,20 +621,24 @@ export default function FactionView({
             {!factions.length && <div className="text-xs text-muted">No factions found. Seed them in Supabase.</div>}
           </div>
           <div className="grid md:grid-cols-3 gap-2">
-            {factions.map((faction) => (
-              <div key={faction.id} className="rounded-xl border border-white/10 bg-slate-950/60 p-3 space-y-2">
-                <div className="text-sm font-semibold">{faction.name}</div>
-                <div className="text-xs text-muted">{faction.tagline}</div>
-                <div className="text-xs text-muted">{formatBuffs(faction.buffs || {}).join(" | ") || "No listed buffs."}</div>
-                <button
-                  className="btn w-full"
-                  disabled={!supabaseReady || needsName}
-                  onClick={() => handleJoin(faction.id)}
-                >
-                  {membership?.faction_id === faction.id ? "Aligned" : "Align"}
-                </button>
-              </div>
-            ))}
+            {factions.map((faction) => {
+              const display = applyFactionOverride(faction);
+              return (
+                <div key={faction.id} className="rounded-xl border border-white/10 bg-slate-950/60 p-3 space-y-2">
+                  <div className="text-sm font-semibold">{display?.name || faction.name}</div>
+                  <div className="text-xs text-muted">{display?.tagline || faction.tagline}</div>
+                  {display?.brief && <div className="text-xs text-muted">{display.brief}</div>}
+                  <div className="text-xs text-muted">{formatBuffs(faction.buffs || {}).join(" | ") || "No listed buffs."}</div>
+                  <button
+                    className="btn w-full"
+                    disabled={!supabaseReady || needsName}
+                    onClick={() => handleJoin(faction.id)}
+                  >
+                    {membership?.faction_id === faction.id ? "Aligned" : "Align"}
+                  </button>
+                </div>
+              );
+            })}
           </div>
         </div>
       )}

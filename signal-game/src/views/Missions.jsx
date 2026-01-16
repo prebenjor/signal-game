@@ -140,6 +140,7 @@ export default function MissionsView({ state, startMission, setAutoLaunch, setSe
                 <li>Stance selection tunes hazard and reward balance; specialists push a specific output.</li>
                 <li>Depletion lowers yields on repeated runs, rotate targets to recover efficiency.</li>
                 <li>Command over-capacity increases travel time and reduces cargo return.</li>
+                <li>Fragment shards sometimes surface in mission cargo; higher tiers and side objectives improve odds.</li>
               </ul>
             </div>
           </div>
