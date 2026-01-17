@@ -1,4 +1,4 @@
-// Bases view: per-biome build queues, events, ops, and focus controls. Uses helpers from App to reuse logic.
+// Outposts view: per-biome build queues, events, ops, and focus controls. Uses helpers from App to reuse logic.
 import { useEffect, useMemo, useState } from "react";
 
 export default function BasesView({
@@ -117,8 +117,8 @@ export default function BasesView({
           <div className="relative z-10 flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
             <div>
               <div className="text-xs uppercase tracking-[0.2em] text-emerald-200/70">Outpost Command</div>
-              <div className="text-2xl font-semibold">Bases</div>
-              <div className="text-sm text-muted mt-1">Coordinate structures, incidents, and site ops. Mission targeting lives in Missions.</div>
+              <div className="text-2xl font-semibold">Outposts</div>
+              <div className="text-sm text-muted mt-1">Coordinate structures, incidents, and site ops. Expedition routing lives in Expedition Command.</div>
             </div>
             <div className="flex flex-wrap gap-2 text-xs">
               <span className="tag">{labelify(body.type)} Site</span>
@@ -180,7 +180,7 @@ export default function BasesView({
                   <span className="tag">Incidents {incidents.length}/4</span>
                   <span className="tag">Focus {labelify(base.focus)}</span>
                 </div>
-                <div className="text-sm text-muted">Focus shifts here do not launch sorties; use Missions to dispatch expeditions.</div>
+                <div className="text-sm text-muted">Focus shifts here do not launch sorties; use Expedition Planning to dispatch runs.</div>
               </div>
 
               <div className="card space-y-2 base-panel">

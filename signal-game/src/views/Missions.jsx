@@ -1,4 +1,4 @@
-// Missions view: handles target selection, launch config, specialists, auto-launch, and showing active missions.
+// Expeditions view: handles target selection, launch config, specialists, auto-launch, and showing active expeditions.
 import { useEffect, useState } from "react";
 
 export default function MissionsView({ state, startMission, setAutoLaunch, setSelected, format, missionModeById, missionYield, formatDuration, bodies, missionModes, isUnlockedUI, baseBonuses, hubRange, depletionFactor, missionMods, missionDurationMult, bodyUnlockMult, embedded = false, defaultPane = "targeting" }) {
@@ -34,7 +34,7 @@ export default function MissionsView({ state, startMission, setAutoLaunch, setSe
   const modeUnlockText = (mode) => {
     const unlock = mode.unlock || {};
     const parts = [];
-    if (unlock.missions) parts.push(`${unlock.missions} missions`);
+    if (unlock.missions) parts.push(`${unlock.missions} expeditions`);
     if (unlock.signal) parts.push(`Signal ${unlock.signal}`);
     if (unlock.tech) parts.push(`Tech: ${formatName(unlock.tech)}`);
     return parts.length ? parts.join(" | ") : "Locked";
@@ -62,8 +62,8 @@ export default function MissionsView({ state, startMission, setAutoLaunch, setSe
           <div className="absolute inset-x-0 bottom-0 h-12 bg-gradient-to-t from-slate-950/90 to-transparent" />
           <div className="relative z-10 flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
             <div>
-              <div className="text-xs uppercase tracking-[0.2em] text-sky-200/70">Mission Control</div>
-              <div className="text-2xl font-semibold">Missions</div>
+              <div className="text-xs uppercase tracking-[0.2em] text-sky-200/70">Expedition Control</div>
+              <div className="text-2xl font-semibold">Expeditions</div>
               <div className="text-sm text-muted mt-1">Biome-specific hazards and salvage. Burn fuel to cut transit time. Debris Field is your early fuel/research trickle.</div>
             </div>
             <div className="flex flex-wrap gap-2 text-xs">
@@ -77,7 +77,7 @@ export default function MissionsView({ state, startMission, setAutoLaunch, setSe
       <div className="rounded-2xl border border-white/10 bg-slate-950/70 p-4 space-y-3 mission-deck">
         <div className="row row-between">
           <div>
-            <div className="font-semibold">Mission Operations Deck</div>
+            <div className="font-semibold">Expedition Operations Deck</div>
             <div className="text-xs text-muted">Targeting, launch routing, and live ops telemetry.</div>
           </div>
           <div className="text-xs text-muted">Each biome feeds a different bottleneck. Use Target Intel to pick the right supply chain.</div>
@@ -102,7 +102,7 @@ export default function MissionsView({ state, startMission, setAutoLaunch, setSe
                   const efficiencyLabel = Math.round(bodyEfficiency * 100);
                   const requirements = [];
                   if (bodyRangeLocked) requirements.push(`Range tier ${b.tier}`);
-                  if (b.requireMissions && missionsDone < b.requireMissions) requirements.push(`Missions ${missionsDone}/${b.requireMissions}`);
+                  if (b.requireMissions && missionsDone < b.requireMissions) requirements.push(`Expeditions ${missionsDone}/${b.requireMissions}`);
                   if (b.requireTech && !techState[b.requireTech]) requirements.push(`Tech: ${formatName(b.requireTech)}`);
                   if (!bodyRangeLocked && b.unlock) {
                     const requiredSignal = Math.ceil((b.unlock || 0) * (bodyUnlockMult || 1));
@@ -169,7 +169,7 @@ export default function MissionsView({ state, startMission, setAutoLaunch, setSe
 
         {pane === "active" && (
           <div className="space-y-2">
-            <div className="font-semibold">Active Operations</div>
+            <div className="font-semibold">Active Expeditions</div>
             <div className="card mission-panel">
               <ActiveMissions
                 state={state}
@@ -190,7 +190,7 @@ export default function MissionsView({ state, startMission, setAutoLaunch, setSe
                 <li>Stance selection tunes hazard and reward balance; specialists push a specific output.</li>
                 <li>Depletion lowers yields on repeated runs, rotate targets to recover efficiency.</li>
                 <li>Command over-capacity increases travel time and reduces cargo return.</li>
-                <li>Fragment shards sometimes surface in mission cargo; higher tiers and side objectives improve odds.</li>
+                <li>Fragment shards sometimes surface in expedition cargo; higher tiers and side objectives improve odds.</li>
               </ul>
             </div>
             {!!lockedModes.length && (

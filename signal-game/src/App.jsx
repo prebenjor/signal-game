@@ -824,20 +824,20 @@ export default function App() {
       const partial = Math.min(0.95, risk + 0.25);
       const roll = Math.random();
       if (roll < risk) {
-        const salvage = reduceCargo(cargo, 0.2); bumpResources(salvage); log(`Mission to ${body.name} failed. Salvaged ${Object.keys(salvage).length ? "scrap" : "nothing"}.`);
+        const salvage = reduceCargo(cargo, 0.2); bumpResources(salvage); log(`Expedition to ${body.name} failed. Salvaged ${Object.keys(salvage).length ? "scrap" : "nothing"}.`);
       } else if (roll < partial) {
-        const haul = reduceCargo(cargo, 0.65); bumpResources(haul); log(`Mission to ${body.name} returned partially due to hazard.`);
+        const haul = reduceCargo(cargo, 0.65); bumpResources(haul); log(`Expedition to ${body.name} returned partially due to hazard.`);
         const shards = rollFragmentDiscovery(body, efficiency, "partial", acceptedObjective);
         awardFragments(shards, body);
       } else {
-        bumpResources(cargo); log(`Mission from ${body.name} returned with cargo.`);
+        bumpResources(cargo); log(`Expedition from ${body.name} returned with cargo.`);
         const shards = rollFragmentDiscovery(body, efficiency, "full", acceptedObjective);
         awardFragments(shards, body);
       }
       if ((state.colonies || []).length && m.hazard >= 0.2) {
         const colonySystems = (state.colonies || []).map((c) => c.systemId);
         const systemId = colonySystems[Math.floor(Math.random() * colonySystems.length)];
-        if (systemId) adjustSystemStability(systemId, -Math.round(m.hazard * 6), "Mission strain detected.");
+        if (systemId) adjustSystemStability(systemId, -Math.round(m.hazard * 6), "Expedition strain detected.");
       }
       const current = depletion[body.id] || 0;
       const next = clamp(current + depletionRate(body), 0, 0.85);
@@ -1189,11 +1189,11 @@ export default function App() {
 
   // Launch mission with stance/specialist; charges fuel logistics and schedules resolution.
   function startMission(bodyId, fuelBoost = 0, modeId = "balanced", specialist = "none", silent = false) {
-    if (!capabilities.missions) { log("Missions console locked."); return; }
+    if (!capabilities.missions) { log("Expedition console locked."); return; }
     const body = BODIES.find((b) => b.id === bodyId && isUnlocked(b));
     if (!body) { log("Target locked."); return; }
     const slots = 1 + (state.hubUpgrades.launch_bay || 0) + (state.tech.auto_pilots ? 1 : 0);
-    if ((state.missions.active || []).length >= slots) { log("All mission slots busy."); return; }
+    if ((state.missions.active || []).length >= slots) { log("All expedition slots busy."); return; }
     const crewMods = crewProgramModifiers(state);
     const missionMods = colonyModifiers(state);
     const hubMods = hubUpgradeMods(state);
@@ -2200,7 +2200,7 @@ function HubView({ state, buildHub, buyHubUpgrade, crewBonusText, ascend, format
               </div>
             </div>
             {command.over > 0 && (
-              <div className="text-xs text-muted">Over capacity: mission efficiency reduced, stability drifting.</div>
+              <div className="text-xs text-muted">Over capacity: expedition efficiency reduced, stability drifting.</div>
             )}
             <div className="text-xs text-muted">Keep power non-negative and food above upkeep ({populationUpkeep.toFixed(2)}/tick).</div>
             <div className="text-xs text-muted">{bottleneckReport(state, state.rates).join(" ")}</div>
@@ -2454,7 +2454,7 @@ function HubView({ state, buildHub, buyHubUpgrade, crewBonusText, ascend, format
                 <div className="font-semibold">Command Array</div>
                 <div className="grid grid-cols-2 gap-2 text-xs text-muted">
                   <div className="stat-box">
-                    <span className="text-muted text-[10px]">Mission Slots</span>
+                    <span className="text-muted text-[10px]">Expedition Slots</span>
                     <strong className="text-sm">{missionSlots}</strong>
                   </div>
                   <div className="stat-box">
@@ -2711,7 +2711,7 @@ function SystemsView({ state, capabilities, format, formatDuration, startSystemO
             <div className="rounded-xl border border-white/10 bg-slate-950/60 p-3 space-y-1">
               <div className="text-xs text-muted">Command Capacity</div>
               <div className="text-sm font-semibold">{command.used}/{command.capacity} slots in use</div>
-              <div className="text-xs text-muted">Over-capacity reduces mission efficiency and destabilizes colonies.</div>
+              <div className="text-xs text-muted">Over-capacity reduces expedition efficiency and destabilizes colonies.</div>
               <div className="text-xs text-muted">Integration effects: travel {Math.round((integration.travelMult || 1) * 100)}% | event rate {Math.round((integration.eventRateMult || 1) * 100)}%</div>
             </div>
           </div>
@@ -3969,7 +3969,7 @@ function hubTierUnlockStatus(stateObj, tier) {
   const signal = stateObj.resources?.signal || 0;
   if (rules.signal && signal < rules.signal) reasons.push(`Signal ${Math.floor(signal)}/${rules.signal}`);
   if (rules.hubLevel && hubLevel < rules.hubLevel) reasons.push(`Nexus level ${hubLevel}/${rules.hubLevel}`);
-  if (rules.missions && missionsDone < rules.missions) reasons.push(`Missions ${missionsDone}/${rules.missions}`);
+  if (rules.missions && missionsDone < rules.missions) reasons.push(`Expeditions ${missionsDone}/${rules.missions}`);
   if (rules.tech && !stateObj.tech?.[rules.tech]) reasons.push(`Tech: ${rules.tech}`);
   if (rules.milestone && !(stateObj.milestonesUnlocked || []).includes(rules.milestone)) reasons.push("Milestone not met");
   return { unlocked: reasons.length === 0, reasons };
@@ -3981,7 +3981,7 @@ function hubBuildingUnlockStatus(stateObj, def) {
   const unlock = def.unlock || {};
   if (unlock.signal && (stateObj.resources?.signal || 0) < unlock.signal) reasons.push(`Signal ${Math.floor(stateObj.resources.signal || 0)}/${unlock.signal}`);
   if (unlock.hubLevel && hubTotalLevel(stateObj) < unlock.hubLevel) reasons.push(`Nexus level ${hubTotalLevel(stateObj)}/${unlock.hubLevel}`);
-  if (unlock.missions && (stateObj.milestones?.missionsDone || 0) < unlock.missions) reasons.push(`Missions ${stateObj.milestones?.missionsDone || 0}/${unlock.missions}`);
+  if (unlock.missions && (stateObj.milestones?.missionsDone || 0) < unlock.missions) reasons.push(`Expeditions ${stateObj.milestones?.missionsDone || 0}/${unlock.missions}`);
   if (unlock.tech && !stateObj.tech?.[unlock.tech]) reasons.push(`Tech: ${unlock.tech}`);
   if (unlock.milestone && !(stateObj.milestonesUnlocked || []).includes(unlock.milestone)) reasons.push("Milestone not met");
   (unlock.requires || []).forEach((req) => {
@@ -3999,7 +3999,7 @@ function hubUpgradeUnlockStatus(stateObj, def) {
   if (hubLevel < unlockAt) reasons.push(`Nexus level ${hubLevel}/${unlockAt}`);
   const unlock = def.unlock || {};
   if (unlock.signal && (stateObj.resources?.signal || 0) < unlock.signal) reasons.push(`Signal ${Math.floor(stateObj.resources.signal || 0)}/${unlock.signal}`);
-  if (unlock.missions && (stateObj.milestones?.missionsDone || 0) < unlock.missions) reasons.push(`Missions ${stateObj.milestones?.missionsDone || 0}/${unlock.missions}`);
+  if (unlock.missions && (stateObj.milestones?.missionsDone || 0) < unlock.missions) reasons.push(`Expeditions ${stateObj.milestones?.missionsDone || 0}/${unlock.missions}`);
   if (unlock.tech && !stateObj.tech?.[unlock.tech]) reasons.push(`Tech: ${unlock.tech}`);
   if (unlock.milestone && !(stateObj.milestonesUnlocked || []).includes(unlock.milestone)) reasons.push("Milestone not met");
   (def.requires || []).forEach((req) => {
@@ -4082,7 +4082,7 @@ function unlockHintText(state, supabaseReady) {
       reqs: [
         `Signal ${Math.floor(signal)}/${UNLOCKS.crew.signal}`,
         `Nexus level ${hubLevel}/${UNLOCKS.crew.hubLevel}`,
-        `Missions ${missionsDone}/${UNLOCKS.crew.missions}`,
+        `Expeditions ${missionsDone}/${UNLOCKS.crew.missions}`,
       ],
     });
   }
@@ -4092,7 +4092,7 @@ function unlockHintText(state, supabaseReady) {
       title: "Outpost Charter",
       reqs: [
         `Signal ${Math.floor(signal)}/${UNLOCKS.bases.signal}`,
-        `Missions ${missionsDone}/${UNLOCKS.bases.missions}`,
+        `Expeditions ${missionsDone}/${UNLOCKS.bases.missions}`,
       ],
     });
   }
@@ -4102,7 +4102,7 @@ function unlockHintText(state, supabaseReady) {
       title: "Relay Network",
       reqs: [
         `Signal ${Math.floor(signal)}/${UNLOCKS.faction.signal}`,
-        `Missions ${missionsDone}/${UNLOCKS.faction.missions}`,
+        `Expeditions ${missionsDone}/${UNLOCKS.faction.missions}`,
       ],
     });
   }

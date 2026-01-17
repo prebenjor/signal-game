@@ -47,14 +47,14 @@ export const BODIES = [
 ];
 
 export const HUB_UPGRADES = [
-  { id: "launch_bay", name: "Launch Bay", desc: "+1 concurrent mission slot", cost: { metal: 220, fuel: 70, research: 20 }, requires: [{ id: "nav_console", level: 1 }] },
+  { id: "launch_bay", name: "Launch Bay", desc: "+1 concurrent expedition slot", cost: { metal: 220, fuel: 70, research: 20 }, requires: [{ id: "nav_console", level: 1 }] },
   { id: "fuel_farm", name: "Fuel Farm", desc: "+1 fuel/tick", cost: { metal: 200, organics: 80, fuel: 20 }, requires: [{ id: "refinery", level: 2 }] },
   { id: "scan_array", name: "Scan Array", desc: "+2 signal/tick, +1 range tier", cost: { metal: 240, fuel: 60, research: 40 }, requires: [{ id: "signal_uplink", level: 2 }] },
-  { id: "drone_bay", name: "Drone Bay", desc: "+8% mission cargo", cost: { metal: 300, rare: 16, fuel: 40 }, requires: [{ id: "alloy_foundry", level: 1 }] },
+  { id: "drone_bay", name: "Drone Bay", desc: "+8% expedition cargo", cost: { metal: 300, rare: 16, fuel: 40 }, requires: [{ id: "alloy_foundry", level: 1 }] },
   { id: "command_uplink", name: "Command Uplink", desc: "+1 command capacity", cost: { metal: 320, fuel: 120, research: 60 }, requires: [{ id: "nav_console", level: 2 }] },
-  { id: "survey_lab", name: "Survey Lab", desc: "+8% mission research yield", cost: { metal: 260, research: 120, organics: 40 }, requires: [{ id: "signal_uplink", level: 2 }, { id: "bioforge", level: 1 }] },
-  { id: "mission_control", name: "Mission Control", desc: "-4% mission hazard", cost: { metal: 260, fuel: 90, research: 80 }, requires: [{ id: "launch_bay", level: 1 }, { id: "reactor", level: 2 }] },
-  { id: "supply_depot", name: "Supply Depot", desc: "-5% mission fuel cost", cost: { metal: 240, fuel: 120, organics: 60 }, requires: [{ id: "refinery", level: 2 }] },
+  { id: "survey_lab", name: "Survey Lab", desc: "+8% expedition research yield", cost: { metal: 260, research: 120, organics: 40 }, requires: [{ id: "signal_uplink", level: 2 }, { id: "bioforge", level: 1 }] },
+  { id: "mission_control", name: "Expedition Control", desc: "-4% expedition hazard", cost: { metal: 260, fuel: 90, research: 80 }, requires: [{ id: "launch_bay", level: 1 }, { id: "reactor", level: 2 }] },
+  { id: "supply_depot", name: "Supply Depot", desc: "-5% expedition fuel cost", cost: { metal: 240, fuel: 120, organics: 60 }, requires: [{ id: "refinery", level: 2 }] },
   { id: "signal_vault", name: "Signal Vault", desc: "+120 signal cap", cost: { metal: 240, research: 80, rare: 8 }, requires: [{ id: "signal_uplink", level: 3 }, { id: "signal_amplifier", level: 1 }] },
   { id: "habitat_wing", name: "Habitat Wing", desc: "+2 habitat/tick, +0.01 morale/tick", cost: { metal: 220, organics: 110, food: 30 }, requires: [{ id: "hab", level: 2 }] },
 ];
@@ -75,7 +75,7 @@ export const HUB_BUILDINGS = [
   { id: "hydroponics", name: "Hydroponics Bay", desc: "+2 food/tick, +1 habitat", cost: { metal: 130, organics: 45 }, prod: { food: 2, habitat: 1 }, cons: { power: 1 }, tier: 1, category: "life", unlock: { requires: [{ id: "hab", level: 1 }] } },
   { id: "rec", name: "Rec Dome", desc: "Boosts morale", cost: { metal: 120, organics: 80 }, prod: { morale: 0.02 }, cons: { power: 1 }, tier: 1, category: "life", unlock: { requires: [{ id: "hydroponics", level: 1 }] } },
   { id: "array", name: "Comms Array", desc: "+3 signal/tick", cost: { metal: 200, fuel: 20 }, prod: { signal: 3 }, cons: { power: 1 }, tier: 1, category: "signal", unlock: { requires: [{ id: "signal_uplink", level: 2 }] } },
-  { id: "nav_console", name: "Nav Console", desc: "-1% mission travel time per level", cost: { metal: 180, fuel: 30, research: 22 }, prod: {}, cons: { power: 1 }, travelMult: 0.99, tier: 1, category: "logistics", unlock: { requires: [{ id: "refinery", level: 1 }] } },
+  { id: "nav_console", name: "Nav Console", desc: "-1% expedition travel time per level", cost: { metal: 180, fuel: 30, research: 22 }, prod: {}, cons: { power: 1 }, travelMult: 0.99, tier: 1, category: "logistics", unlock: { requires: [{ id: "refinery", level: 1 }] } },
   { id: "alloy_foundry", name: "Alloy Foundry", desc: "+5 metal/tick", cost: { metal: 320, fuel: 60 }, prod: { metal: 5 }, cons: { power: 2 }, tier: 2, category: "materials", unlock: { requires: [{ id: "salvage_dock", level: 3 }] } },
   { id: "bioforge", name: "Bioforge", desc: "+3 organics/tick, +1 food/tick", cost: { metal: 280, organics: 100 }, prod: { organics: 3, food: 1 }, cons: { power: 2 }, tier: 2, category: "life", unlock: { requires: [{ id: "biofilter_vats", level: 3 }] } },
   { id: "power_core", name: "Power Core", desc: "+10 power/tick, -2 fuel", cost: { metal: 320, fuel: 90, research: 40 }, prod: { power: 10 }, cons: { fuel: 2 }, tier: 2, category: "power", unlock: { requires: [{ id: "reactor", level: 3 }] } },
@@ -103,11 +103,11 @@ export const BIOME_BUILDINGS = {
     { id: "fuel_cracker", name: "Fuel Cracker", desc: "+1 fuel/tick", cost: { metal: 90 }, prod: { fuel: 1 }, cons: { power: 1 } },
     { id: "ore_rig", name: "Ore Rig", desc: "+5 metal/tick", cost: { metal: 120 }, prod: { metal: 5 }, cons: { power: 1 } },
     { id: "solar_sail", name: "Solar Sail", desc: "+2 power/tick", cost: { metal: 70 }, prod: { power: 2 }, cons: {} },
-    { id: "cargo_rig", name: "Cargo Rig", desc: "Rig branch: +12% mission cargo from this base", cost: { metal: 220, fuel: 30 }, prod: {}, cons: { power: 1 }, requires: [{ id: "ore_rig", level: 3 }], cargoMult: 1.12, group: "rig_branch", zone: "industrial" },
+    { id: "cargo_rig", name: "Cargo Rig", desc: "Rig branch: +12% expedition cargo from this outpost", cost: { metal: 220, fuel: 30 }, prod: {}, cons: { power: 1 }, requires: [{ id: "ore_rig", level: 3 }], cargoMult: 1.12, group: "rig_branch", zone: "industrial" },
     { id: "core_rig", name: "Core Rig", desc: "Rig branch: +4 rare/tick, +4 metal/tick", cost: { metal: 260, fuel: 40 }, prod: { rare: 4, metal: 4 }, cons: { power: 2 }, requires: [{ id: "ore_rig", level: 3 }], group: "rig_branch", zone: "research" },
     { id: "logistics_depot", name: "Logistics Depot", desc: "+5% cargo, -5% travel time", cost: { metal: 180, fuel: 20 }, prod: {}, cons: { power: 1 }, cargoMult: 1.05, travelMult: 0.95, zone: "industrial" },
     { id: "core_tap", name: "Core Tap", desc: "+6 metal/tick, +2 rare/tick", cost: { metal: 260, fuel: 50 }, prod: { metal: 6, rare: 2 }, cons: { power: 2 }, requires: [{ id: "ore_rig", level: 2 }], zone: "research" },
-    { id: "orbital_foundry", name: "Orbital Foundry", desc: "+3 rare/tick, +10% mission cargo from this base (applied in cargo calc)", cost: { metal: 320, rare: 12 }, prod: { rare: 3 }, cons: { power: 2 }, requires: [{ id: "core_tap", level: 1 }], cargoMult: 1.1, zone: "deep" },
+    { id: "orbital_foundry", name: "Orbital Foundry", desc: "+3 rare/tick, +10% expedition cargo from this outpost (applied in cargo calc)", cost: { metal: 320, rare: 12 }, prod: { rare: 3 }, cons: { power: 2 }, requires: [{ id: "core_tap", level: 1 }], cargoMult: 1.1, zone: "deep" },
   ],
   ice: [
     { id: "maintenance_bay", name: "Maintenance Bay", desc: "+2 maintenance cap", cost: { metal: 110, fuel: 10 }, prod: {}, cons: { power: 1 }, maintenanceCap: 2 },
@@ -121,7 +121,7 @@ export const BIOME_BUILDINGS = {
   ],
   warm: [
     { id: "maintenance_bay", name: "Maintenance Bay", desc: "+2 maintenance cap", cost: { metal: 110, fuel: 10 }, prod: {}, cons: { power: 1 }, maintenanceCap: 2 },
-    { id: "shield_dome", name: "Shield Dome", desc: "-20% hazard on missions from this base", cost: { metal: 140, fuel: 20 }, prod: {}, cons: { power: 1 }, hazardMult: 0.8 },
+    { id: "shield_dome", name: "Shield Dome", desc: "-20% hazard on expeditions from this outpost", cost: { metal: 140, fuel: 20 }, prod: {}, cons: { power: 1 }, hazardMult: 0.8 },
     { id: "vapor_trap", name: "Vapor Trap", desc: "+3 organics/tick", cost: { metal: 90, fuel: 12 }, prod: { organics: 3 }, cons: {} },
     { id: "interceptor_net", name: "Interceptor Net", desc: "Shield branch: -35% hazard, -10% travel time", cost: { metal: 220, fuel: 50 }, prod: {}, cons: { power: 2 }, requires: [{ id: "shield_dome", level: 2 }], hazardMult: 0.65, travelMult: 0.9, group: "shield_branch", zone: "industrial" },
     { id: "comfort_dome", name: "Comfort Dome", desc: "Shield branch: +6% morale, events less severe", cost: { metal: 200, organics: 90 }, prod: { morale: 0.06 }, cons: { power: 1 }, requires: [{ id: "shield_dome", level: 2 }], group: "shield_branch", zone: "industrial" },
@@ -135,7 +135,7 @@ export const BIOME_BUILDINGS = {
     { id: "relay_spire", name: "Relay Spire", desc: "Lab branch: +8% cargo, -8% travel time", cost: { metal: 240, rare: 10, fuel: 40 }, prod: {}, cons: { power: 2 }, requires: [{ id: "anomaly_lab", level: 2 }], cargoMult: 1.08, travelMult: 0.92, group: "lab_branch", zone: "research" },
     { id: "ward_matrix", name: "Ward Matrix", desc: "Lab branch: -40% hazard, +3 rare/tick", cost: { metal: 260, rare: 12 }, prod: { rare: 3 }, cons: { power: 2 }, requires: [{ id: "anomaly_lab", level: 2 }], hazardMult: 0.6, group: "lab_branch", zone: "research" },
     { id: "logistics_depot", name: "Logistics Depot", desc: "+5% cargo, -5% travel time", cost: { metal: 180, fuel: 20 }, prod: {}, cons: { power: 1 }, cargoMult: 1.05, travelMult: 0.95, zone: "industrial" },
-    { id: "phase_relay", name: "Phase Relay", desc: "+5 signal/tick, -travel time for missions", cost: { metal: 240, rare: 10, fuel: 40 }, prod: { signal: 5 }, cons: { power: 2 }, travelMult: 0.85, zone: "research" },
+    { id: "phase_relay", name: "Phase Relay", desc: "+5 signal/tick, -travel time for expeditions", cost: { metal: 240, rare: 10, fuel: 40 }, prod: { signal: 5 }, cons: { power: 2 }, travelMult: 0.85, zone: "research" },
     { id: "anomaly_vault", name: "Anomaly Vault", desc: "+6 rare/tick, +6 research/tick", cost: { metal: 320, rare: 16 }, prod: { rare: 6, research: 6 }, cons: { power: 2 }, requires: [{ id: "anomaly_lab", level: 2 }], zone: "deep" },
   ],
 };
@@ -166,12 +166,12 @@ export const BASE_TRAITS = {
 export const TECH = [
   { id: "fuel_synth", tier: 1, name: "Fuel Synthesis", desc: "Unlocks Fuel Refinery building.", cost: { research: 12 }, unlock: 300, requires: [] },
   { id: "advanced_refining", tier: 2, name: "Advanced Refining", desc: "Unlocks Hydrogen Cracker fuel bays.", cost: { research: 140 }, unlock: 1200, requires: ["fuel_synth"] },
-  { id: "hazard_gear", tier: 2, name: "Hazard Gear", desc: "-25% mission hazard", cost: { research: 60 }, unlock: 900, requires: ["fuel_synth"] },
-  { id: "drone_log", tier: 2, name: "Logistics Drones", desc: "+20% mission cargo", cost: { research: 90 }, unlock: 1400, requires: ["fuel_synth"] },
+  { id: "hazard_gear", tier: 2, name: "Hazard Gear", desc: "-25% expedition hazard", cost: { research: 60 }, unlock: 900, requires: ["fuel_synth"] },
+  { id: "drone_log", tier: 2, name: "Logistics Drones", desc: "+20% expedition cargo", cost: { research: 90 }, unlock: 1400, requires: ["fuel_synth"] },
   { id: "deep_scan", tier: 2, name: "Deep Scan Arrays", desc: "+1 research/tick, +1 range tier, reveals deep targets", cost: { research: 160 }, unlock: 1600, requires: ["fuel_synth"] },
   { id: "shielding", tier: 3, name: "Thermal Shielding", desc: "-40% hazard on hot zones; unlocks fallen relay", cost: { research: 260 }, unlock: 2400, requires: ["deep_scan"] },
-  { id: "rift_mapping", tier: 4, name: "Rift Mapping", desc: "Unlocks anomalous missions, +20% rare cargo, +1 range tier", cost: { research: 360, rare: 12 }, unlock: 4200, requires: ["shielding","drone_log"] },
-  { id: "auto_pilots", tier: 3, name: "Autonomous Pilots", desc: "+1 mission slot, -10% travel time", cost: { research: 520, fuel: 80 }, unlock: 5200, requires: ["drone_log"] },
+  { id: "rift_mapping", tier: 4, name: "Rift Mapping", desc: "Unlocks anomalous expeditions, +20% rare cargo, +1 range tier", cost: { research: 360, rare: 12 }, unlock: 4200, requires: ["shielding","drone_log"] },
+  { id: "auto_pilots", tier: 3, name: "Autonomous Pilots", desc: "+1 expedition slot, -10% travel time", cost: { research: 520, fuel: 80 }, unlock: 5200, requires: ["drone_log"] },
   { id: "bio_domes", tier: 3, name: "Bio-Domes", desc: "+2 food/tick and +2 habitat passive", cost: { research: 540, organics: 120 }, unlock: 5200, requires: ["fuel_synth"] },
 ];
 
@@ -252,7 +252,7 @@ export const SYSTEM_TRAITS = [
   { id: "rich_metal", name: "Rich Metal", desc: "Dense ore belts and higher extraction yields." },
   { id: "high_resonance", name: "High Resonance", desc: "Scan returns trend higher, but surveys are slower." },
   { id: "quiet_orbit", name: "Quiet Orbit", desc: "Lower event frequency; stability holds longer." },
-  { id: "debris_field", name: "Debris Field", desc: "Salvage opportunities increase mission cargo." },
+  { id: "debris_field", name: "Debris Field", desc: "Salvage opportunities increase expedition cargo." },
   { id: "ion_storms", name: "Ion Storms", desc: "Hazards spike on aggressive runs." },
   { id: "ancient_relay", name: "Ancient Relay", desc: "Legacy infrastructure boosts travel efficiency." },
 ];
@@ -265,13 +265,13 @@ export const SURVEY_SEQUENCE = ["scan", "probe", "survey", "colonize", "colonize
 export const COLONY_ROLES = [
   { id: "relay", name: "Relay Anchor", desc: "Extends hub range and trims travel times." },
   { id: "survey", name: "Survey Anchor", desc: "Improves scan yield and survey throughput." },
-  { id: "logistics", name: "Logistics Anchor", desc: "Improves mission throughput and travel efficiency." },
+  { id: "logistics", name: "Logistics Anchor", desc: "Improves expedition throughput and travel efficiency." },
 ];
 export const COLONY_COST = { metal: 180, fuel: 60, food: 20, organics: 12 };
 export const CREW_PROGRAMS = [
-  { id: "mission_corps", name: "Mission Corps", desc: "Standardized mission playbooks: higher cargo, more objectives, lower hazard.", unlock: { milestone: "M1_LOCAL_OPS" }, cost: { research: 20, metal: 60, food: 10 } },
+  { id: "mission_corps", name: "Expedition Corps", desc: "Standardized expedition playbooks: higher cargo, more objectives, lower hazard.", unlock: { milestone: "M1_LOCAL_OPS" }, cost: { research: 20, metal: 60, food: 10 } },
   { id: "base_command", name: "Base Command", desc: "Outpost command training reduces event frequency and steadies recovery.", unlock: { milestone: "M2_FIRST_COLONY" }, cost: { research: 30, metal: 80, organics: 20 } },
-  { id: "science_guild", name: "Science Guild", desc: "Research mentorship improves scans and mission research yields.", unlock: { tech: "deep_scan" }, cost: { research: 35, organics: 24 } },
+  { id: "science_guild", name: "Science Guild", desc: "Research mentorship improves scans and expedition research yields.", unlock: { tech: "deep_scan" }, cost: { research: 35, organics: 24 } },
   { id: "logistics_wing", name: "Logistics Wing", desc: "Improves travel efficiency and lowers fuel overhead.", unlock: { milestone: "M2_SYSTEMS_DISCOVERED" }, cost: { metal: 90, fuel: 30, food: 12 } },
   { id: "morale_office", name: "Morale Office", desc: "Crew counseling boosts morale stability across hubs and outposts.", unlock: { milestone: "M3_INTEGRATION_UNLOCK" }, cost: { food: 30, organics: 30, research: 20 } },
 ];
@@ -281,7 +281,7 @@ export const CREW_CONTRACTS = [
     name: "Salvage Ace",
     role: "miner",
     trait: "+20% to miner output",
-    perk: "Improves metal/rare salvage from missions.",
+    perk: "Improves metal/rare salvage from expeditions.",
     bonus: 0.2,
     durationMs: 21600000,
     cost: { metal: 120, fuel: 18, food: 10 },
@@ -313,7 +313,7 @@ export const CREW_CONTRACTS = [
     id: "relay_tactician",
     name: "Relay Tactician",
     role: "engineer",
-    trait: "+16% engineer output, mission hazard eased",
+    trait: "+16% engineer output, expedition hazard eased",
     perk: "Travel improves and scans get sharper.",
     bonus: 0.16,
     durationMs: 18000000,
@@ -400,13 +400,13 @@ export const FACTION_BUILDINGS = {
     {
       id: "catalog_node",
       name: "Catalog Node",
-      desc: "Indexes fragment finds for faster mission planning.",
+      desc: "Indexes fragment finds for faster expedition planning.",
       baseGoal: { metal: 80000, organics: 25000, research: 30000 },
       tierScale: 1.85,
       maxTier: 4,
       unlocks: {
-        1: ["Event: Signal Cache", "Buff: +6% mission cargo"],
-        2: ["Directive: Relay Archive", "Buff: +8% mission cargo"],
+        1: ["Event: Signal Cache", "Buff: +6% expedition cargo"],
+        2: ["Directive: Relay Archive", "Buff: +8% expedition cargo"],
         3: ["Event: Archive Surge", "Buff: -8% travel time"],
         4: ["Network: Mission Ledger"],
       },
@@ -556,7 +556,7 @@ export const FACTION_DIRECTIVES = {
     { id: "directive_convoy", name: "Convoy Protocol", desc: "Stabilize cargo flows during hazardous runs.", requires: { building: "dock_web", tier: 2 }, effect: "Cargo +5% while active." },
   ],
   aegis: [
-    { id: "directive_shield", name: "Silence Watch", desc: "Reduce hazard spikes during missions.", requires: { building: "stability_core", tier: 2 }, effect: "Hazard -5% while active." },
+    { id: "directive_shield", name: "Silence Watch", desc: "Reduce hazard spikes during expeditions.", requires: { building: "stability_core", tier: 2 }, effect: "Hazard -5% while active." },
     { id: "directive_morale", name: "Care Cadence", desc: "Boost morale stability and recovery.", requires: { building: "morale_arc", tier: 2 }, effect: "Morale stability +4% while active." },
   ],
   communion: [

@@ -5,7 +5,7 @@ const BUFF_LABELS = {
   scanMult: "Scan yield",
   travelMult: "Travel time",
   hazardMult: "Hazard exposure",
-  missionCargo: "Mission cargo",
+  missionCargo: "Expedition cargo",
   rangeBonus: "Range tier",
   researchMult: "Research output",
   signalMult: "Signal output",

@@ -395,7 +395,7 @@ export default function CrewView({ state, hire, rollRecruits, changeCrew, format
             </div>
             <div className="card crew-panel">
               <div className="row-title mb-1">Training Programs</div>
-              <div className="text-sm text-muted mb-2">Invest in formal crew programs to boost missions, stabilize outposts, and improve scan output as the frontier grows.</div>
+              <div className="text-sm text-muted mb-2">Invest in formal crew programs to boost expeditions, stabilize outposts, and improve scan output as the frontier grows.</div>
               <div className="list">
                 {(crewProgramDefs || []).map((program) => {
                   const level = state.crewPrograms?.[program.id] || 0;
