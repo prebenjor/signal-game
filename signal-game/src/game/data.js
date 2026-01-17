@@ -68,7 +68,7 @@ export const HUB_BUILDING_TIERS = {
 export const HUB_BUILDINGS = [
   { id: "salvage_dock", name: "Salvage Dock", desc: "+2 metal/tick", cost: { fuel: 8 }, prod: { metal: 2 }, cons: {}, tier: 0, category: "materials" },
   { id: "biofilter_vats", name: "Biofilter Vats", desc: "+2 organics/tick", cost: { metal: 25 }, prod: { organics: 2 }, cons: {}, tier: 0, category: "life" },
-  { id: "reactor", name: "Micro Reactor", desc: "+3 power/tick, -1 fuel", cost: { metal: 100, fuel: 6 }, prod: { power: 3 }, cons: { fuel: 1 }, tier: 0, category: "power", unlock: { requires: [{ id: "salvage_dock", level: 1 }] } },
+  { id: "reactor", name: "Micro Reactor", desc: "+3 power/tick, -1 fuel", cost: { metal: 70, fuel: 5 }, prod: { power: 3 }, cons: { fuel: 1 }, tier: 0, category: "power", unlock: { requires: [{ id: "salvage_dock", level: 1 }] } },
   { id: "signal_uplink", name: "Signal Uplink", desc: "+2 signal/tick", cost: { metal: 40, organics: 12 }, prod: { signal: 2 }, cons: { power: 1 }, tier: 0, category: "signal", unlock: { requires: [{ id: "reactor", level: 1 }] } },
   { id: "refinery", name: "Fuel Refinery", desc: "+1 fuel/tick", cost: { metal: 110, organics: 20 }, prod: { fuel: 1 }, cons: { power: 1 }, tier: 1, category: "logistics", unlock: { requires: [{ id: "biofilter_vats", level: 2 }] } },
   { id: "hab", name: "Hab Module", desc: "+3 habitat", cost: { metal: 140, organics: 50 }, prod: { habitat: 3 }, cons: { power: 1 }, tier: 1, category: "life", unlock: { requires: [{ id: "biofilter_vats", level: 1 }] } },
