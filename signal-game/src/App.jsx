@@ -640,7 +640,6 @@ export default function App() {
     if (state.hubUpgrades.fuel_farm) addContribution(applyProdMult({ fuel: 1 * state.hubUpgrades.fuel_farm }, focusMods, contractMods), {}, false);
     if (state.hubUpgrades.scan_array) addContribution(applyProdMult({ signal: 2 * state.hubUpgrades.scan_array }, focusMods, contractMods), {}, false);
     if (hubMods.habitat || hubMods.morale) addContribution({ habitat: hubMods.habitat, morale: hubMods.morale }, {}, false);
-    if (state.tech.fuel_synth) addContribution(applyProdMult({ fuel: 1 * state.tech.fuel_synth }, focusMods, contractMods), {}, false);
     if (state.tech.deep_scan) addContribution(applyProdMult({ research: 1 * state.tech.deep_scan }, focusMods, contractMods), {}, false);
     if (state.tech.bio_domes) addContribution(applyProdMult({ food: 2 * state.tech.bio_domes, habitat: 2 * state.tech.bio_domes }, focusMods, contractMods), {}, false);
 
@@ -3644,7 +3643,7 @@ function buildNavTabs(capabilities, supabaseReady) {
   if (capabilities.missions) tabs.push({ id: "missions", label: "Missions" });
   if (capabilities.bases) tabs.push({ id: "bases", label: "Bases" });
   if (capabilities.crew) tabs.push({ id: "crew", label: "Crew" });
-  if (capabilities.tech) tabs.push({ id: "tech", label: "Tech" });
+  if (capabilities.tech) tabs.push({ id: "tech", label: "Research Command" });
   if (capabilities.systems) tabs.push({ id: "systems", label: "Systems" });
   if (capabilities.faction && supabaseReady) tabs.push({ id: "faction", label: "Faction" });
   tabs.push({ id: "codex", label: "Codex" });
@@ -3673,7 +3672,7 @@ function unlockHintText(state, supabaseReady) {
   if (!unlocked.has("M1_TECH_ACCESS")) {
     hints.push({
       id: "tech",
-      title: "Research Grid",
+      title: "Research Command",
       reqs: [
         `Signal ${Math.floor(signal)}/${UNLOCKS.tech.signal}`,
         `Research ${Math.floor(research)}/${UNLOCKS.tech.research}`,

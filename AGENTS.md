@@ -512,3 +512,8 @@ TL;DR Summary
 - Outpost operations remain as current base management.
 - Range tiers gate discovery; signal + research gate surveys.
 - Traits create strategic choices; fragments tie to faction prestige.
+
+## New Ideas
+- Resource Forecast Overlay: show time-to-zero per resource and the Auto-Balancer action chosen.
+- Expedition Queue Scheduler: chain survey -> construction runs with fuel budgets and slot planning.
+- Research Alerts: highlight hub buildings unlocked by pending research with a one-click jump.
