@@ -396,3 +396,119 @@ Tracks (reorganize tech tree)
 
 Rename
 - Prefer "Research Command" for the Tech tab.
+
+## 13. Mission and Base Integration (Expedition Command)
+Problem
+- Missions and bases feel separate; they should be a unified exploration -> colonization flow.
+
+Solution: Merge into "Expedition Command"
+Single unified tab structure:
+- System Map (visual galaxy view)
+- Active Expeditions (missions in progress)
+- Established Outposts (your bases)
+- Expedition Planning (launch new missions)
+
+Player Flow
+Phase 1: Discovery (Early Game)
+- System map shows partially revealed sectors.
+- Player selects unexplored system -> launches Survey Mission.
+- Survey costs: Metal + Fuel + Signal range.
+- Mission completes -> system reveals planet types, resource richness, hazards.
+- Result: System marked "Surveyed" and becomes colonizable.
+
+Phase 2: Colonization (Mid Game)
+- Player selects surveyed system -> views planet list.
+- "Establish Outpost" triggers a one-time construction expedition.
+- Cost: Metal + Organics + Fuel + Crew specialist.
+- Mission completes -> base becomes permanent and appears in Established Outposts.
+- Result: Base generates passive resources (existing production structures).
+
+Phase 3: Operations (Ongoing)
+Established Outposts tab shows all bases (current Site Overview):
+- Fabrication Bay: build production structures (Ore Rig, Fuel Cracker, Solar Sail).
+- Incident Queue: events require crew/resources to resolve.
+- Field Ops: active abilities with cooldowns.
+- Focus Protocols: adjust resource priorities.
+- Supply Runs: auto-missions that cost fuel to maintain base upkeep.
+
+Tier-Gated Exploration (Range Tiers)
+- Tier 1 (Nexus 1-15): Local asteroid belt only (Debris Field).
+  - Unlock: Debris Field base (28 metal, 1 fuel, 1 research/tick).
+- Tier 2 (Nexus 16-30): Inner system (Ice Moon, Rocky Planet).
+  - Research: Deep Scan Arrays.
+  - Unlock: Ice Moon base (16 organics, 14 fuel, 8 food/tick).
+  - Unlock: Rocky Planet base (balanced resources).
+- Tier 3 (Nexus 31-50): Outer system (Lava Rock, Gas Giant).
+  - Research: Quantum Mapping.
+  - Unlock: Lava Rock base (20 metal, 18 organics, 6 research, 4 rare/tick).
+  - Unlock: Gas Giant base (Fuel Depot - alternative fuel source).
+- Tier 4 (Nexus 51-60): Distant systems via Relay Anchors.
+  - Research: Wormhole Navigation.
+  - Unlock: Exotic planets (unique resources, prestige materials).
+  - Signal network: build Relay Anchors to maintain connection.
+
+System Discovery Mechanics
+- Hidden until explored: map shows "signal echoes" at range boundaries.
+- Survey requirement: Signal range + research investment.
+- Survey results vary:
+  - High value: multiple planets, rare resources, low hazards.
+  - Low value: single planet, common resources, high hazards.
+  - Mystery: anomalies that unlock special research or prestige bonuses.
+
+System Traits (Random)
+- Metal-Rich Belt: +50% metal output from bases.
+- Geothermal Activity: +30% power, +10% hazard.
+- Abandoned Relay: -50% signal upkeep, unlocks bonus research.
+- Contested Space: random raid events (late-game threat).
+
+Expedition Launch Revamp
+Step 1: Select Destination
+- System Map -> click unexplored system -> "Survey Expedition" appears in planning.
+Step 2: Configure Expedition
+- Distance, travel time, stance (Cautious/Balanced/Aggressive).
+- Assign specialist (ties to crew system).
+- Fuel boost slider (reduces travel time).
+- Cost shown before launch.
+Step 3: Track Progress
+- Active Expeditions list with progress and slot count.
+Step 4: Results
+- Survey complete -> discovered planets + traits -> optional outpost establish.
+
+Integration with Existing Systems
+Missions -> Expeditions
+- "Debris Field" mission becomes "Debris Field Outpost" (permanent base).
+- "Target Locks" becomes "Expedition Queue".
+- "Launch Bay" becomes "Expedition Planning".
+- Operational stance carries over as-is.
+
+Bases -> Outpost Network
+- Fabrication Bay remains.
+- Incident Queue remains.
+- Field Ops remains.
+- Site Overview becomes "Outpost Dashboard".
+
+Signal + Range -> Discovery Gates
+- Range tier determines system visibility.
+- Signal determines survey cost.
+- Deep Scan Arrays unlock Range Tier 2.
+- Relay Anchors extend signal to distant systems.
+
+Prestige Integration (Fragments)
+- Surveying new systems grants fragments.
+- Establishing outposts grants fragments.
+- Faction projects require specific discoveries.
+Example: "Survey 3 high-hazard systems (0/3)" -> 200 fragments + hazard reduction research.
+
+System Persistence Across Prestige
+- Surveyed systems remain discovered after prestige.
+- Outpost locations persist but must be re-established (costs reduced).
+- Traits randomize on prestige for replayability.
+- New exotic systems unlock at higher prestige tiers.
+
+TL;DR Summary
+- Merge Missions + Bases into "Expedition Command".
+- Survey missions reveal systems and traits.
+- Outpost establishment is a construction expedition.
+- Outpost operations remain as current base management.
+- Range tiers gate discovery; signal + research gate surveys.
+- Traits create strategic choices; fragments tie to faction prestige.
