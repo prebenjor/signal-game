@@ -173,6 +173,7 @@ export default function MissionsView({ state, startMission, setAutoLaunch, setSe
               depletionFactor={depletionFactor}
               missionMods={missionMods}
               missionDurationMult={missionDurationMult}
+              isUnlockedUI={isUnlockedUI}
             />
           </div>
         )}
@@ -228,10 +229,11 @@ export default function MissionsView({ state, startMission, setAutoLaunch, setSe
   return content;
 }
 
-function MissionLaunch({ state, startMission, setAutoLaunch, format, missionModeById, missionYield, formatDuration, bodies, missionModes, baseBonuses, depletionFactor, missionMods, missionDurationMult }) {
+function MissionLaunch({ state, startMission, setAutoLaunch, format, missionModeById, missionYield, formatDuration, bodies, missionModes, baseBonuses, depletionFactor, missionMods, missionDurationMult, isUnlockedUI }) {
   const [fuelBoost, setFuelBoost] = useState(0);
   const [modeId, setModeId] = useState("balanced");
   const [specialist, setSpecialist] = useState("none");
+  const [launchMessage, setLaunchMessage] = useState("");
   const body = bodies.find((b) => b.id === state.selectedBody) || bodies[0];
   const bonuses = baseBonuses(body.id);
   const efficiency = depletionFactor(body.id);
@@ -247,6 +249,18 @@ function MissionLaunch({ state, startMission, setAutoLaunch, format, missionMode
   const travelMs = Math.max(15000, ((body.travel * 1000 * (bonuses.travel || 1) * travelMult) - fuelBoost * 3000 + (mode?.durationMs || 0)) * (missionDurationMult || 1) * (state.tech.auto_pilots ? 0.9 : 1));
   const efficiencyPct = Math.round(efficiency * 100);
   const command = missionMods?.command || { used: 0, capacity: 0, over: 0 };
+  const targetLocked = isUnlockedUI ? !isUnlockedUI(state, body) : false;
+  const fuelCost = !state.milestones?.firstLaunch ? 0 : Math.max(5, Math.floor(body.travel / 3)) + fuelBoost;
+  const slotsFull = active.length >= slots;
+  const fuelBlocked = fuelCost > 0 && (state.resources.fuel || 0) < fuelCost;
+  const canDeploy = !targetLocked && !slotsFull && !fuelBlocked;
+  const deployMessage = targetLocked
+    ? "Target locked. Select an available body in Target Lattice."
+    : slotsFull
+      ? "All expedition slots are busy."
+      : fuelBlocked
+        ? `Need ${fuelCost} fuel to deploy.`
+        : "";
   useEffect(() => {
     if (!missionModes.length) return;
     if (!missionModes.some((m) => m.id === modeId)) {
@@ -295,7 +309,20 @@ function MissionLaunch({ state, startMission, setAutoLaunch, format, missionMode
         <div className="text-xs text-muted">Hazard {Math.round(hazard * 100)}% | Failure risk ~{failChance}% | Travel {formatDuration(travelMs)} | Mode {mode?.name}</div>
         <div className="text-xs text-muted">Efficiency {efficiencyPct}% | Variance +/-10%</div>
         {command.over > 0 && <div className="text-xs text-muted">Command over-capacity: -{Math.round(command.over * 7)}% cargo, +{Math.round(command.over * 8)}% travel time.</div>}
-        <button className="btn btn-primary w-full" onClick={() => startMission(body.id, fuelBoost, modeId, specialist)}>Deploy</button>
+        <button
+          className="btn btn-primary w-full"
+          disabled={!canDeploy}
+          onClick={() => {
+            const result = startMission(body.id, fuelBoost, modeId, specialist);
+            if (result?.ok === false) setLaunchMessage(result.message || "Unable to deploy.");
+            else setLaunchMessage("");
+          }}
+        >
+          Deploy
+        </button>
+        {(deployMessage || launchMessage) && (
+          <div className="text-xs text-muted">{deployMessage || launchMessage}</div>
+        )}
       </div>
 
       <div className="card space-y-2 mission-panel">

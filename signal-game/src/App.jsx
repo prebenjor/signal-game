@@ -1203,18 +1203,22 @@ export default function App() {
 
   // Launch mission with stance/specialist; charges fuel logistics and schedules resolution.
   function startMission(bodyId, fuelBoost = 0, modeId = "balanced", specialist = "none", silent = false) {
-    if (!capabilities.missions) { log("Expedition console locked."); return; }
+    const fail = (message) => {
+      if (!silent) log(message);
+      return { ok: false, message };
+    };
+    if (!capabilities.missions) return fail("Expedition console locked.");
     const body = BODIES.find((b) => b.id === bodyId && isUnlocked(b));
-    if (!body) { log("Target locked."); return; }
+    if (!body) return fail("Target locked.");
     const slots = 1 + (state.hubUpgrades.launch_bay || 0) + (state.tech.auto_pilots ? 1 : 0);
-    if ((state.missions.active || []).length >= slots) { log("All expedition slots busy."); return; }
+    if ((state.missions.active || []).length >= slots) return fail("All expedition slots busy.");
     const crewMods = crewProgramModifiers(state);
     const missionMods = colonyModifiers(state);
     const hubMods = hubUpgradeMods(state);
     let fuelCost = Math.max(5, Math.floor(body.travel / 3)) + fuelBoost;
     fuelCost = Math.ceil(fuelCost * (missionMods.fuelMult || 1) * (crewMods.fuelMult || 1) * (hubMods.fuelMult || 1));
     if (!state.milestones?.firstLaunch) fuelCost = 0;
-    if (state.resources.fuel < fuelCost) { log("Not enough fuel."); return; }
+    if (fuelCost > 0 && state.resources.fuel < fuelCost) return fail("Not enough fuel.");
     bumpResources({ fuel: -fuelCost });
     const mode = isMissionModeUnlocked(state, missionModeById(modeId)) ? missionModeById(modeId) : firstUnlockedMissionMode(state);
     const bonuses = baseBonuses(state, body.id);
@@ -1231,8 +1235,9 @@ export default function App() {
     dispatch({ type: "UPDATE", patch: { missions: { active: [...(state.missions.active || []), mission] } } });
     unlockCodex("mission_ops");
     unlockCodex("local_ops");
-    if (!silent) log(`Launched ${mode?.name || "mission"} to ${body.name}. ETA ${formatDuration(duration)}.`);
+    if (!silent) log(`Launched ${mode?.name || "expedition"} to ${body.name}. ETA ${formatDuration(duration)}.`);
     dispatch({ type: "UPDATE", patch: { milestones: { ...state.milestones, firstLaunch: true } } });
+    return { ok: true };
   }
 
   function setAutoLaunch(payload) {
