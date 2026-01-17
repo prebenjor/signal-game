@@ -6,7 +6,7 @@ export const TICK_MS = 500;
 export const SAVE_MS = 5000;
 export const MAX_EVENTS_PER_BASE = 4;
 export const SAVE_VERSION = 11;
-export const TAB_ORDER = ["hub", "missions", "bases", "crew", "tech", "systems", "faction", "codex", "wiki", "log", "profile"];
+export const TAB_ORDER = ["hub", "expeditions", "crew", "tech", "systems", "faction", "codex", "wiki", "log", "profile"];
 export const EVENT_COOLDOWN_MS = [45000, 90000];
 export const FRAGMENT_TOTAL = 1000;
 export const FRAGMENT_THRESHOLDS = [
@@ -82,6 +82,8 @@ export const HUB_BUILDINGS = [
   { id: "signal_amplifier", name: "Signal Amplifier", desc: "+5 signal/tick", cost: { metal: 300, organics: 80, fuel: 40 }, prod: { signal: 5 }, cons: { power: 2 }, tier: 2, category: "signal", unlock: { requires: [{ id: "signal_uplink", level: 3 }] } },
   { id: "catalyst_cracker", name: "Catalyst Cracker", desc: "+2 fuel/tick, -1 organics", cost: { metal: 320, fuel: 40, organics: 60 }, prod: { fuel: 2 }, cons: { power: 1, organics: 1 }, tier: 2, category: "logistics", costExp: 1.13, unlock: { requires: [{ id: "refinery", level: 2 }] } },
   { id: "hydrogen_cracker", name: "Hydrogen Cracker", desc: "+3 fuel/tick, -1 organics", cost: { metal: 420, organics: 120, research: 60 }, prod: { fuel: 3 }, cons: { power: 2, organics: 1 }, tier: 2, category: "logistics", costExp: 1.12, unlock: { tech: "advanced_refining", requires: [{ id: "refinery", level: 3 }] } },
+  { id: "auto_balancer", name: "Auto-Balancer", desc: "Throttles conversion to prevent resource collapse.", cost: { metal: 2000, organics: 1000, research: 500 }, prod: {}, cons: { power: 1 }, tier: 2, category: "logistics", costExp: 1.16, unlock: { hubLevel: 20, requires: [{ id: "refinery", level: 2 }] } },
+  { id: "priority_manager", name: "Priority Manager", desc: "Allocate output focus across critical resources.", cost: { metal: 3200, organics: 1400, research: 1000 }, prod: {}, cons: { power: 1 }, tier: 2, category: "logistics", costExp: 1.18, unlock: { hubLevel: 25, requires: [{ id: "auto_balancer", level: 1 }] } },
   { id: "logistics_hub", name: "Logistics Hub", desc: "+3 fuel/tick, -3% travel time", cost: { metal: 520, fuel: 160, organics: 80 }, prod: { fuel: 3 }, cons: { power: 2 }, travelMult: 0.97, tier: 3, category: "logistics", unlock: { requires: [{ id: "refinery", level: 3 }] } },
   { id: "synthesis_stack", name: "Synthesis Stack", desc: "+5 fuel/tick, -2 organics", cost: { metal: 640, fuel: 140, organics: 180, research: 80 }, prod: { fuel: 5 }, cons: { power: 2, organics: 2 }, tier: 3, category: "logistics", unlock: { requires: [{ id: "catalyst_cracker", level: 2 }] } },
   { id: "hab_ring", name: "Habitat Ring", desc: "+10 habitat, +0.05 morale/tick", cost: { metal: 520, organics: 200, fuel: 100 }, prod: { habitat: 10, morale: 0.05 }, cons: { power: 2 }, tier: 3, category: "life", unlock: { requires: [{ id: "hab", level: 3 }] } },
@@ -194,10 +196,10 @@ export const BASE_OPS = {
 export const STARTER_TOUR = [
   { title: "Signal Uplink", body: "Signal is a progress meter. Build uplinks to raise it and unlock new systems.", anchor: "hub" },
   { title: "Hub Status", body: "Power, food, habitat, and morale drive sustainability. Keep power >= 0 and food above upkeep.", anchor: "hub" },
-  { title: "Missions", body: "Launch expeditions based on biome hazards. Fuel spend scales with distance.", anchor: "missions" },
-  { title: "Bases", body: "Each biome unlocks unique structures and events. Build per-body upgrades on-site.", anchor: "bases" },
+  { title: "Expeditions", body: "Plan expeditions based on biome hazards. Fuel spend scales with distance.", anchor: "expeditions" },
+  { title: "Outposts", body: "Each biome unlocks unique structures and events. Build per-body upgrades on-site.", anchor: "expeditions" },
   { title: "Crew & Recruits", body: "Hire specialists with role bonuses. Assign crew to boost production.", anchor: "crew" },
-  { title: "Fragments", body: "Some missions recover strange fragments. Global reassembly milestones unlock new codex entries.", anchor: "hub" },
+  { title: "Fragments", body: "Some expeditions recover strange fragments. Global reassembly milestones unlock new codex entries.", anchor: "hub" },
 ];
 
 export const CODEX_ENTRIES = [
@@ -211,12 +213,12 @@ export const CODEX_ENTRIES = [
   { id: "veil_reconstruction", title: "The Reconstruction", body: "At 100%, the fragments converge. What remains depends on which doctrine holds the most." },
   { id: "foundations", title: "Baseline Foundations", body: "Save versioning, capability gating, and milestone triggers keep the loop stable as the frontier expands." },
   { id: "scan_ops", title: "Signal Uplink", body: "Signal rises through uplink infrastructure and unlocks new systems, tech tiers, and story milestones." },
-  { id: "mission_ops", title: "Mission Ops", body: "Targets have depletion curves. Expect diminishing returns as you farm the same body." },
+  { id: "mission_ops", title: "Expedition Ops", body: "Expedition targets have depletion curves. Expect diminishing returns as you farm the same body." },
   { id: "hub_ops", title: "Hub Operations", body: "Hub upgrades expand range and slot capacity, unlocking higher-tier targets." },
-  { id: "base_ops", title: "Outpost Operations", body: "Bases open unique structures, events, and ops per biome. Expand once missions stabilize." },
+  { id: "base_ops", title: "Outpost Operations", body: "Outposts open unique structures, events, and ops per biome. Expand once expeditions stabilize." },
   { id: "crew_ops", title: "Crew Command", body: "Crew roles and fatigue impact production, travel, and hazard tolerance." },
   { id: "tech_ops", title: "Research Tracks", body: "Tech branches unlock new targets and efficiency tools." },
-  { id: "local_ops", title: "Local Signal Operations", body: "Early missions and range upgrades push you toward the first system discovery threshold." },
+  { id: "local_ops", title: "Local Signal Operations", body: "Early expeditions and range upgrades push you toward the first system discovery threshold." },
   { id: "systems_light", title: "System Discovery", body: "Systems are persistent entities with traits and distance. Survey chains unlock colonisable worlds." },
   { id: "colonies_anchor", title: "First Colony Anchors", body: "Colonies add hub modifiers and consume command capacity, forcing trade-offs." },
   { id: "integration_projects", title: "Integration Projects", body: "Multi-day projects stabilize systems and change global rules like travel penalties and event rates." },
@@ -229,10 +231,10 @@ export const WIKI_ENTRIES = [
   { id: "signal_meter", title: "Signal Meter", body: "Signal is not spent. It rises from uplink infrastructure and unlocks stages, targets, and story milestones." },
   { id: "signal_cap", title: "Signal Cap & Saturation", body: "When signal rises above the cap, saturation reduces further signal gain. Raise caps via upgrades, integrations, and tech." },
   { id: "power_gate", title: "Power Gating", body: "If projected power is <= 0, power-dependent production stalls. Build reactors before scaling heavy industry." },
-  { id: "depletion", title: "Target Depletion", body: "Running the same mission target lowers yields. Rotate targets and extend range to recover efficiency." },
-  { id: "command", title: "Command Capacity", body: "Colonies and missions consume command capacity. Over-capacity reduces cargo and slows travel." },
+  { id: "depletion", title: "Target Depletion", body: "Running the same expedition target lowers yields. Rotate targets and extend range to recover efficiency." },
+  { id: "command", title: "Command Capacity", body: "Colonies and expeditions consume command capacity. Over-capacity reduces cargo and slows travel." },
   { id: "maintenance", title: "Maintenance Caps", body: "Each base has a maintenance cap. Exceeding it lowers output until you build maintenance bays." },
-  { id: "fragments", title: "Fragment Recovery", body: "Fragment shards can appear in mission cargo. Higher tiers and side objectives improve odds." },
+  { id: "fragments", title: "Fragment Recovery", body: "Fragment shards can appear in expedition cargo. Higher tiers and side objectives improve odds." },
 ];
 
 export const MISSION_MODES = [

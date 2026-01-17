@@ -31,6 +31,7 @@ export default function BasesView({
   setBaseWorkerPreset,
   baseZones,
   unlockBaseZone,
+  embedded = false,
 }) {
   const body = bodies.find((b) => b.id === state.selectedBody) || bodies[0];
   const buildings = biomeBuildings[body.type] || [];
@@ -107,25 +108,27 @@ export default function BasesView({
     return `${delta > 0 ? "+" : ""}${delta}%`;
   };
 
-  return (
-    <section className="panel space-y-4 base-command">
-      <div className="relative overflow-hidden rounded-2xl border border-emerald-400/20 bg-slate-950/80 p-4 base-banner">
-        <div className="absolute inset-0 bg-[radial-gradient(circle_at_top,_rgba(16,185,129,0.18),transparent_60%)]" />
-        <div className="absolute inset-x-0 bottom-0 h-12 bg-gradient-to-t from-slate-950/90 to-transparent" />
-        <div className="relative z-10 flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
-          <div>
-            <div className="text-xs uppercase tracking-[0.2em] text-emerald-200/70">Outpost Command</div>
-            <div className="text-2xl font-semibold">Bases</div>
-            <div className="text-sm text-muted mt-1">Coordinate structures, incidents, and site ops. Mission targeting lives in Missions.</div>
-          </div>
-          <div className="flex flex-wrap gap-2 text-xs">
-            <span className="tag">{labelify(body.type)} Site</span>
-            <span className="tag">Travel {formatDuration(body.travel * 1000)}</span>
-            <span className="tag">Hazard {(body.hazard * 100).toFixed(0)}%</span>
-            <span className="tag">Incidents {incidents.length}/4</span>
+  const content = (
+    <div className={`${embedded ? "" : "panel "}space-y-4 base-command`}>
+      {!embedded && (
+        <div className="relative overflow-hidden rounded-2xl border border-emerald-400/20 bg-slate-950/80 p-4 base-banner">
+          <div className="absolute inset-0 bg-[radial-gradient(circle_at_top,_rgba(16,185,129,0.18),transparent_60%)]" />
+          <div className="absolute inset-x-0 bottom-0 h-12 bg-gradient-to-t from-slate-950/90 to-transparent" />
+          <div className="relative z-10 flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
+            <div>
+              <div className="text-xs uppercase tracking-[0.2em] text-emerald-200/70">Outpost Command</div>
+              <div className="text-2xl font-semibold">Bases</div>
+              <div className="text-sm text-muted mt-1">Coordinate structures, incidents, and site ops. Mission targeting lives in Missions.</div>
+            </div>
+            <div className="flex flex-wrap gap-2 text-xs">
+              <span className="tag">{labelify(body.type)} Site</span>
+              <span className="tag">Travel {formatDuration(body.travel * 1000)}</span>
+              <span className="tag">Hazard {(body.hazard * 100).toFixed(0)}%</span>
+              <span className="tag">Incidents {incidents.length}/4</span>
+            </div>
           </div>
         </div>
-      </div>
+      )}
       <div className="rounded-2xl border border-white/10 bg-slate-950/70 p-4 space-y-3 base-deck">
         <div className="row row-between">
           <div>
@@ -475,6 +478,8 @@ export default function BasesView({
           </div>
         )}
       </div>
-    </section>
+    </div>
   );
+
+  return content;
 }

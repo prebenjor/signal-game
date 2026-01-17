@@ -16,13 +16,13 @@ import "./App.css";
 import { supabase, supabaseConfigured } from "./lib/supabase";
 import { STORAGE_KEY, LEGACY_KEY, GAME_TITLE, TICK_MS, SAVE_MS, MAX_EVENTS_PER_BASE, SAVE_VERSION, EVENT_COOLDOWN_MS, FRAGMENT_TOTAL, FRAGMENT_THRESHOLDS, PACE, CREW_FATIGUE, CONTRACT_REFRESH_MS, COST_EXP, HUB_TIER_STEP, HUB_TIER_COST_MULT, HUB_UPGRADE_TIER_MULT, SYSTEM_EVENT_COOLDOWN_MS, MAX_SYSTEM_EVENTS, BODIES, HUB_UPGRADES, HUB_BUILDINGS, HUB_BUILDING_TIERS, BIOME_BUILDINGS, BASE_ZONES, BASE_TRAITS, TECH, BASE_OPS, STARTER_TOUR, CODEX_ENTRIES, WIKI_ENTRIES, MISSION_MODES, SYSTEM_NAME_PARTS, SYSTEM_TRAITS, SYSTEM_SURVEY_STEPS, SURVEY_SEQUENCE, COLONY_ROLES, COLONY_COST, CREW_PROGRAMS, CREW_CONTRACTS, SYSTEM_EVENTS, INTEGRATION_PROJECTS, GALAXY_RULESETS, DOCTRINES, FACTION_OVERRIDES } from "./game/data";
 
-const MissionsView = lazy(() => import("./views/Missions"));
-const BasesView = lazy(() => import("./views/Bases"));
+const ExpeditionsView = lazy(() => import("./views/Expeditions"));
 const CrewView = lazy(() => import("./views/Crew"));
 const TechView = lazy(() => import("./views/Tech"));
 const FactionView = lazy(() => import("./views/Faction"));
 
 const viewPreloaders = {
+  expeditions: () => import("./views/Expeditions"),
   missions: () => import("./views/Missions"),
   bases: () => import("./views/Bases"),
   crew: () => import("./views/Crew"),
@@ -65,6 +65,8 @@ const initialState = {
   population: { total: 3, progress: 0 },
   fragments: { recovered: 0 },
   workers: { total: 3, assigned: { miner: 1, botanist: 1, engineer: 1 }, bonus: { miner: 0, botanist: 0, engineer: 0 }, satisfaction: 1 },
+  autoBalance: { enabled: true, mode: "balanced" },
+  priority: { metal: 20, organics: 20, fuel: 20, food: 20, research: 20 },
   hubBuildings: {},
   hubUpgrades: {},
   systems: [],
@@ -659,12 +661,20 @@ export default function App() {
       addContribution(applyProdMult(prod, focusMods, contractMods), scaleCons(def.cons, lvl), !!def.cons?.power);
     });
 
-    const sumRates = (powerGate) => {
+    const sumRates = (powerGate, throttleMap) => {
       const rates = { signal: 0, research: 0, metal: 0, organics: 0, fuel: 0, power: 0, food: 0, morale: 0, habitat: 0, rare: 0 };
       contributions.forEach(({ prod, cons, requiresPower }) => {
-        const scale = powerGate && requiresPower ? 0 : 1;
+        let scale = powerGate && requiresPower ? 0 : 1;
+        if (throttleMap && cons && Object.keys(cons).length) {
+          const throttle = Object.keys(cons).reduce((min, key) => {
+            const value = throttleMap[key];
+            if (!Number.isFinite(value)) return min;
+            return Math.min(min, value);
+          }, 1);
+          scale *= throttle;
+        }
         Object.entries(prod).forEach(([k, v]) => rates[k] = (rates[k] || 0) + v * scale);
-        Object.entries(cons || {}).forEach(([k, v]) => rates[k] = (rates[k] || 0) - v);
+        Object.entries(cons || {}).forEach(([k, v]) => rates[k] = (rates[k] || 0) - v * scale);
       });
       return rates;
     };
@@ -673,7 +683,23 @@ export default function App() {
     const projected = sumRates(false);
     const projectedPower = (state.resources.power || 0) + projected.power;
     const powerGate = projectedPower <= 0;
-    const rates = sumRates(powerGate);
+    let rates = sumRates(powerGate);
+    const autoBalanceEnabled = (state.hubBuildings.auto_balancer || 0) > 0 && (state.autoBalance?.enabled ?? true);
+    if (autoBalanceEnabled) {
+      const horizonTicks = Math.max(1, Math.round(30000 / TICK_MS));
+      const throttles = {};
+      Object.entries(rates).forEach(([key, rate]) => {
+        if (rate >= 0) return;
+        const reserve = r[key] || 0;
+        const projectedReserve = reserve + rate * horizonTicks;
+        if (projectedReserve < 0) {
+          throttles[key] = clamp(reserve / Math.max(1, Math.abs(rate) * horizonTicks), 0, 1);
+        }
+      });
+      if (Object.keys(throttles).length) {
+        rates = sumRates(powerGate, throttles);
+      }
+    }
     const fuelShort = (state.resources.fuel || 0) <= 0 && (rates.fuel || 0) <= 0;
     if (fuelShort) {
       rates.signal *= 0.8;
@@ -686,6 +712,13 @@ export default function App() {
     if (foodPenalty !== 1) {
       ["metal", "organics", "fuel", "power", "research", "rare", "signal", "habitat"].forEach((k) => {
         rates[k] = (rates[k] || 0) * foodPenalty;
+      });
+    }
+    if ((state.hubBuildings.priority_manager || 0) > 0) {
+      const priority = state.priority || defaultPriority();
+      ["metal", "organics", "fuel", "food", "research"].forEach((key) => {
+        if ((rates[key] || 0) <= 0) return;
+        rates[key] = rates[key] * priorityMultiplier(priority, key);
       });
     }
     rates.morale = (rates.morale || 0) + (traitMods.morale || 0);
@@ -1570,6 +1603,15 @@ export default function App() {
     log("Crew assignments balanced.");
   }
 
+  function toggleAutoBalance(enabled) {
+    const autoBalance = { ...(state.autoBalance || { enabled: true, mode: "balanced" }), enabled };
+    dispatch({ type: "UPDATE", patch: { autoBalance } });
+  }
+
+  function setPriority(priority) {
+    dispatch({ type: "UPDATE", patch: { priority: normalizePriority(priority) } });
+  }
+
   function rollContracts(force) {
     const now = Date.now();
     if (!force && now < (state.nextContractAt || 0) && (state.crewContracts || []).length) return;
@@ -1703,11 +1745,13 @@ function biomeBuildingById(id) { return Object.values(BIOME_BUILDINGS).flat().fi
                 ascend={ascend}
                 format={format}
                 supabaseReady={supabaseReady}
+                toggleAutoBalance={toggleAutoBalance}
+                setPriority={setPriority}
               />
             )}
-            {state.tab === 'missions' && (
+            {state.tab === 'expeditions' && (
               <Suspense fallback={lazyFallback}>
-                <MissionsView
+                <ExpeditionsView
                   state={state}
                   startMission={startMission}
                   setAutoLaunch={setAutoLaunch}
@@ -1725,27 +1769,15 @@ function biomeBuildingById(id) { return Object.values(BIOME_BUILDINGS).flat().fi
                   missionMods={missionMods}
                   baseBonuses={(id) => baseBonuses(state, id)}
                   missionDurationMult={PACE.missionDurationMult}
-                />
-              </Suspense>
-            )}
-            {state.tab === 'bases' && (
-              <Suspense fallback={lazyFallback}>
-                <BasesView
-                  state={state}
-                  bodies={BODIES}
                   biomeBuildings={BIOME_BUILDINGS}
                   baseOps={BASE_OPS}
-                  setSelected={(id) => dispatch({ type: 'SET_SELECTED_BODY', id })}
                   buildBase={buildBase}
                   setBaseFocus={setBaseFocus}
                   refreshEvents={refreshEvents}
                   resolveEvent={resolveEvent}
                   runBaseOp={runBaseOp}
                   crewBonusText={crewBonusText}
-                  format={format}
                   bodyEvents={bodyEvents}
-                  formatDuration={formatDuration}
-                  isUnlockedUI={isUnlockedUI}
                   scaledCost={scaledCost}
                   withLogisticsCost={withLogisticsCost}
                   costText={costText}
@@ -1754,7 +1786,6 @@ function biomeBuildingById(id) { return Object.values(BIOME_BUILDINGS).flat().fi
                   requirementsMet={requirementsMet}
                   baseTraits={currentTraits}
                   maintenanceStats={currentMaintenance}
-                  baseBonuses={(id) => baseBonuses(state, id)}
                   availablePopulation={availablePopulation}
                   assignBaseWorkers={assignBaseWorkers}
                   setBaseWorkerPreset={setBaseWorkerPreset}
@@ -1970,7 +2001,7 @@ function AccountView({ state, exportProfile, importProfile, compact, setCompact,
   );
 }
 
-function HubView({ state, buildHub, buyHubUpgrade, crewBonusText, ascend, format, supabaseReady }) {
+function HubView({ state, buildHub, buyHubUpgrade, crewBonusText, ascend, format, supabaseReady, toggleAutoBalance, setPriority }) {
   const [pane, setPane] = useState("build");
   const initialCategory = (state.resources.power || 0) <= 0 && !(state.hubBuildings?.reactor) ? "power" : "all";
   const [buildCategory, setBuildCategory] = useState(initialCategory);
@@ -2076,6 +2107,17 @@ function HubView({ state, buildHub, buyHubUpgrade, crewBonusText, ascend, format
     { id: "prestige", label: "Prestige Protocols" },
   ];
   const activeDoctrine = doctrineById(state.doctrine);
+  const priority = state.priority || defaultPriority();
+  const priorityTotal = Object.values(priority).reduce((sum, v) => sum + (Number.isFinite(v) ? v : 0), 0);
+  const autoBalanceEnabled = (state.hubBuildings.auto_balancer || 0) > 0 && (state.autoBalance?.enabled ?? true);
+  const priorityEnabled = (state.hubBuildings.priority_manager || 0) > 0;
+  const priorityPresets = {
+    balanced: defaultPriority(),
+    fuel: { metal: 15, organics: 15, fuel: 40, food: 15, research: 15 },
+    food: { metal: 15, organics: 15, fuel: 10, food: 40, research: 20 },
+    metal: { metal: 40, organics: 20, fuel: 15, food: 10, research: 15 },
+    research: { metal: 15, organics: 15, fuel: 10, food: 10, research: 50 },
+  };
 
   return (
     <section className="panel space-y-4 hub-bridge">
@@ -2354,6 +2396,60 @@ function HubView({ state, buildHub, buyHubUpgrade, crewBonusText, ascend, format
                   Food status: {foodStateLabel}{foodMinutes !== null ? ` (${foodMinutes}m)` : ""} | {growthLabel}
                 </div>
               </div>
+              {(state.hubBuildings.auto_balancer || state.hubBuildings.priority_manager) && (
+                <div className="card space-y-3">
+                  <div className="font-semibold">Automation Matrix</div>
+                  {(state.hubBuildings.auto_balancer || 0) > 0 ? (
+                    <label className="row row-between text-sm">
+                      <span className="text-muted">Auto-Balancer</span>
+                      <input type="checkbox" checked={autoBalanceEnabled} onChange={(e) => toggleAutoBalance(e.target.checked)} />
+                    </label>
+                  ) : (
+                    <div className="text-xs text-muted">Auto-Balancer offline.</div>
+                  )}
+                  {(state.hubBuildings.priority_manager || 0) > 0 ? (
+                    <div className="space-y-2">
+                      <div className="text-xs text-muted">Priority Manager ({priorityTotal}%)</div>
+                      <div className="flex flex-wrap gap-2 text-[11px]">
+                        {[
+                          { id: "balanced", label: "Balanced" },
+                          { id: "fuel", label: "Fuel Push" },
+                          { id: "food", label: "Food Push" },
+                          { id: "metal", label: "Metal Push" },
+                          { id: "research", label: "Research Push" },
+                        ].map((preset) => (
+                          <button
+                            key={preset.id}
+                            className="tab"
+                            onClick={() => setPriority(priorityPresets[preset.id])}
+                          >
+                            {preset.label}
+                          </button>
+                        ))}
+                      </div>
+                      {["metal", "organics", "fuel", "food", "research"].map((key) => (
+                        <div key={key} className="flex items-center gap-2 text-xs">
+                          <span className="w-20 capitalize">{key}</span>
+                          <input
+                            className="flex-1"
+                            type="range"
+                            min="0"
+                            max="100"
+                            value={priority[key] || 0}
+                            onChange={(e) => {
+                              const next = { ...priority, [key]: Number(e.target.value) };
+                              setPriority(next);
+                            }}
+                          />
+                          <span className="w-10 text-right">{priority[key] || 0}%</span>
+                        </div>
+                      ))}
+                    </div>
+                  ) : (
+                    <div className="text-xs text-muted">Priority Manager offline.</div>
+                  )}
+                </div>
+              )}
               <div className="card space-y-2">
                 <div className="font-semibold">Command Array</div>
                 <div className="grid grid-cols-2 gap-2 text-xs text-muted">
@@ -3154,6 +3250,42 @@ function totalBaseWorkers(stateObj) {
     return sum + Object.values(assigned).reduce((acc, v) => acc + (v || 0), 0);
   }, 0);
 }
+function defaultPriority() {
+  return { metal: 20, organics: 20, fuel: 20, food: 20, research: 20 };
+}
+function normalizePriority(priority) {
+  const keys = ["metal", "organics", "fuel", "food", "research"];
+  const cleaned = {};
+  let total = 0;
+  keys.forEach((key) => {
+    const value = Number(priority?.[key]);
+    const safe = Number.isFinite(value) ? Math.max(0, value) : 0;
+    cleaned[key] = safe;
+    total += safe;
+  });
+  if (!total) return defaultPriority();
+  const scale = 100 / total;
+  keys.forEach((key) => {
+    cleaned[key] = Math.round(cleaned[key] * scale);
+  });
+  const diff = 100 - keys.reduce((sum, key) => sum + cleaned[key], 0);
+  if (diff !== 0) {
+    const maxKey = keys.reduce((best, key) => (cleaned[key] > cleaned[best] ? key : best), keys[0]);
+    cleaned[maxKey] += diff;
+  }
+  return cleaned;
+}
+function priorityMultiplier(priority, resource) {
+  if (!priority || !Object.prototype.hasOwnProperty.call(priority, resource)) return 1;
+  const values = Object.values(priority);
+  const total = values.reduce((sum, v) => sum + (Number.isFinite(v) ? v : 0), 0);
+  const count = values.length || 1;
+  const baseline = total > 0 ? total / count : 20;
+  const weight = Number.isFinite(priority[resource]) ? priority[resource] : baseline;
+  const delta = (weight - baseline) / Math.max(1, baseline);
+  const scaled = clamp(delta * 0.25, -0.25, 0.25);
+  return 1 + scaled;
+}
 function ensureBaseState(base, body) {
   if (base) {
     const next = { ...base };
@@ -3250,6 +3382,10 @@ function migrateSave(save) {
   if (typeof out.profile?.name !== "string") out.profile.name = "";
   if (!out.fragments) out.fragments = { recovered: 0 };
   if (!Number.isFinite(out.fragments.recovered)) out.fragments.recovered = 0;
+  if (!out.autoBalance) out.autoBalance = { enabled: true, mode: "balanced" };
+  if (!out.priority) out.priority = { metal: 20, organics: 20, fuel: 20, food: 20, research: 20 };
+  out.priority = normalizePriority(out.priority);
+  if (out.tab === "missions" || out.tab === "bases") out.tab = "expeditions";
 
   if (!out.crewRoster?.length && out.workers?.total) {
     out.crewRoster = seedCrewRoster(out.workers);
@@ -3901,8 +4037,7 @@ function deriveCapabilities(state) {
 }
 function buildNavTabs(capabilities, supabaseReady) {
   const tabs = [{ id: "hub", label: "Hub" }];
-  if (capabilities.missions) tabs.push({ id: "missions", label: "Missions" });
-  if (capabilities.bases) tabs.push({ id: "bases", label: "Bases" });
+  if (capabilities.missions || capabilities.bases) tabs.push({ id: "expeditions", label: "Expeditions" });
   if (capabilities.crew) tabs.push({ id: "crew", label: "Crew" });
   if (capabilities.tech) tabs.push({ id: "tech", label: "Research Command" });
   if (capabilities.systems) tabs.push({ id: "systems", label: "Systems" });
@@ -3923,7 +4058,7 @@ function unlockHintText(state, supabaseReady) {
   if (!unlocked.has("M1_LOCAL_OPS")) {
     hints.push({
       id: "missions",
-      title: "Missions Console",
+      title: "Expedition Command",
       reqs: [
         `Signal ${Math.floor(signal)}/${UNLOCKS.missions.signal}`,
         `Nexus level ${hubLevel}/${UNLOCKS.missions.hubLevel}`,
