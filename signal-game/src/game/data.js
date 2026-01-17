@@ -90,10 +90,10 @@ export const HUB_BUILDINGS = [
 ];
 export const BASE_ZONES = [
   { id: "core", name: "Core Zone", cost: 0, desc: "Baseline fabrication and upkeep." },
-  { id: "industrial", name: "Industrial Zone", cost: 50, desc: "Advanced production rigs and logistics." },
-  { id: "research", name: "Research Zone", cost: 150, desc: "Specialized labs and signal arrays." },
-  { id: "residential", name: "Residential Zone", cost: 300, desc: "Worker housing and expanded workforce." },
-  { id: "deep", name: "Deep Sector", cost: 500, desc: "Rare/exotic structures and endgame systems." },
+  { id: "industrial", name: "Industrial Zone", cost: 60, desc: "Advanced production rigs and logistics." },
+  { id: "research", name: "Research Zone", cost: 180, desc: "Specialized labs and signal arrays." },
+  { id: "residential", name: "Residential Zone", cost: 360, desc: "Worker housing and expanded workforce." },
+  { id: "deep", name: "Deep Sector", cost: 600, desc: "Rare/exotic structures and endgame systems." },
 ];
 export const BIOME_BUILDINGS = {
   asteroid: [
@@ -130,10 +130,10 @@ export const BIOME_BUILDINGS = {
   unknown: [
     { id: "maintenance_bay", name: "Maintenance Bay", desc: "+2 maintenance cap", cost: { metal: 110, fuel: 10 }, prod: {}, cons: { power: 1 }, maintenanceCap: 2 },
     { id: "anomaly_lab", name: "Anomaly Lab", desc: "+2 rare/tick", cost: { metal: 160, rare: 8 }, prod: { rare: 2 }, cons: { power: 1 } },
-    { id: "relay_spire", name: "Relay Spire", desc: "Lab branch: +8% cargo, -8% travel time", cost: { metal: 240, rare: 10, fuel: 40 }, prod: {}, cons: { power: 2 }, requires: [{ id: "anomaly_lab", level: 2 }], cargoMult: 1.08, travelMult: 0.92, group: "lab_branch", zone: "industrial" },
-    { id: "ward_matrix", name: "Ward Matrix", desc: "Lab branch: -40% hazard, +3 rare/tick", cost: { metal: 260, rare: 12 }, prod: { rare: 3 }, cons: { power: 2 }, requires: [{ id: "anomaly_lab", level: 2 }], hazardMult: 0.6, group: "lab_branch", zone: "industrial" },
+    { id: "relay_spire", name: "Relay Spire", desc: "Lab branch: +8% cargo, -8% travel time", cost: { metal: 240, rare: 10, fuel: 40 }, prod: {}, cons: { power: 2 }, requires: [{ id: "anomaly_lab", level: 2 }], cargoMult: 1.08, travelMult: 0.92, group: "lab_branch", zone: "research" },
+    { id: "ward_matrix", name: "Ward Matrix", desc: "Lab branch: -40% hazard, +3 rare/tick", cost: { metal: 260, rare: 12 }, prod: { rare: 3 }, cons: { power: 2 }, requires: [{ id: "anomaly_lab", level: 2 }], hazardMult: 0.6, group: "lab_branch", zone: "research" },
     { id: "logistics_depot", name: "Logistics Depot", desc: "+5% cargo, -5% travel time", cost: { metal: 180, fuel: 20 }, prod: {}, cons: { power: 1 }, cargoMult: 1.05, travelMult: 0.95, zone: "industrial" },
-    { id: "phase_relay", name: "Phase Relay", desc: "+5 signal/tick, -travel time for missions", cost: { metal: 240, rare: 10, fuel: 40 }, prod: { signal: 5 }, cons: { power: 2 }, travelMult: 0.85, zone: "industrial" },
+    { id: "phase_relay", name: "Phase Relay", desc: "+5 signal/tick, -travel time for missions", cost: { metal: 240, rare: 10, fuel: 40 }, prod: { signal: 5 }, cons: { power: 2 }, travelMult: 0.85, zone: "research" },
     { id: "anomaly_vault", name: "Anomaly Vault", desc: "+6 rare/tick, +6 research/tick", cost: { metal: 320, rare: 16 }, prod: { rare: 6, research: 6 }, cons: { power: 2 }, requires: [{ id: "anomaly_lab", level: 2 }], zone: "deep" },
   ],
 };
