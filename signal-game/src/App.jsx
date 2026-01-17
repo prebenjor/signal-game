@@ -97,6 +97,8 @@ const initialState = {
   prestige: { points: 0, runs: 0, boost: 1 },
 };
 
+const NON_NEGATIVE_RESOURCES = new Set(["power", "signal", "morale", "habitat", "research", "rare"]);
+
 function clamp(v, min, max) {
   return Math.min(max, Math.max(min, v));
 }
@@ -587,9 +589,18 @@ export default function App() {
     dispatch({ type: "SET_TAB", tab: tabOrder[next] });
   }
 
+  function applyResourceDelta(base, delta) {
+    const next = { ...base };
+    Object.entries(delta).forEach(([key, value]) => {
+      const updated = (next[key] || 0) + value;
+      next[key] = NON_NEGATIVE_RESOURCES.has(key) ? Math.max(0, updated) : updated;
+    });
+    return next;
+  }
+
   // Apply resource delta; used across economy adjustments.
   function bumpResources(delta) {
-    dispatch({ type: "UPDATE", patch: { resources: Object.keys(delta).reduce((acc, key) => { acc[key] = Math.max(0, (state.resources[key] || 0) + delta[key]); return acc; }, { ...state.resources }) } });
+    dispatch({ type: "UPDATE", patch: { resources: applyResourceDelta(state.resources, delta) } });
   }
 
   function log(text) { dispatch({ type: "LOG", text }); }
@@ -725,7 +736,10 @@ export default function App() {
     const saturation = signalSaturation(state);
     if (rates.signal > 0 && saturation.factor < 1) rates.signal *= saturation.factor;
 
-    Object.keys(rates).forEach((k) => { r[k] = Math.max(0, r[k] + rates[k] * (k === "power" ? 1 : prodBoost)); });
+    Object.keys(rates).forEach((k) => {
+      const updated = r[k] + rates[k] * (k === "power" ? 1 : prodBoost);
+      r[k] = NON_NEGATIVE_RESOURCES.has(k) ? Math.max(0, updated) : updated;
+    });
 
     const popState = state.population || { total: state.workers.total || 0, progress: 0 };
     let popTotal = Math.max(popState.total || 0, state.workers.total || 0);
@@ -733,7 +747,7 @@ export default function App() {
     const upkeep = populationFoodUpkeep(popTotal);
     const foodSnapshot = r.food;
     const foodInfo = populationFoodState(foodSnapshot, rates.food || 0, upkeep);
-    r.food = Math.max(0, foodSnapshot - upkeep);
+    r.food = foodSnapshot - upkeep;
 
     const growthBase = 1 / Math.max(1, Math.round(30000 / TICK_MS));
     const declineBase = 1 / Math.max(1, Math.round(60000 / TICK_MS));
@@ -766,7 +780,7 @@ export default function App() {
 
   function workerMult(buildingId) {
     const bonus = state.workers.bonus || {};
-    const moraleBoost = 0.6 + (state.workers.satisfaction || 1) * 0.6;
+    const moraleBoost = clamp(state.workers.satisfaction || 1, 0.5, 1.5);
     const fatigueStats = crewFatigueStats(state);
     const focusMods = crewFocusModifiers(state);
     if (["ore_rig","fuel_cracker","core_rig","core_tap"].includes(buildingId)) {
@@ -1402,8 +1416,11 @@ export default function App() {
 
   function canAfford(cost) { return Object.entries(cost).every(([k, v]) => (state.resources[k] || 0) >= v); }
 
-  // Spend helper; clamps to zero and updates state in one place.
-  function spend(cost) { const r = { ...state.resources }; Object.entries(cost).forEach(([k, v]) => { r[k] = Math.max(0, r[k] - v); }); dispatch({ type: "UPDATE", patch: { resources: r } }); }
+  // Spend helper; respects resource floors and updates state in one place.
+  function spend(cost) {
+    const delta = Object.fromEntries(Object.entries(cost).map(([k, v]) => [k, -v]));
+    dispatch({ type: "UPDATE", patch: { resources: applyResourceDelta(state.resources, delta) } });
+  }
 
   // Research tech; enforces prereqs and reveals gated targets.
   function buyTech(id) {
@@ -3164,7 +3181,7 @@ function computeMorale(resources, rates, state, currentBase, eventMods, powerGat
   const contractMods = crewContractModifiers(state);
   const crewBonus = (crewMods.moraleBonus || 0) + (contractMods.moraleBonus || 0);
   const baseMorale = (foodFactor * 0.4) + (habitatFactor * 0.2) + (powerFactor * 0.15) + (restFactor * 0.15) - hazardPenalty - eventPenalty - fatiguePenalty - foodPenalty - powerPenalty;
-  return clamp(baseMorale + (rates.morale || 0) + crewBonus, 0.35, 1.3);
+  return clamp(baseMorale + (rates.morale || 0) + crewBonus, 0.5, 1.5);
 }
 function randomBetween(min, max) { return min + Math.random() * (max - min); }
 function traitById(id) {
