@@ -10,16 +10,25 @@
  *   * Add new buildings/tech/targets by extending constants (HUB_BUILDINGS, TECH, BODIES, BIOME_BUILDINGS) and any unlock rules.
  *   * Use log() for player feedback; use bumpResources/spend to modify economy.
  */
-import { useEffect, useMemo, useReducer, useRef, useState } from "react";
+import { Suspense, lazy, useEffect, useMemo, useReducer, useRef, useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import "./App.css";
-import MissionsView from "./views/Missions";
-import BasesView from "./views/Bases";
-import CrewView from "./views/Crew";
-import TechView from "./views/Tech";
-import FactionView from "./views/Faction";
 import { supabase, supabaseConfigured } from "./lib/supabase";
 import { STORAGE_KEY, LEGACY_KEY, GAME_TITLE, TICK_MS, SAVE_MS, MAX_EVENTS_PER_BASE, SAVE_VERSION, EVENT_COOLDOWN_MS, FRAGMENT_TOTAL, FRAGMENT_THRESHOLDS, PACE, CREW_FATIGUE, CONTRACT_REFRESH_MS, COST_EXP, HUB_TIER_STEP, HUB_TIER_COST_MULT, HUB_UPGRADE_TIER_MULT, SYSTEM_EVENT_COOLDOWN_MS, MAX_SYSTEM_EVENTS, BODIES, HUB_UPGRADES, HUB_BUILDINGS, HUB_BUILDING_TIERS, BIOME_BUILDINGS, BASE_TRAITS, TECH, BASE_OPS, STARTER_TOUR, CODEX_ENTRIES, WIKI_ENTRIES, MISSION_MODES, SYSTEM_NAME_PARTS, SYSTEM_TRAITS, SYSTEM_SURVEY_STEPS, SURVEY_SEQUENCE, COLONY_ROLES, COLONY_COST, CREW_PROGRAMS, CREW_CONTRACTS, SYSTEM_EVENTS, INTEGRATION_PROJECTS, GALAXY_RULESETS, DOCTRINES, FACTION_OVERRIDES } from "./game/data";
+
+const MissionsView = lazy(() => import("./views/Missions"));
+const BasesView = lazy(() => import("./views/Bases"));
+const CrewView = lazy(() => import("./views/Crew"));
+const TechView = lazy(() => import("./views/Tech"));
+const FactionView = lazy(() => import("./views/Faction"));
+
+const viewPreloaders = {
+  missions: () => import("./views/Missions"),
+  bases: () => import("./views/Bases"),
+  crew: () => import("./views/Crew"),
+  tech: () => import("./views/Tech"),
+  faction: () => import("./views/Faction"),
+};
 
 function seedCrewRoster(workers) {
   const assigned = workers?.assigned || { miner: 0, botanist: 0, engineer: 0 };
@@ -160,6 +169,7 @@ export default function App() {
   const tabOrder = navTabs.map((tab) => tab.id);
   const missionMods = colonyModifiers(state);
   const CHAT_RETENTION_MS = 4 * 60 * 60 * 1000;
+  const lazyFallback = <div className="panel text-sm text-muted">Loading module…</div>;
 
   useEffect(() => {
     if (!state.bases[state.selectedBody]) {
@@ -414,11 +424,10 @@ export default function App() {
     if (!supabaseReady || !supabase) return { ok: false, message: "Supabase not configured." };
     if (!state.profile?.name?.trim()) return { ok: false, message: "Set a callsign in Command Account first." };
     if (!supabaseUserId) return { ok: false, message: "Signing in? try again." };
-    const { data, error } = await supabase
-      .from("faction_members")
-      .upsert({ user_id: supabaseUserId, faction_id: factionId, callsign: state.profile.name.trim(), joined_at: new Date().toISOString() })
-      .select("*")
-      .maybeSingle();
+    const { data, error } = await supabase.rpc("join_faction", {
+      p_faction_id: factionId,
+      p_callsign: state.profile.name.trim(),
+    });
     if (error) {
       log(`Faction join failed: ${error.message}`);
       return { ok: false, message: `Join failed: ${error.message}` };
@@ -434,10 +443,7 @@ export default function App() {
     if (!factionState.membership?.faction_id) return;
     const callsign = state.profile?.name?.trim();
     if (!callsign) return;
-    supabase
-      .from("faction_members")
-      .update({ callsign })
-      .eq("user_id", supabaseUserId);
+    supabase.rpc("set_faction_callsign", { p_callsign: callsign });
   }, [supabaseReady, supabaseUserId, factionState.membership?.faction_id, state.profile?.name]);
 
   async function donateFaction(resource, amount) {
@@ -517,13 +523,11 @@ export default function App() {
     if (!state.profile?.name?.trim()) return { ok: false, message: "Set a callsign in Command Account first." };
     if (!supabaseUserId) return { ok: false, message: "Signing in? try again." };
     if (!content) return { ok: false, message: "Enter a message." };
-    const payload = {
-      faction_id: factionState.membership.faction_id,
-      user_id: supabaseUserId,
-      callsign: state.profile.name.trim(),
-      message: content,
-    };
-    const { data, error } = await supabase.from("faction_chat_log").insert(payload).select("*").maybeSingle();
+    const { data, error } = await supabase.rpc("post_faction_chat", {
+      p_faction_id: factionState.membership.faction_id,
+      p_callsign: state.profile.name.trim(),
+      p_message: content,
+    });
     if (error) return { ok: false, message: `Transmission failed: ${error.message}` };
     if (data?.id) {
       setFactionState((prev) => {
@@ -1544,6 +1548,8 @@ function biomeBuildingById(id) { return Object.values(BIOME_BUILDINGS).flat().fi
                 key={tab.id}
                 className={`tab w-full md:w-full text-left whitespace-nowrap ${state.tab === tab.id ? 'active' : ''}`}
                 onClick={() => dispatch({ type: 'SET_TAB', tab: tab.id })}
+                onMouseEnter={() => viewPreloaders[tab.id]?.()}
+                onFocus={() => viewPreloaders[tab.id]?.()}
               >
                 {tab.label}
               </button>
@@ -1562,92 +1568,100 @@ function biomeBuildingById(id) { return Object.values(BIOME_BUILDINGS).flat().fi
               />
             )}
             {state.tab === 'missions' && (
-              <MissionsView
-                state={state}
-                startMission={startMission}
-                setAutoLaunch={setAutoLaunch}
-                setSelected={(id) => dispatch({ type: 'SET_SELECTED_BODY', id })}
-                format={format}
-                missionModeById={missionModeById}
-                missionYield={missionYield}
-                formatDuration={formatDuration}
-                bodies={BODIES}
-                missionModes={MISSION_MODES}
-                bodyUnlockMult={PACE.bodyUnlockMult}
-                isUnlockedUI={isUnlockedUI}
-                hubRange={hubRange(state)}
-                depletionFactor={(id) => depletionFactor(state, id)}
-                missionMods={missionMods}
-                baseBonuses={(id) => baseBonuses(state, id)}
-                missionDurationMult={PACE.missionDurationMult}
-              />
+              <Suspense fallback={lazyFallback}>
+                <MissionsView
+                  state={state}
+                  startMission={startMission}
+                  setAutoLaunch={setAutoLaunch}
+                  setSelected={(id) => dispatch({ type: 'SET_SELECTED_BODY', id })}
+                  format={format}
+                  missionModeById={missionModeById}
+                  missionYield={missionYield}
+                  formatDuration={formatDuration}
+                  bodies={BODIES}
+                  missionModes={MISSION_MODES}
+                  bodyUnlockMult={PACE.bodyUnlockMult}
+                  isUnlockedUI={isUnlockedUI}
+                  hubRange={hubRange(state)}
+                  depletionFactor={(id) => depletionFactor(state, id)}
+                  missionMods={missionMods}
+                  baseBonuses={(id) => baseBonuses(state, id)}
+                  missionDurationMult={PACE.missionDurationMult}
+                />
+              </Suspense>
             )}
             {state.tab === 'bases' && (
-              <BasesView
-                state={state}
-                bodies={BODIES}
-                biomeBuildings={BIOME_BUILDINGS}
-                baseOps={BASE_OPS}
-                setSelected={(id) => dispatch({ type: 'SET_SELECTED_BODY', id })}
-                buildBase={buildBase}
-                setBaseFocus={setBaseFocus}
-                refreshEvents={refreshEvents}
-                resolveEvent={resolveEvent}
-                runBaseOp={runBaseOp}
-                crewBonusText={crewBonusText}
-                format={format}
-                bodyEvents={bodyEvents}
-                formatDuration={formatDuration}
-                isUnlockedUI={isUnlockedUI}
-                scaledCost={scaledCost}
-                withLogisticsCost={withLogisticsCost}
-                costText={costText}
-                canAffordUI={canAffordUI}
-                costExpBase={COST_EXP.base}
-                requirementsMet={requirementsMet}
-                baseTraits={currentTraits}
-                maintenanceStats={currentMaintenance}
-                baseBonuses={(id) => baseBonuses(state, id)}
-              />
+              <Suspense fallback={lazyFallback}>
+                <BasesView
+                  state={state}
+                  bodies={BODIES}
+                  biomeBuildings={BIOME_BUILDINGS}
+                  baseOps={BASE_OPS}
+                  setSelected={(id) => dispatch({ type: 'SET_SELECTED_BODY', id })}
+                  buildBase={buildBase}
+                  setBaseFocus={setBaseFocus}
+                  refreshEvents={refreshEvents}
+                  resolveEvent={resolveEvent}
+                  runBaseOp={runBaseOp}
+                  crewBonusText={crewBonusText}
+                  format={format}
+                  bodyEvents={bodyEvents}
+                  formatDuration={formatDuration}
+                  isUnlockedUI={isUnlockedUI}
+                  scaledCost={scaledCost}
+                  withLogisticsCost={withLogisticsCost}
+                  costText={costText}
+                  canAffordUI={canAffordUI}
+                  costExpBase={COST_EXP.base}
+                  requirementsMet={requirementsMet}
+                  baseTraits={currentTraits}
+                  maintenanceStats={currentMaintenance}
+                  baseBonuses={(id) => baseBonuses(state, id)}
+                />
+              </Suspense>
             )}
             {state.tab === 'crew' && (
-              <CrewView
-                state={state}
-                hire={hire}
-                rollRecruits={() => rollRecruits(true)}
-                changeCrew={changeCrew}
-                format={format}
-                costText={costText}
-                crewProgramDefs={CREW_PROGRAMS}
-                buyCrewProgram={buyCrewProgram}
-                isCrewProgramUnlocked={isCrewProgramUnlocked}
-                scaledCost={scaledCost}
-                canAffordUI={canAffordUI}
-                costExpCrew={COST_EXP.crew}
-                milestones={MILESTONES}
-                techDefs={TECH}
-                setCrewFocus={setCrewFocus}
-                setAllFocus={setAllFocus}
-                quickAssign={quickAssign}
-                crewContracts={state.crewContracts || []}
-                acceptContract={acceptContract}
-                rollContracts={() => rollContracts(true)}
-                formatDuration={formatDuration}
-                nextContractAt={state.nextContractAt || 0}
-              />
+              <Suspense fallback={lazyFallback}>
+                <CrewView
+                  state={state}
+                  hire={hire}
+                  rollRecruits={() => rollRecruits(true)}
+                  changeCrew={changeCrew}
+                  format={format}
+                  costText={costText}
+                  crewProgramDefs={CREW_PROGRAMS}
+                  buyCrewProgram={buyCrewProgram}
+                  isCrewProgramUnlocked={isCrewProgramUnlocked}
+                  scaledCost={scaledCost}
+                  canAffordUI={canAffordUI}
+                  costExpCrew={COST_EXP.crew}
+                  milestones={MILESTONES}
+                  techDefs={TECH}
+                  setCrewFocus={setCrewFocus}
+                  setAllFocus={setAllFocus}
+                  quickAssign={quickAssign}
+                  crewContracts={state.crewContracts || []}
+                  acceptContract={acceptContract}
+                  rollContracts={() => rollContracts(true)}
+                  formatDuration={formatDuration}
+                  nextContractAt={state.nextContractAt || 0}
+                />
+              </Suspense>
             )}
             {state.tab === 'tech' && (
-              <TechView
-                state={state}
-                buyTech={buyTech}
-                format={format}
-                techDefs={TECH}
-                hasPrereqs={hasPrereqs}
-                canAffordUI={canAffordUI}
-                costText={costText}
-                techUnlockMult={PACE.techUnlockMult}
-                techCostMult={PACE.techCostMult}
-              />
+              <Suspense fallback={lazyFallback}>
+                <TechView
+                  state={state}
+                  buyTech={buyTech}
+                  format={format}
+                  techDefs={TECH}
+                  hasPrereqs={hasPrereqs}
+                  canAffordUI={canAffordUI}
+                  costText={costText}
+                  techUnlockMult={PACE.techUnlockMult}
+                  techCostMult={PACE.techCostMult}
+                />
+              </Suspense>
             )}
             {state.tab === 'systems' && (
               <SystemsView
@@ -1664,33 +1678,35 @@ function biomeBuildingById(id) { return Object.values(BIOME_BUILDINGS).flat().fi
               />
             )}
             {state.tab === 'faction' && (
-              <FactionView
-                profileName={state.profile?.name}
-                currentUserId={supabaseUserId}
-                supabaseReady={supabaseReady}
-                factions={factionState.factions}
-                projects={factionState.projects}
-                buildings={factionState.buildings}
-                buildingsError={factionState.buildingsError}
-                activity={factionState.activity}
-                donations={factionState.donations}
-                chat={factionState.chat}
-                activityError={factionState.activityError}
-                donationsError={factionState.donationsError}
-                chatError={factionState.chatError}
-                membership={factionState.membership}
-                loading={factionState.loading}
-                error={factionState.error}
-                leaderboard={factionState.leaderboard}
-                leaderboardError={factionState.leaderboardError}
-                onJoin={joinFaction}
-                onDonate={donateFaction}
-                onDonateBuilding={donateFactionBuilding}
-                onSendChat={sendFactionChat}
-                resources={state.resources}
-                fragmentStatus={fragmentProgress(state)}
-                format={format}
-              />
+              <Suspense fallback={lazyFallback}>
+                <FactionView
+                  profileName={state.profile?.name}
+                  currentUserId={supabaseUserId}
+                  supabaseReady={supabaseReady}
+                  factions={factionState.factions}
+                  projects={factionState.projects}
+                  buildings={factionState.buildings}
+                  buildingsError={factionState.buildingsError}
+                  activity={factionState.activity}
+                  donations={factionState.donations}
+                  chat={factionState.chat}
+                  activityError={factionState.activityError}
+                  donationsError={factionState.donationsError}
+                  chatError={factionState.chatError}
+                  membership={factionState.membership}
+                  loading={factionState.loading}
+                  error={factionState.error}
+                  leaderboard={factionState.leaderboard}
+                  leaderboardError={factionState.leaderboardError}
+                  onJoin={joinFaction}
+                  onDonate={donateFaction}
+                  onDonateBuilding={donateFactionBuilding}
+                  onSendChat={sendFactionChat}
+                  resources={state.resources}
+                  fragmentStatus={fragmentProgress(state)}
+                  format={format}
+                />
+              </Suspense>
             )}
             {state.tab === 'codex' && <CodexView state={state} />}
             {state.tab === 'wiki' && <WikiView />}
@@ -2069,7 +2085,7 @@ function HubView({ state, buildHub, buyHubUpgrade, crewBonusText, ascend, format
                   <div className="text-xs text-muted">{nextTierStatus.reasons.join(" | ")}</div>
                 </div>
               )}
-              <div className="list max-h-[520px] overflow-y-auto pr-1">
+              <div className="list max-h-[520px] overflow-y-auto pr-1 virtual-list">
                 {buildOptions
                   .filter((b) => {
                     const status = hubBuildingUnlockStatus(state, b);
@@ -2123,7 +2139,7 @@ function HubView({ state, buildHub, buyHubUpgrade, crewBonusText, ascend, format
           )}
 
           {pane === "upgrades" && (
-            <div className="list max-h-[520px] overflow-y-auto pr-1">
+            <div className="list max-h-[520px] overflow-y-auto pr-1 virtual-list">
               {HUB_UPGRADES.map((u) => {
                 const level = state.hubUpgrades[u.id] || 0;
                 const status = hubUpgradeUnlockStatus(state, u);

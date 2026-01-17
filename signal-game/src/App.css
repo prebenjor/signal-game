@@ -18,6 +18,11 @@
   }
 }
 
+.virtual-list .row-item {
+  content-visibility: auto;
+  contain-intrinsic-size: 140px 140px;
+}
+
 .hub-bridge .hub-bridge-banner::before {
   content: "";
   position: absolute;
