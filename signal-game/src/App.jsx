@@ -2135,6 +2135,7 @@ function HubView({ state, buildHub, buyHubUpgrade, crewBonusText, ascend, format
     metal: { metal: 40, organics: 20, fuel: 15, food: 10, research: 15 },
     research: { metal: 15, organics: 15, fuel: 10, food: 10, research: 50 },
   };
+  const earlyOpsLocked = !(state.milestonesUnlocked || []).includes("M1_LOCAL_OPS");
 
   return (
     <section className="panel space-y-4 hub-bridge">
@@ -2405,6 +2406,19 @@ function HubView({ state, buildHub, buyHubUpgrade, crewBonusText, ascend, format
                   <div className="text-xs text-muted">No critical actions queued.</div>
                 )}
               </div>
+              {earlyOpsLocked && (
+                <div className="card space-y-2">
+                  <div className="font-semibold">Early Hub Loop</div>
+                  <div className="text-xs text-muted">Hub-only startup. Unlock Expeditions at Signal 60 + Nexus Lv 4.</div>
+                  <ul className="text-sm text-muted list-disc list-inside space-y-1">
+                    <li>Build Salvage Dock to start metal flow.</li>
+                    <li>Add Biofilter Vats for organics.</li>
+                    <li>Bring Micro Reactor online for power.</li>
+                    <li>Deploy Signal Uplink to raise Signal.</li>
+                    <li>Install Hydroponics Bay to stabilize food.</li>
+                  </ul>
+                </div>
+              )}
               <div className="card space-y-2">
                 <div className="font-semibold">Population Command</div>
                 <div className="text-sm">{populationTotal} / {populationCap} population</div>
