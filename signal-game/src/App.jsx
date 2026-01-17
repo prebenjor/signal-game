@@ -1815,6 +1815,10 @@ function HubView({ state, buildHub, buyHubUpgrade, crewBonusText, ascend, format
   const [pane, setPane] = useState("build");
   const initialCategory = (state.resources.power || 0) <= 0 && !(state.hubBuildings?.reactor) ? "power" : "all";
   const [buildCategory, setBuildCategory] = useState(initialCategory);
+  const [buildTier, setBuildTier] = useState("all");
+  const [buildStage, setBuildStage] = useState("all");
+  const [buildSort, setBuildSort] = useState("tier");
+  const [buildQuery, setBuildQuery] = useState("");
   const command = commandUsage(state);
   const hubLevels = hubTotalLevel(state);
   const hubTier = Math.floor(hubLevels / HUB_TIER_STEP);
@@ -1834,8 +1838,9 @@ function HubView({ state, buildHub, buyHubUpgrade, crewBonusText, ascend, format
   const moraleFill = clamp(state.workers.satisfaction || 0, 0, 1);
   const canPrestige = (state.milestonesUnlocked || []).includes("M4_PRESTIGE_UNLOCK");
   const unlockHints = unlockHintText(state, supabaseReady);
+  const priorityActions = bottleneckGuidance(state, state.rates);
   const buildCategories = [
-    { id: "all", label: "All Bays" },
+    { id: "all", label: "All" },
     { id: "materials", label: "Materials" },
     { id: "power", label: "Power" },
     { id: "fuel", label: "Fuel" },
@@ -1843,21 +1848,22 @@ function HubView({ state, buildHub, buyHubUpgrade, crewBonusText, ascend, format
     { id: "signal", label: "Signal" },
     { id: "logistics", label: "Logistics" },
   ];
-  const availableBuildings = HUB_BUILDINGS.filter((b) => hubTierUnlockStatus(state, b.tier || 0).unlocked);
-  const fuelBuildOptions = availableBuildings.filter((b) => (b.prod?.fuel || 0) > 0);
-  const buildCategoryCounts = availableBuildings.reduce((acc, b) => {
+  const tierList = Array.from(new Set(HUB_BUILDINGS.map((b) => b.tier || 0))).sort((a, b) => a - b);
+  const nextTier = tierList.find((tier) => !hubTierUnlockStatus(state, tier).unlocked);
+  const visibleTiers = new Set([...tierList.filter((tier) => hubTierUnlockStatus(state, tier).unlocked), nextTier].filter((t) => t !== undefined));
+  const visibleBuildings = HUB_BUILDINGS.filter((b) => visibleTiers.has(b.tier || 0));
+  const fuelBuildOptions = visibleBuildings.filter((b) => (b.prod?.fuel || 0) > 0);
+  const buildCategoryCounts = visibleBuildings.reduce((acc, b) => {
     const key = b.category || "misc";
     acc[key] = (acc[key] || 0) + 1;
     return acc;
-  }, { all: availableBuildings.length });
+  }, { all: visibleBuildings.length });
   buildCategoryCounts.fuel = fuelBuildOptions.length;
   const buildOptions = buildCategory === "all"
-    ? availableBuildings
+    ? visibleBuildings
     : buildCategory === "fuel"
       ? fuelBuildOptions
-      : availableBuildings.filter((b) => b.category === buildCategory);
-  const tierList = Array.from(new Set(HUB_BUILDINGS.map((b) => b.tier || 0))).sort((a, b) => a - b);
-  const nextTier = tierList.find((tier) => !hubTierUnlockStatus(state, tier).unlocked);
+      : visibleBuildings.filter((b) => b.category === buildCategory);
   const nextTierStatus = nextTier !== undefined ? hubTierUnlockStatus(state, nextTier) : null;
   const fuelReserve = state.resources.fuel || 0;
   const fuelRate = state.rates.fuel || 0;
@@ -1879,6 +1885,17 @@ function HubView({ state, buildHub, buyHubUpgrade, crewBonusText, ascend, format
   const lifeUpgradeDefs = HUB_UPGRADES.filter((u) => u.id === "habitat_wing");
   const hubFoodProd = lifeProducerDefs.reduce((sum, b) => sum + (state.hubBuildings?.[b.id] || 0) * (b.prod?.food || 0), 0);
   const hubHabProd = lifeProducerDefs.reduce((sum, b) => sum + (state.hubBuildings?.[b.id] || 0) * (b.prod?.habitat || 0), 0);
+  const buildStageOptions = [
+    { id: "all", label: "All" },
+    { id: "available", label: "Available" },
+    { id: "locked", label: "Locked" },
+    { id: "next", label: "Next tier" },
+  ];
+  const buildSortOptions = [
+    { id: "tier", label: "Tier" },
+    { id: "name", label: "Name" },
+    { id: "cost", label: "Cost" },
+  ];
   const briefing = [
     "Start with hub fabrication: Salvage Dock + Biofilter Vats establish metal and organics flow.",
     "Signal is a progress meter. Raise it via uplinks to unlock missions, bases, and tech tiers.",
@@ -1892,9 +1909,6 @@ function HubView({ state, buildHub, buyHubUpgrade, crewBonusText, ascend, format
   const hubTabs = [
     { id: "build", label: "Fabrication" },
     { id: "upgrades", label: "Upgrades" },
-    { id: "materials", label: "Materials Flow" },
-    { id: "life", label: "Life Support" },
-    { id: "fuel", label: "Fuel Systems" },
     { id: "range", label: "Range Uplink" },
     { id: "prestige", label: "Prestige Protocols" },
     { id: "briefing", label: "Briefing" },
@@ -1978,6 +1992,21 @@ function HubView({ state, buildHub, buyHubUpgrade, crewBonusText, ascend, format
               Prestige Protocol: {(state.milestonesUnlocked || []).includes("M4_PRESTIGE_UNLOCK") ? "Ready" : "Locked"} (Depth 2, 2 integrations, saturation 25%).
             </div>
           </div>
+          {!!priorityActions.length && (
+            <div className="card space-y-2 hub-bridge-panel">
+              <div className="font-semibold">Priority Actions</div>
+              <div className="list">
+                {priorityActions.map((item) => (
+                  <div key={item.title} className="row-item">
+                    <div className="row-details">
+                      <div className="row-title">{item.title}</div>
+                      <div className="row-meta text-xs text-muted">{item.detail}</div>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
           <div className="card space-y-2 hub-bridge-panel">
             <div className="font-semibold">Command Array</div>
             <div className="text-xs text-muted">Hub directives and mission-wide modifiers.</div>
@@ -2063,14 +2092,53 @@ function HubView({ state, buildHub, buyHubUpgrade, crewBonusText, ascend, format
 
           {pane === "build" && (
             <div className="space-y-3">
-              <div className="row row-between">
-                <div className="text-xs text-muted">Fabrication lanes</div>
+              <div className="card space-y-2">
+                <div className="text-xs text-muted">Filters</div>
                 <div className="flex flex-wrap gap-2">
-                  {buildCategories.map((tab) => (
-                    <button key={tab.id} className={`tab ${buildCategory === tab.id ? "active" : ""}`} onClick={() => setBuildCategory(tab.id)}>
-                      {tab.label}{buildCategoryCounts[tab.id] ? ` (${buildCategoryCounts[tab.id]})` : ""}
-                    </button>
-                  ))}
+                  <input
+                    className="w-full md:w-64 rounded-lg border border-white/10 bg-slate-900 px-3 py-2 text-sm text-white"
+                    placeholder="Search bays, outputs, or keywords"
+                    value={buildQuery}
+                    onChange={(e) => setBuildQuery(e.target.value)}
+                  />
+                  <select className="select bg-slate-800 text-white" value={buildCategory} onChange={(e) => setBuildCategory(e.target.value)}>
+                    {buildCategories.map((tab) => (
+                      <option key={tab.id} value={tab.id}>{tab.label}</option>
+                    ))}
+                  </select>
+                  <select className="select bg-slate-800 text-white" value={buildTier} onChange={(e) => setBuildTier(e.target.value)}>
+                    <option value="all">All tiers</option>
+                    {tierList.map((tier) => (
+                      <option key={tier} value={String(tier)}>Tier {tier}</option>
+                    ))}
+                  </select>
+                  <select className="select bg-slate-800 text-white" value={buildStage} onChange={(e) => setBuildStage(e.target.value)}>
+                    {buildStageOptions.map((opt) => (
+                      <option key={opt.id} value={opt.id}>{opt.label}</option>
+                    ))}
+                  </select>
+                  <select className="select bg-slate-800 text-white" value={buildSort} onChange={(e) => setBuildSort(e.target.value)}>
+                    {buildSortOptions.map((opt) => (
+                      <option key={opt.id} value={opt.id}>Sort: {opt.label}</option>
+                    ))}
+                  </select>
+                </div>
+              </div>
+              <div className="card grid md:grid-cols-3 gap-2 text-xs">
+                <div className="stat-box">
+                  <span className="text-muted text-[10px]">Materials</span>
+                  <strong className="text-sm">Metal {format(metalRate)}/t</strong>
+                  <div className="text-[10px] text-muted">Organics {format(organicsRate)}/t</div>
+                </div>
+                <div className="stat-box">
+                  <span className="text-muted text-[10px]">Life Support</span>
+                  <strong className="text-sm">Food {format(foodRate)}/t</strong>
+                  <div className="text-[10px] text-muted">Hab {format(habitatRate)}/t</div>
+                </div>
+                <div className="stat-box">
+                  <span className="text-muted text-[10px]">Fuel</span>
+                  <strong className="text-sm">Net {format(fuelRate)}/t</strong>
+                  <div className="text-[10px] text-muted">Burn {format(hubFuelCons)}/t</div>
                 </div>
               </div>
               {nextTierStatus && (
@@ -2081,7 +2149,34 @@ function HubView({ state, buildHub, buyHubUpgrade, crewBonusText, ascend, format
                 </div>
               )}
               <div className="list max-h-[520px] overflow-y-auto pr-1">
-                {buildOptions.map((b) => {
+                {buildOptions
+                  .filter((b) => {
+                    const status = hubBuildingUnlockStatus(state, b);
+                    if (buildTier !== "all" && String(b.tier || 0) !== buildTier) return false;
+                    if (buildStage === "available" && !status.unlocked) return false;
+                    if (buildStage === "locked" && status.unlocked) return false;
+                    if (buildStage === "next" && nextTier !== undefined && (b.tier || 0) !== nextTier) return false;
+                    if (buildStage === "next" && nextTier === undefined) return false;
+                    if (buildQuery.trim()) {
+                      const haystack = `${b.name} ${b.desc} ${b.category || ""} ${b.id}`.toLowerCase();
+                      return haystack.includes(buildQuery.trim().toLowerCase());
+                    }
+                    return true;
+                  })
+                  .sort((a, b) => {
+                    if (buildSort === "name") return a.name.localeCompare(b.name);
+                    if (buildSort === "cost") {
+                      const levelA = state.hubBuildings[a.id] || 0;
+                      const levelB = state.hubBuildings[b.id] || 0;
+                      const costA = Object.values(scaledHubCost(a.cost, levelA)).reduce((sum, v) => sum + v, 0);
+                      const costB = Object.values(scaledHubCost(b.cost, levelB)).reduce((sum, v) => sum + v, 0);
+                      return costA - costB;
+                    }
+                    const tierA = a.tier || 0;
+                    const tierB = b.tier || 0;
+                    return tierA === tierB ? a.name.localeCompare(b.name) : tierA - tierB;
+                  })
+                  .map((b) => {
                   const level = state.hubBuildings[b.id] || 0;
                   const cost = scaledHubCost(b.cost, level);
                   const status = hubBuildingUnlockStatus(state, b);
@@ -2101,7 +2196,7 @@ function HubView({ state, buildHub, buyHubUpgrade, crewBonusText, ascend, format
                     </div>
                   );
                 })}
-                {!buildOptions.length && <div className="text-muted text-sm">No bays available in this lane yet.</div>}
+                {!buildOptions.length && <div className="text-muted text-sm">No bays available yet.</div>}
               </div>
             </div>
           )}
@@ -3223,6 +3318,30 @@ function bottleneckReport(stateObj, rates) {
   drains.sort((a, b) => a[1] - b[1]);
   const [key, val] = drains[0];
   return [`${key} is the tightest drain (${val.toFixed(1)}/tick).`];
+}
+function bottleneckGuidance(stateObj, rates) {
+  const guidance = [];
+  const res = stateObj.resources || {};
+  const missionsDone = stateObj.milestones?.missionsDone || 0;
+  if ((res.power || 0) <= 0 && (rates.power || 0) < 0) {
+    guidance.push({ title: "Restore power", detail: "Warm biomes feed organics for reactors. Prioritize Lava Rock and power bays." });
+  }
+  if ((res.fuel || 0) <= 0 && (rates.fuel || 0) <= 0) {
+    guidance.push({ title: "Refuel the grid", detail: "Ice Moon and Cradle Station boost fuel. Build Fuel Refinery or Catalyst Cracker." });
+  }
+  if ((res.food || 0) <= 0 && (rates.food || 0) <= 0) {
+    guidance.push({ title: "Stabilize food", detail: "Ice Moon yields food. Build Hydroponics or Bioforge to meet upkeep." });
+  }
+  if ((res.metal || 0) <= 0 && (rates.metal || 0) <= 0) {
+    guidance.push({ title: "Secure metal", detail: "Debris Field and asteroid bases dominate metal output. Upgrade Salvage Dock/Ore Rigs." });
+  }
+  if ((res.organics || 0) <= 0 && (rates.organics || 0) <= 0) {
+    guidance.push({ title: "Grow organics", detail: "Warm biomes and Biofilter Vats feed refiners and life support." });
+  }
+  if ((res.rare || 0) <= 0 && (rates.rare || 0) <= 0 && missionsDone >= 4) {
+    guidance.push({ title: "Acquire rare materials", detail: "Unknown sites and anomaly labs provide rare stock for late upgrades." });
+  }
+  return guidance;
 }
 function createEvent(body) {
   const pool = {

@@ -37,25 +37,25 @@ export const SYSTEM_EVENT_COOLDOWN_MS = [90000, 180000];
 export const MAX_SYSTEM_EVENTS = 3;
 
 export const BODIES = [
-  { id: "debris", name: "Debris Field", type: "asteroid", tier: 1, travel: 30, hazard: 0.05, unlock: 0, focus: ["Metal", "Salvage"], reason: "Best early metal salvage for hub fabrication.", resources: { metal: 22, fuel: 2, research: 2 } },
-  { id: "ice", name: "Ice Moon", type: "ice", tier: 2, travel: 60, hazard: 0.12, unlock: 400, focus: ["Fuel", "Food"], reason: "Fuel and sustenance caches keep long routes running.", resources: { organics: 20, fuel: 12, food: 6, research: 4 } },
-  { id: "lava", name: "Lava Rock", type: "warm", tier: 3, travel: 90, hazard: 0.2, unlock: 1200, focus: ["Power", "Organics"], reason: "Thermal veins feed power cores and organics pipelines.", resources: { metal: 30, organics: 12, rare: 4, research: 6 } },
-  { id: "cradle", name: "Cradle Station", type: "asteroid", tier: 4, travel: 120, hazard: 0.18, unlock: 2400, requireTech: "deep_scan", focus: ["Research", "Fuel"], reason: "Mid-tier research caches and fuel reservoirs.", resources: { fuel: 28, research: 30, rare: 10 } },
-  { id: "ruins", name: "Fallen Relay", type: "warm", tier: 5, travel: 140, hazard: 0.22, unlock: 3800, requireTech: "shielding", focus: ["Research", "Rare"], reason: "Ancient relay cores yield rare alloys and deep research.", resources: { metal: 120, research: 120, rare: 20 } },
-  { id: "rift", name: "Rift Beacon", type: "unknown", tier: 6, travel: 180, hazard: 0.3, unlock: 6200, requireTech: "rift_mapping", focus: ["Rare", "Signal"], reason: "Anomalous vaults spike rare yields and signal flow.", resources: { fuel: 100, research: 160, rare: 35, signal: 60 } },
-  { id: "spire", name: "Veil Spire", type: "unknown", tier: 7, travel: 210, hazard: 0.35, unlock: 8200, requireTech: "rift_mapping", requireMissions: 5, focus: ["Signal", "Fragments"], reason: "Endgame signal surges and fragment-rich salvage.", resources: { research: 220, rare: 55, fuel: 140, signal: 120 } },
+  { id: "debris", name: "Debris Field", type: "asteroid", tier: 1, travel: 30, hazard: 0.05, unlock: 0, focus: ["Metal", "Salvage"], reason: "Best early metal salvage for hub fabrication.", resources: { metal: 28, fuel: 1, research: 1 } },
+  { id: "ice", name: "Ice Moon", type: "ice", tier: 2, travel: 60, hazard: 0.12, unlock: 400, focus: ["Fuel", "Food"], reason: "Fuel and sustenance caches keep long routes running.", resources: { organics: 16, fuel: 14, food: 8, research: 3 } },
+  { id: "lava", name: "Lava Rock", type: "warm", tier: 3, travel: 90, hazard: 0.2, unlock: 1200, focus: ["Power", "Organics"], reason: "Thermal veins feed power cores and organics pipelines.", resources: { metal: 20, organics: 18, rare: 4, research: 6 } },
+  { id: "cradle", name: "Cradle Station", type: "asteroid", tier: 4, travel: 120, hazard: 0.18, unlock: 2400, requireTech: "deep_scan", focus: ["Research", "Fuel"], reason: "Mid-tier research caches and fuel reservoirs.", resources: { metal: 70, fuel: 18, research: 18, rare: 8 } },
+  { id: "ruins", name: "Fallen Relay", type: "warm", tier: 5, travel: 140, hazard: 0.22, unlock: 3800, requireTech: "shielding", focus: ["Research", "Rare"], reason: "Ancient relay cores yield rare alloys and deep research.", resources: { metal: 120, organics: 50, research: 140, rare: 24 } },
+  { id: "rift", name: "Rift Beacon", type: "unknown", tier: 6, travel: 180, hazard: 0.3, unlock: 6200, requireTech: "rift_mapping", focus: ["Rare", "Signal"], reason: "Anomalous vaults spike rare yields and signal flow.", resources: { fuel: 80, research: 180, rare: 40, signal: 120 } },
+  { id: "spire", name: "Veil Spire", type: "unknown", tier: 7, travel: 210, hazard: 0.35, unlock: 8200, requireTech: "rift_mapping", requireMissions: 5, focus: ["Signal", "Fragments"], reason: "Endgame signal surges and fragment-rich salvage.", resources: { research: 260, rare: 70, fuel: 120, signal: 200 } },
 ];
 
 export const HUB_UPGRADES = [
-  { id: "launch_bay", name: "Launch Bay", desc: "+1 concurrent mission slot", cost: { metal: 220, fuel: 70, research: 20 } },
+  { id: "launch_bay", name: "Launch Bay", desc: "+1 concurrent mission slot", cost: { metal: 220, fuel: 70, research: 20 }, requires: [{ id: "nav_console", level: 1 }] },
   { id: "fuel_farm", name: "Fuel Farm", desc: "+1 fuel/tick", cost: { metal: 200, organics: 80, fuel: 20 }, requires: [{ id: "refinery", level: 2 }] },
   { id: "scan_array", name: "Scan Array", desc: "+2 signal/tick, +1 range tier", cost: { metal: 240, fuel: 60, research: 40 }, requires: [{ id: "signal_uplink", level: 2 }] },
-  { id: "drone_bay", name: "Drone Bay", desc: "+8% mission cargo", cost: { metal: 300, rare: 16, fuel: 40 } },
-  { id: "command_uplink", name: "Command Uplink", desc: "+1 command capacity", cost: { metal: 320, fuel: 120, research: 60 } },
-  { id: "survey_lab", name: "Survey Lab", desc: "+8% mission research yield", cost: { metal: 260, research: 120, organics: 40 }, requires: [{ id: "signal_uplink", level: 2 }] },
-  { id: "mission_control", name: "Mission Control", desc: "-4% mission hazard", cost: { metal: 260, fuel: 90, research: 80 }, requires: [{ id: "launch_bay", level: 1 }] },
+  { id: "drone_bay", name: "Drone Bay", desc: "+8% mission cargo", cost: { metal: 300, rare: 16, fuel: 40 }, requires: [{ id: "alloy_foundry", level: 1 }] },
+  { id: "command_uplink", name: "Command Uplink", desc: "+1 command capacity", cost: { metal: 320, fuel: 120, research: 60 }, requires: [{ id: "nav_console", level: 2 }] },
+  { id: "survey_lab", name: "Survey Lab", desc: "+8% mission research yield", cost: { metal: 260, research: 120, organics: 40 }, requires: [{ id: "signal_uplink", level: 2 }, { id: "bioforge", level: 1 }] },
+  { id: "mission_control", name: "Mission Control", desc: "-4% mission hazard", cost: { metal: 260, fuel: 90, research: 80 }, requires: [{ id: "launch_bay", level: 1 }, { id: "reactor", level: 2 }] },
   { id: "supply_depot", name: "Supply Depot", desc: "-5% mission fuel cost", cost: { metal: 240, fuel: 120, organics: 60 }, requires: [{ id: "refinery", level: 2 }] },
-  { id: "signal_vault", name: "Signal Vault", desc: "+120 signal cap", cost: { metal: 240, research: 80, rare: 8 }, requires: [{ id: "signal_uplink", level: 3 }] },
+  { id: "signal_vault", name: "Signal Vault", desc: "+120 signal cap", cost: { metal: 240, research: 80, rare: 8 }, requires: [{ id: "signal_uplink", level: 3 }, { id: "signal_amplifier", level: 1 }] },
   { id: "habitat_wing", name: "Habitat Wing", desc: "+2 habitat/tick, +0.01 morale/tick", cost: { metal: 220, organics: 110, food: 30 }, requires: [{ id: "hab", level: 2 }] },
 ];
 
