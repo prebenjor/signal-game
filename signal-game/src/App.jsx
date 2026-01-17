@@ -1839,6 +1839,7 @@ function HubView({ state, buildHub, buyHubUpgrade, crewBonusText, ascend, format
   const canPrestige = (state.milestonesUnlocked || []).includes("M4_PRESTIGE_UNLOCK");
   const unlockHints = unlockHintText(state, supabaseReady);
   const priorityActions = bottleneckGuidance(state, state.rates);
+  const intelCount = (priorityActions.length ? 1 : 0) + (unlockHints.length ? 1 : 0);
   const buildCategories = [
     { id: "all", label: "All" },
     { id: "materials", label: "Materials" },
@@ -1853,38 +1854,28 @@ function HubView({ state, buildHub, buyHubUpgrade, crewBonusText, ascend, format
   const visibleTiers = new Set([...tierList.filter((tier) => hubTierUnlockStatus(state, tier).unlocked), nextTier].filter((t) => t !== undefined));
   const visibleBuildings = HUB_BUILDINGS.filter((b) => visibleTiers.has(b.tier || 0));
   const fuelBuildOptions = visibleBuildings.filter((b) => (b.prod?.fuel || 0) > 0);
-  const buildCategoryCounts = visibleBuildings.reduce((acc, b) => {
-    const key = b.category || "misc";
-    acc[key] = (acc[key] || 0) + 1;
-    return acc;
-  }, { all: visibleBuildings.length });
-  buildCategoryCounts.fuel = fuelBuildOptions.length;
   const buildOptions = buildCategory === "all"
     ? visibleBuildings
     : buildCategory === "fuel"
       ? fuelBuildOptions
       : visibleBuildings.filter((b) => b.category === buildCategory);
   const nextTierStatus = nextTier !== undefined ? hubTierUnlockStatus(state, nextTier) : null;
-  const fuelReserve = state.resources.fuel || 0;
   const fuelRate = state.rates.fuel || 0;
-  const metalReserve = state.resources.metal || 0;
   const metalRate = state.rates.metal || 0;
-  const organicsReserve = state.resources.organics || 0;
   const organicsRate = state.rates.organics || 0;
-  const foodReserve = state.resources.food || 0;
   const foodRate = state.rates.food || 0;
-  const habitatReserve = state.resources.habitat || 0;
   const habitatRate = state.rates.habitat || 0;
-  const fuelProducerDefs = HUB_BUILDINGS.filter((b) => (b.prod?.fuel || 0) > 0);
-  const fuelRoutingDefs = HUB_BUILDINGS.filter((b) => b.id === "nav_console");
-  const fuelUpgradeDefs = HUB_UPGRADES.filter((u) => u.id === "fuel_farm" || u.id === "supply_depot");
-  const hubFuelProd = fuelProducerDefs.reduce((sum, b) => sum + (state.hubBuildings?.[b.id] || 0) * (b.prod?.fuel || 0), 0);
   const hubFuelCons = HUB_BUILDINGS.reduce((sum, b) => sum + (state.hubBuildings?.[b.id] || 0) * (b.cons?.fuel || 0), 0);
-  const materialProducerDefs = HUB_BUILDINGS.filter((b) => (b.prod?.metal || 0) > 0 || (b.prod?.organics || 0) > 0);
-  const lifeProducerDefs = HUB_BUILDINGS.filter((b) => (b.prod?.food || 0) > 0 || (b.prod?.habitat || 0) > 0 || (b.prod?.morale || 0) > 0);
-  const lifeUpgradeDefs = HUB_UPGRADES.filter((u) => u.id === "habitat_wing");
-  const hubFoodProd = lifeProducerDefs.reduce((sum, b) => sum + (state.hubBuildings?.[b.id] || 0) * (b.prod?.food || 0), 0);
-  const hubHabProd = lifeProducerDefs.reduce((sum, b) => sum + (state.hubBuildings?.[b.id] || 0) * (b.prod?.habitat || 0), 0);
+  const alertTicks = Math.max(1, Math.round((2 * 60 * 1000) / TICK_MS));
+  const shouldBlink = (reserve, rate) => rate < 0 && (reserve || 0) <= Math.abs(rate) * alertTicks;
+  const lowPower = shouldBlink(state.resources.power, state.rates.power || 0);
+  const lowFood = shouldBlink(state.resources.food, state.rates.food || 0);
+  const lowFuel = shouldBlink(state.resources.fuel, state.rates.fuel || 0);
+  const lowMetal = shouldBlink(state.resources.metal, state.rates.metal || 0);
+  const lowOrganics = shouldBlink(state.resources.organics, state.rates.organics || 0);
+  const lowHabitat = shouldBlink(state.resources.habitat, state.rates.habitat || 0);
+  const lowLife = lowFood || lowHabitat;
+  const lowMaterials = lowMetal || lowOrganics;
   const buildStageOptions = [
     { id: "all", label: "All" },
     { id: "available", label: "Available" },
@@ -1896,22 +1887,12 @@ function HubView({ state, buildHub, buyHubUpgrade, crewBonusText, ascend, format
     { id: "name", label: "Name" },
     { id: "cost", label: "Cost" },
   ];
-  const briefing = [
-    "Start with hub fabrication: Salvage Dock + Biofilter Vats establish metal and organics flow.",
-    "Signal is a progress meter. Raise it via uplinks to unlock missions, bases, and tech tiers.",
-    "Stand up a Fuel Refinery early to keep sorties flowing once Missions unlock.",
-    "Install a Hydroponics Bay to keep food above upkeep and morale stable.",
-    "Keep power >= 0 and food positive to prevent morale slippage.",
-    "Fragment shards surface in mission cargo and push the Veil toward reassembly.",
-    "Operational consoles appear as milestones unlock. Watch the Nexus for upcoming thresholds.",
-  ];
-
   const hubTabs = [
     { id: "build", label: "Fabrication" },
     { id: "upgrades", label: "Upgrades" },
+    { id: "status", label: "Nexus Intel" },
     { id: "range", label: "Range Uplink" },
     { id: "prestige", label: "Prestige Protocols" },
-    { id: "briefing", label: "Briefing" },
   ];
   const activeDoctrine = doctrineById(state.doctrine);
 
@@ -1943,18 +1924,30 @@ function HubView({ state, buildHub, buyHubUpgrade, crewBonusText, ascend, format
               <div className="font-semibold">Bridge Status</div>
               <span className="text-xs text-muted">Telemetry</span>
             </div>
-            <div className="grid grid-cols-2 gap-2">
-              <div className="stat-box">
+            <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
+              <div className={`stat-box ${lowPower ? "blink-alert" : ""}`}>
                 <span className="text-muted text-xs">Power</span>
                 <strong>{format(state.resources.power)}</strong>
               </div>
-              <div className="stat-box">
+              <div className={`stat-box ${lowFuel ? "blink-alert" : ""}`}>
+                <span className="text-muted text-xs">Fuel</span>
+                <strong>{format(state.resources.fuel)}</strong>
+              </div>
+              <div className={`stat-box ${lowFood ? "blink-alert" : ""}`}>
                 <span className="text-muted text-xs">Food</span>
                 <strong>{format(state.resources.food)}</strong>
               </div>
-              <div className="stat-box">
+              <div className={`stat-box ${lowHabitat ? "blink-alert" : ""}`}>
                 <span className="text-muted text-xs">Habitat</span>
                 <strong>{format(state.resources.habitat)}</strong>
+              </div>
+              <div className={`stat-box ${lowMetal ? "blink-alert" : ""}`}>
+                <span className="text-muted text-xs">Metal</span>
+                <strong>{format(state.resources.metal)}</strong>
+              </div>
+              <div className={`stat-box ${lowOrganics ? "blink-alert" : ""}`}>
+                <span className="text-muted text-xs">Organics</span>
+                <strong>{format(state.resources.organics)}</strong>
               </div>
               <div className="stat-box">
                 <span className="text-muted text-xs">Morale</span>
@@ -1992,87 +1985,6 @@ function HubView({ state, buildHub, buyHubUpgrade, crewBonusText, ascend, format
               Prestige Protocol: {(state.milestonesUnlocked || []).includes("M4_PRESTIGE_UNLOCK") ? "Ready" : "Locked"} (Depth 2, 2 integrations, saturation 25%).
             </div>
           </div>
-          {!!priorityActions.length && (
-            <div className="card space-y-2 hub-bridge-panel">
-              <div className="font-semibold">Priority Actions</div>
-              <div className="list">
-                {priorityActions.map((item) => (
-                  <div key={item.title} className="row-item">
-                    <div className="row-details">
-                      <div className="row-title">{item.title}</div>
-                      <div className="row-meta text-xs text-muted">{item.detail}</div>
-                    </div>
-                  </div>
-                ))}
-              </div>
-            </div>
-          )}
-          <div className="card space-y-2 hub-bridge-panel">
-            <div className="font-semibold">Command Array</div>
-            <div className="text-xs text-muted">Hub directives and mission-wide modifiers.</div>
-            <div className="grid grid-cols-2 gap-2 text-xs text-muted">
-              <div className="stat-box">
-                <span className="text-muted text-[10px]">Mission Slots</span>
-                <strong className="text-sm">{missionSlots}</strong>
-              </div>
-              <div className="stat-box">
-                <span className="text-muted text-[10px]">Travel Efficiency</span>
-                <strong className="text-sm">{Math.round(hubTravel * 100)}%</strong>
-              </div>
-              <div className="stat-box">
-                <span className="text-muted text-[10px]">Fuel Logistics</span>
-                <strong className="text-sm">{fuelSavings > 0 ? `-${fuelSavings}%` : "Stable"}</strong>
-              </div>
-              <div className="stat-box">
-                <span className="text-muted text-[10px]">Hazard Shielding</span>
-                <strong className="text-sm">{hazardShield > 0 ? `-${hazardShield}%` : "None"}</strong>
-              </div>
-              <div className="stat-box">
-                <span className="text-muted text-[10px]">Cargo Boost</span>
-                <strong className="text-sm">{cargoBoost > 0 ? `+${cargoBoost}%` : "None"}</strong>
-              </div>
-              <div className="stat-box">
-                <span className="text-muted text-[10px]">Research Boost</span>
-                <strong className="text-sm">{researchBoost > 0 ? `+${researchBoost}%` : "None"}</strong>
-              </div>
-              <div className="stat-box">
-                <span className="text-muted text-[10px]">Signal Cap Boost</span>
-                <strong className="text-sm">{hubMods.signalCapBonus > 0 ? `+${hubMods.signalCapBonus}` : "None"}</strong>
-              </div>
-              <div className="stat-box">
-                <span className="text-muted text-[10px]">Habitat Lift</span>
-                <strong className="text-sm">{hubMods.habitat > 0 ? `+${hubMods.habitat}/t` : "None"}</strong>
-              </div>
-            </div>
-          </div>
-          {!!unlockHints.length && (
-            <div className="card space-y-2 hub-bridge-panel">
-              <div className="font-semibold">Next Unlocks</div>
-              <div className="text-xs text-muted">Additional consoles appear as the signal climbs.</div>
-              <div className="list">
-                {unlockHints.map((hint) => (
-                  <div key={hint.id} className="row-item">
-                    <div className="row-details">
-                      <div className="row-title">{hint.title}</div>
-                      <div className="row-meta text-xs text-muted">{hint.reqs.join(" | ")}</div>
-                    </div>
-                  </div>
-                ))}
-              </div>
-            </div>
-          )}
-          <div className="card space-y-2 hub-bridge-panel">
-            <div className="font-semibold">Fragment Index</div>
-            <div className="text-xs text-muted">Recovered fragments pull the Veil toward reassembly.</div>
-            <div className="text-sm">{format(fragmentStatus.recovered)} / {format(fragmentStatus.total)} ({fragmentPercent}%)</div>
-            <div className="h-2 rounded-full bg-white/10 overflow-hidden">
-              <div className="h-full bg-indigo-400" style={{ width: `${fragmentPercent}%` }} />
-            </div>
-            <div className="text-xs text-muted">
-              {fragmentNext ? `Next threshold: ${fragmentNext.title} at ${Math.round(fragmentNext.percent * 100)}%.` : "Reassembly complete."}
-            </div>
-          </div>
-
         </div>
 
         <div className="rounded-2xl border border-white/10 bg-slate-950/70 p-4 space-y-3 hub-bridge-deck">
@@ -2085,6 +1997,9 @@ function HubView({ state, buildHub, buyHubUpgrade, crewBonusText, ascend, format
               {hubTabs.map((tab) => (
                 <button key={tab.id} className={`tab ${pane === tab.id ? 'active' : ''}`} onClick={() => setPane(tab.id)}>
                   {tab.label}
+                  {tab.id === "status" && intelCount > 0 && (
+                    <span className="ml-2 tag">{intelCount}</span>
+                  )}
                 </button>
               ))}
             </div>
@@ -2094,7 +2009,7 @@ function HubView({ state, buildHub, buyHubUpgrade, crewBonusText, ascend, format
             <div className="space-y-3">
               <div className="card space-y-2">
                 <div className="text-xs text-muted">Filters</div>
-                <div className="flex flex-wrap gap-2">
+                <div className="flex flex-wrap gap-2 items-center">
                   <input
                     className="w-full md:w-64 rounded-lg border border-white/10 bg-slate-900 px-3 py-2 text-sm text-white"
                     placeholder="Search bays, outputs, or keywords"
@@ -2112,30 +2027,36 @@ function HubView({ state, buildHub, buyHubUpgrade, crewBonusText, ascend, format
                       <option key={tier} value={String(tier)}>Tier {tier}</option>
                     ))}
                   </select>
-                  <select className="select bg-slate-800 text-white" value={buildStage} onChange={(e) => setBuildStage(e.target.value)}>
+                  <div className="flex flex-wrap gap-2 items-center">
+                    <span className="text-[11px] uppercase tracking-[0.2em] text-muted">Stage</span>
                     {buildStageOptions.map((opt) => (
-                      <option key={opt.id} value={opt.id}>{opt.label}</option>
+                      <button key={opt.id} className={`tab ${buildStage === opt.id ? "active" : ""}`} onClick={() => setBuildStage(opt.id)}>
+                        {opt.label}
+                      </button>
                     ))}
-                  </select>
-                  <select className="select bg-slate-800 text-white" value={buildSort} onChange={(e) => setBuildSort(e.target.value)}>
+                  </div>
+                  <div className="flex flex-wrap gap-2 items-center">
+                    <span className="text-[11px] uppercase tracking-[0.2em] text-muted">Sort</span>
                     {buildSortOptions.map((opt) => (
-                      <option key={opt.id} value={opt.id}>Sort: {opt.label}</option>
+                      <button key={opt.id} className={`tab ${buildSort === opt.id ? "active" : ""}`} onClick={() => setBuildSort(opt.id)}>
+                        {opt.label}
+                      </button>
                     ))}
-                  </select>
+                  </div>
                 </div>
               </div>
               <div className="card grid md:grid-cols-3 gap-2 text-xs">
-                <div className="stat-box">
+                <div className={`stat-box ${lowMaterials ? "blink-alert" : ""}`}>
                   <span className="text-muted text-[10px]">Materials</span>
                   <strong className="text-sm">Metal {format(metalRate)}/t</strong>
                   <div className="text-[10px] text-muted">Organics {format(organicsRate)}/t</div>
                 </div>
-                <div className="stat-box">
+                <div className={`stat-box ${lowLife ? "blink-alert" : ""}`}>
                   <span className="text-muted text-[10px]">Life Support</span>
                   <strong className="text-sm">Food {format(foodRate)}/t</strong>
                   <div className="text-[10px] text-muted">Hab {format(habitatRate)}/t</div>
                 </div>
-                <div className="stat-box">
+                <div className={`stat-box ${lowFuel ? "blink-alert" : ""}`}>
                   <span className="text-muted text-[10px]">Fuel</span>
                   <strong className="text-sm">Net {format(fuelRate)}/t</strong>
                   <div className="text-[10px] text-muted">Burn {format(hubFuelCons)}/t</div>
@@ -2225,212 +2146,87 @@ function HubView({ state, buildHub, buyHubUpgrade, crewBonusText, ascend, format
             </div>
           )}
 
-          {pane === "materials" && (
-            <div className="space-y-3">
-              <div className="grid md:grid-cols-2 gap-3">
-                <div className="card space-y-2">
-                  <div className="font-semibold">Metal Reserve</div>
-                  <div className="text-2xl font-semibold">{format(metalReserve)}</div>
-                  <div className="text-xs text-muted">Net {format(metalRate)}/tick ({metalRate >= 0 ? "surplus" : "deficit"}).</div>
-                </div>
-                <div className="card space-y-2">
-                  <div className="font-semibold">Organics Reserve</div>
-                  <div className="text-2xl font-semibold">{format(organicsReserve)}</div>
-                  <div className="text-xs text-muted">Net {format(organicsRate)}/tick ({organicsRate >= 0 ? "surplus" : "deficit"}).</div>
-                  <div className="text-xs text-muted">Organics feed fuel refinement and life support growth.</div>
+          {pane === "status" && (
+            <div className="grid md:grid-cols-2 gap-3">
+              <div className="card space-y-2">
+                <div className="font-semibold">Priority Actions</div>
+                {priorityActions.length ? (
+                  <div className="list">
+                    {priorityActions.map((item) => (
+                      <div key={item.title} className="row-item">
+                        <div className="row-details">
+                          <div className="row-title">{item.title}</div>
+                          <div className="row-meta text-xs text-muted">{item.detail}</div>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                ) : (
+                  <div className="text-xs text-muted">No critical actions queued.</div>
+                )}
+              </div>
+              <div className="card space-y-2">
+                <div className="font-semibold">Command Array</div>
+                <div className="grid grid-cols-2 gap-2 text-xs text-muted">
+                  <div className="stat-box">
+                    <span className="text-muted text-[10px]">Mission Slots</span>
+                    <strong className="text-sm">{missionSlots}</strong>
+                  </div>
+                  <div className="stat-box">
+                    <span className="text-muted text-[10px]">Travel Efficiency</span>
+                    <strong className="text-sm">{Math.round(hubTravel * 100)}%</strong>
+                  </div>
+                  <div className="stat-box">
+                    <span className="text-muted text-[10px]">Fuel Logistics</span>
+                    <strong className="text-sm">{fuelSavings > 0 ? `-${fuelSavings}%` : "Stable"}</strong>
+                  </div>
+                  <div className="stat-box">
+                    <span className="text-muted text-[10px]">Hazard Shielding</span>
+                    <strong className="text-sm">{hazardShield > 0 ? `-${hazardShield}%` : "None"}</strong>
+                  </div>
+                  <div className="stat-box">
+                    <span className="text-muted text-[10px]">Cargo Boost</span>
+                    <strong className="text-sm">{cargoBoost > 0 ? `+${cargoBoost}%` : "None"}</strong>
+                  </div>
+                  <div className="stat-box">
+                    <span className="text-muted text-[10px]">Research Boost</span>
+                    <strong className="text-sm">{researchBoost > 0 ? `+${researchBoost}%` : "None"}</strong>
+                  </div>
+                  <div className="stat-box">
+                    <span className="text-muted text-[10px]">Signal Cap Boost</span>
+                    <strong className="text-sm">{hubMods.signalCapBonus > 0 ? `+${hubMods.signalCapBonus}` : "None"}</strong>
+                  </div>
+                  <div className="stat-box">
+                    <span className="text-muted text-[10px]">Habitat Lift</span>
+                    <strong className="text-sm">{hubMods.habitat > 0 ? `+${hubMods.habitat}/t` : "None"}</strong>
+                  </div>
                 </div>
               </div>
               <div className="card space-y-2">
-                <div className="font-semibold">Material Producers</div>
-                <div className="list">
-                  {materialProducerDefs.map((b) => {
-                    const level = state.hubBuildings[b.id] || 0;
-                    const cost = scaledHubCost(b.cost, level);
-                    const status = hubBuildingUnlockStatus(state, b);
-                    const can = status.unlocked && canAffordUI(state.resources, cost);
-                    const output = [];
-                    if (b.prod?.metal) output.push(`+${format(b.prod.metal)} metal/tick`);
-                    if (b.prod?.organics) output.push(`+${format(b.prod.organics)} organics/tick`);
-                    return (
-                      <div key={b.id} className={`row-item ${!status.unlocked ? "opacity-60" : ""}`}>
+                <div className="font-semibold">Next Unlocks</div>
+                {unlockHints.length ? (
+                  <div className="list">
+                    {unlockHints.map((hint) => (
+                      <div key={hint.id} className="row-item">
                         <div className="row-details">
-                          <div className="row-title">{b.name} <span className="tag">Lv {level}</span></div>
-                          <div className="row-meta">{b.desc}</div>
-                          <div className="row-meta text-xs text-muted">Output: {output.join(" | ")} per level</div>
-                          {!status.unlocked && <div className="row-meta text-xs text-muted">Unlock: {status.reasons.join(" | ")}</div>}
+                          <div className="row-title">{hint.title}</div>
+                          <div className="row-meta text-xs text-muted">{hint.reqs.join(" | ")}</div>
                         </div>
-                        <button className="btn" disabled={!can} onClick={() => buildHub(b.id)}>
-                          {status.unlocked ? `Build (${costText(cost, format)})` : "Locked"}
-                        </button>
                       </div>
-                    );
-                  })}
-                  {!materialProducerDefs.length && <div className="text-muted text-sm">No material bays unlocked yet.</div>}
-                </div>
-              </div>
-            </div>
-          )}
-
-          {pane === "life" && (
-            <div className="space-y-3">
-              <div className="grid md:grid-cols-2 gap-3">
-                <div className="card space-y-2">
-                  <div className="font-semibold">Food Stores</div>
-                  <div className="text-2xl font-semibold">{format(foodReserve)}</div>
-                  <div className="text-xs text-muted">Net {format(foodRate)}/tick ({foodRate >= 0 ? "surplus" : "deficit"}).</div>
-                  <div className="text-xs text-muted">Hub production {format(hubFoodProd)}/tick.</div>
-                  <div className="text-xs text-muted">Upkeep: {(state.workers.total * 0.2).toFixed(1)} food/tick.</div>
-                </div>
-                <div className="card space-y-2">
-                  <div className="font-semibold">Habitat Capacity</div>
-                  <div className="text-2xl font-semibold">{format(habitatReserve)}</div>
-                  <div className="text-xs text-muted">Net {format(habitatRate)}/tick ({habitatRate >= 0 ? "surplus" : "deficit"}).</div>
-                  <div className="text-xs text-muted">Hub production {format(hubHabProd)}/tick.</div>
-                  <div className="text-xs text-muted">Active crew: {state.workers.total} | Morale {Math.round((state.workers.satisfaction || 1) * 100)}%.</div>
-                </div>
+                    ))}
+                  </div>
+                ) : (
+                  <div className="text-xs text-muted">All current hub consoles are unlocked.</div>
+                )}
               </div>
               <div className="card space-y-2">
-                <div className="font-semibold">Life Support Producers</div>
-                <div className="list">
-                  {lifeProducerDefs.map((b) => {
-                    const level = state.hubBuildings[b.id] || 0;
-                    const cost = scaledHubCost(b.cost, level);
-                    const status = hubBuildingUnlockStatus(state, b);
-                    const can = status.unlocked && canAffordUI(state.resources, cost);
-                    const output = [];
-                    if (b.prod?.food) output.push(`+${format(b.prod.food)} food/tick`);
-                    if (b.prod?.habitat) output.push(`+${format(b.prod.habitat)} habitat/tick`);
-                    if (b.prod?.morale) output.push(`+${(b.prod.morale * 100).toFixed(1)}% morale/tick`);
-                    return (
-                      <div key={b.id} className={`row-item ${!status.unlocked ? "opacity-60" : ""}`}>
-                        <div className="row-details">
-                          <div className="row-title">{b.name} <span className="tag">Lv {level}</span></div>
-                          <div className="row-meta">{b.desc}</div>
-                          <div className="row-meta text-xs text-muted">Output: {output.join(" | ")} per level</div>
-                          {!status.unlocked && <div className="row-meta text-xs text-muted">Unlock: {status.reasons.join(" | ")}</div>}
-                        </div>
-                        <button className="btn" disabled={!can} onClick={() => buildHub(b.id)}>
-                          {status.unlocked ? `Build (${costText(cost, format)})` : "Locked"}
-                        </button>
-                      </div>
-                    );
-                  })}
-                  {lifeUpgradeDefs.map((u) => {
-                    const level = state.hubUpgrades[u.id] || 0;
-                    const status = hubUpgradeUnlockStatus(state, u);
-                    const cost = scaledUpgradeCost(u.cost, level);
-                    const can = status.unlocked && canAffordUI(state.resources, cost);
-                    return (
-                      <div key={u.id} className="row-item">
-                        <div className="row-details">
-                          <div className="row-title">{u.name} <span className="tag">Tier {level}</span></div>
-                          <div className="row-meta">{u.desc}</div>
-                          {!status.unlocked && <div className="row-meta text-xs text-muted">Unlock: {status.reasons.join(" | ")}</div>}
-                        </div>
-                        <button className="btn" disabled={!can} onClick={() => buyHubUpgrade(u.id)}>
-                          {status.unlocked ? `Upgrade (${costText(cost, format)})` : "Locked"}
-                        </button>
-                      </div>
-                    );
-                  })}
-                  {!lifeProducerDefs.length && !lifeUpgradeDefs.length && (
-                    <div className="text-muted text-sm">Life support bays unlock as the Nexus grows.</div>
-                  )}
+                <div className="font-semibold">Fragment Index</div>
+                <div className="text-sm">{format(fragmentStatus.recovered)} / {format(fragmentStatus.total)} ({fragmentPercent}%)</div>
+                <div className="h-2 rounded-full bg-white/10 overflow-hidden">
+                  <div className="h-full bg-indigo-400" style={{ width: `${fragmentPercent}%` }} />
                 </div>
-              </div>
-            </div>
-          )}
-
-          {pane === "fuel" && (
-            <div className="space-y-3">
-              <div className="grid md:grid-cols-2 gap-3">
-                <div className="card space-y-2">
-                  <div className="font-semibold">Fuel Reserve</div>
-                  <div className="text-2xl font-semibold">{format(fuelReserve)}</div>
-                  <div className="text-xs text-muted">Net {format(fuelRate)}/tick ({fuelRate >= 0 ? "surplus" : "deficit"}).</div>
-                  <div className="text-xs text-muted">Hub production {format(hubFuelProd)}/tick | Hub burn {format(hubFuelCons)}/tick.</div>
-                </div>
-                <div className="card space-y-2">
-                  <div className="font-semibold">Fuel Routing</div>
-                  <div className="text-xs text-muted">Mission fuel cost: {Math.round((hubMods.fuelMult || 1) * 100)}%.</div>
-                  <div className="text-xs text-muted">Travel efficiency: {Math.round(hubTravel * 100)}% (Nav Console and Logistics Hub).</div>
-                  <div className="text-xs text-muted">Refineries convert organics to fuel. Power bays consume fuel - tune them in Fabrication.</div>
-                </div>
-              </div>
-
-              <div className="card space-y-2">
-                <div className="font-semibold">Fuel Producers</div>
-                <div className="list">
-                  {fuelProducerDefs.map((b) => {
-                    const level = state.hubBuildings[b.id] || 0;
-                    const cost = scaledHubCost(b.cost, level);
-                    const status = hubBuildingUnlockStatus(state, b);
-                    const can = status.unlocked && canAffordUI(state.resources, cost);
-                    return (
-                      <div key={b.id} className={`row-item ${!status.unlocked ? "opacity-60" : ""}`}>
-                        <div className="row-details">
-                          <div className="row-title">{b.name} <span className="tag">Lv {level}</span></div>
-                          <div className="row-meta">{b.desc}</div>
-                          <div className="row-meta text-xs text-muted">Output: +{format(b.prod?.fuel || 0)} fuel/tick per level</div>
-                          {!status.unlocked && <div className="row-meta text-xs text-muted">Unlock: {status.reasons.join(" | ")}</div>}
-                        </div>
-                        <button className="btn" disabled={!can} onClick={() => buildHub(b.id)}>
-                          {status.unlocked ? `Build (${costText(cost, format)})` : "Locked"}
-                        </button>
-                      </div>
-                    );
-                  })}
-                  {!fuelProducerDefs.length && <div className="text-muted text-sm">No fuel producers unlocked yet.</div>}
-                </div>
-              </div>
-
-              <div className="card space-y-2">
-                <div className="font-semibold">Fuel Pressure</div>
-                <div className="text-xs text-muted">Power bays draw fuel each tick; keep reserves above 0 to avoid output penalties.</div>
-              </div>
-
-              <div className="card space-y-2">
-                <div className="font-semibold">Fuel Routing & Efficiency</div>
-                <div className="list">
-                  {fuelRoutingDefs.map((b) => {
-                    const level = state.hubBuildings[b.id] || 0;
-                    const cost = scaledHubCost(b.cost, level);
-                    const status = hubBuildingUnlockStatus(state, b);
-                    const can = status.unlocked && canAffordUI(state.resources, cost);
-                    return (
-                      <div key={b.id} className={`row-item ${!status.unlocked ? "opacity-60" : ""}`}>
-                        <div className="row-details">
-                          <div className="row-title">{b.name} <span className="tag">Lv {level}</span></div>
-                          <div className="row-meta">{b.desc}</div>
-                          {!status.unlocked && <div className="row-meta text-xs text-muted">Unlock: {status.reasons.join(" | ")}</div>}
-                        </div>
-                        <button className="btn" disabled={!can} onClick={() => buildHub(b.id)}>
-                          {status.unlocked ? `Build (${costText(cost, format)})` : "Locked"}
-                        </button>
-                      </div>
-                    );
-                  })}
-                  {fuelUpgradeDefs.map((u) => {
-                    const level = state.hubUpgrades[u.id] || 0;
-                    const status = hubUpgradeUnlockStatus(state, u);
-                    const cost = scaledUpgradeCost(u.cost, level);
-                    const can = status.unlocked && canAffordUI(state.resources, cost);
-                    return (
-                      <div key={u.id} className="row-item">
-                        <div className="row-details">
-                          <div className="row-title">{u.name} <span className="tag">Tier {level}</span></div>
-                          <div className="row-meta">{u.desc}</div>
-                          {!status.unlocked && <div className="row-meta text-xs text-muted">Unlock: {status.reasons.join(" | ")}</div>}
-                        </div>
-                        <button className="btn" disabled={!can} onClick={() => buyHubUpgrade(u.id)}>
-                          {status.unlocked ? `Upgrade (${costText(cost, format)})` : "Locked"}
-                        </button>
-                      </div>
-                    );
-                  })}
-                  {!fuelRoutingDefs.length && !fuelUpgradeDefs.length && (
-                    <div className="text-muted text-sm">Fuel routing upgrades unlock as the Nexus grows.</div>
-                  )}
+                <div className="text-xs text-muted">
+                  {fragmentNext ? `Next threshold: ${fragmentNext.title} at ${Math.round(fragmentNext.percent * 100)}%.` : "Reassembly complete."}
                 </div>
               </div>
             </div>
@@ -2477,15 +2273,6 @@ function HubView({ state, buildHub, buyHubUpgrade, crewBonusText, ascend, format
                   <div className="text-xs text-muted">Prestige Protocol once to unlock doctrine selection.</div>
                 )}
               </div>
-            </div>
-          )}
-
-          {pane === "briefing" && (
-            <div className="space-y-3">
-              <div className="font-semibold">Briefing & Controls</div>
-              <ul className="text-sm text-muted list-disc list-inside space-y-1">
-                {briefing.map((b, i) => <li key={i}>{b}</li>)}
-              </ul>
             </div>
           )}
         </div>
