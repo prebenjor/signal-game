@@ -17,6 +17,7 @@ export default function MissionsView({ state, startMission, setAutoLaunch, setSe
   const missionsDone = state.milestones?.missionsDone || 0;
   const signal = state.resources.signal || 0;
   const techState = state.tech || {};
+  const firstLaunch = !state.milestones?.firstLaunch;
   const formatName = (value) => value
     .split("_")
     .map((word) => word.charAt(0).toUpperCase() + word.slice(1))
@@ -89,6 +90,12 @@ export default function MissionsView({ state, startMission, setAutoLaunch, setSe
             ))}
           </div>
         </div>
+        {firstLaunch && (
+          <div className="card space-y-1">
+            <div className="font-semibold">First Expedition</div>
+            <div className="text-xs text-muted">Select Debris Field, then open Launch Bay and deploy. Your first launch is fuel-free.</div>
+          </div>
+        )}
 
         {pane === "targeting" && (
           <div className="grid md:grid-cols-2 gap-3">
@@ -97,6 +104,7 @@ export default function MissionsView({ state, startMission, setAutoLaunch, setSe
               <div className="list max-h-[420px] overflow-y-auto pr-1">
                 {bodies.map((b) => {
                   const locked = !isUnlockedUI(state, b);
+                  const selected = state.selectedBody === b.id;
                   const bodyRangeLocked = (b.tier || 1) > hubRange;
                   const bodyEfficiency = depletionFactor(b.id);
                   const efficiencyLabel = Math.round(bodyEfficiency * 100);
@@ -112,7 +120,7 @@ export default function MissionsView({ state, startMission, setAutoLaunch, setSe
                     <div key={b.id} className="row-item">
                       <div className="row-details">
                         <div className="row-title">
-                          {b.name} {!locked && state.selectedBody === b.id && <span className="tag">Selected</span>} {bodyRangeLocked && <span className="tag">Beyond Range</span>} {!bodyRangeLocked && locked && <span className="tag">Locked</span>}
+                          {b.name} {!locked && selected && <span className="tag">Selected</span>} {bodyRangeLocked && <span className="tag">Beyond Range</span>} {!bodyRangeLocked && locked && <span className="tag">Locked</span>}
                         </div>
                         <div className="row-meta">{b.type.toUpperCase()} - Travel {formatDuration(b.travel * 1000)} - Hazard {(b.hazard * 100).toFixed(0)}%</div>
                         <div className="row-meta text-xs text-muted">Tier {b.tier} | Efficiency {efficiencyLabel}%</div>
@@ -120,7 +128,9 @@ export default function MissionsView({ state, startMission, setAutoLaunch, setSe
                         {b.reason && <div className="row-meta text-xs text-muted">{b.reason}</div>}
                         {!!requirements.length && <div className="row-meta text-xs text-muted">Unlock: {requirements.join(" | ")}</div>}
                       </div>
-                      <button className="btn" disabled={locked} onClick={() => setSelected(b.id)}>Lock</button>
+                      <button className="btn" disabled={locked || selected} onClick={() => setSelected(b.id)}>
+                        {locked ? "Locked" : selected ? "Selected" : "Target"}
+                      </button>
                     </div>
                   );
                 })}
