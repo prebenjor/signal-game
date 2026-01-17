@@ -14,7 +14,7 @@ import { Suspense, lazy, useEffect, useMemo, useReducer, useRef, useState } from
 import { motion, AnimatePresence } from "framer-motion";
 import "./App.css";
 import { supabase, supabaseConfigured } from "./lib/supabase";
-import { STORAGE_KEY, LEGACY_KEY, GAME_TITLE, TICK_MS, SAVE_MS, MAX_EVENTS_PER_BASE, SAVE_VERSION, EVENT_COOLDOWN_MS, FRAGMENT_TOTAL, FRAGMENT_THRESHOLDS, PACE, CREW_FATIGUE, CONTRACT_REFRESH_MS, COST_EXP, HUB_TIER_STEP, HUB_TIER_COST_MULT, HUB_UPGRADE_TIER_MULT, SYSTEM_EVENT_COOLDOWN_MS, MAX_SYSTEM_EVENTS, BODIES, HUB_UPGRADES, HUB_BUILDINGS, HUB_BUILDING_TIERS, BIOME_BUILDINGS, BASE_TRAITS, TECH, BASE_OPS, STARTER_TOUR, CODEX_ENTRIES, WIKI_ENTRIES, MISSION_MODES, SYSTEM_NAME_PARTS, SYSTEM_TRAITS, SYSTEM_SURVEY_STEPS, SURVEY_SEQUENCE, COLONY_ROLES, COLONY_COST, CREW_PROGRAMS, CREW_CONTRACTS, SYSTEM_EVENTS, INTEGRATION_PROJECTS, GALAXY_RULESETS, DOCTRINES, FACTION_OVERRIDES } from "./game/data";
+import { STORAGE_KEY, LEGACY_KEY, GAME_TITLE, TICK_MS, SAVE_MS, MAX_EVENTS_PER_BASE, SAVE_VERSION, EVENT_COOLDOWN_MS, FRAGMENT_TOTAL, FRAGMENT_THRESHOLDS, PACE, CREW_FATIGUE, CONTRACT_REFRESH_MS, COST_EXP, HUB_TIER_STEP, HUB_TIER_COST_MULT, HUB_UPGRADE_TIER_MULT, SYSTEM_EVENT_COOLDOWN_MS, MAX_SYSTEM_EVENTS, BODIES, HUB_UPGRADES, HUB_BUILDINGS, HUB_BUILDING_TIERS, BIOME_BUILDINGS, BASE_ZONES, BASE_TRAITS, TECH, BASE_OPS, STARTER_TOUR, CODEX_ENTRIES, WIKI_ENTRIES, MISSION_MODES, SYSTEM_NAME_PARTS, SYSTEM_TRAITS, SYSTEM_SURVEY_STEPS, SURVEY_SEQUENCE, COLONY_ROLES, COLONY_COST, CREW_PROGRAMS, CREW_CONTRACTS, SYSTEM_EVENTS, INTEGRATION_PROJECTS, GALAXY_RULESETS, DOCTRINES, FACTION_OVERRIDES } from "./game/data";
 
 const MissionsView = lazy(() => import("./views/Missions"));
 const BasesView = lazy(() => import("./views/Bases"));
@@ -62,6 +62,7 @@ const initialState = {
   profile: { name: "" },
   resources: { signal: 0, research: 2, metal: 0, organics: 0, fuel: 12, power: 0, food: 0, habitat: 0, morale: 0, rare: 0 },
   rates: { signal: 0, research: 0, metal: 0, organics: 0, fuel: 0, power: 0, food: 0, morale: 0 },
+  population: { total: 3, progress: 0 },
   fragments: { recovered: 0 },
   workers: { total: 3, assigned: { miner: 1, botanist: 1, engineer: 1 }, bonus: { miner: 0, botanist: 0, engineer: 0 }, satisfaction: 1 },
   hubBuildings: {},
@@ -163,6 +164,8 @@ export default function App() {
   const currentBase = useMemo(() => ensureBaseState(state.bases[state.selectedBody], currentBody), [state.bases, state.selectedBody]);
   const currentTraits = baseTraitList(currentBase);
   const currentMaintenance = baseMaintenanceStats(currentBase);
+  const populationTotal = Math.max(state.population?.total || 0, state.workers.total || 0);
+  const availablePopulation = Math.max(0, populationTotal - state.workers.total - totalBaseWorkers(state));
   const supabaseReady = supabaseConfigured && !!supabase;
   const capabilities = deriveCapabilities(state);
   const navTabs = buildNavTabs(capabilities, supabaseReady);
@@ -629,6 +632,7 @@ export default function App() {
     const focusMods = crewFocusModifiers(state);
     const contractMods = crewContractModifiers(state);
     const hubMods = hubUpgradeMods(state);
+    const workforce = baseWorkforceStats(currentBase);
 
     const addContribution = (prod, cons, requiresPower) => contributions.push({ prod, cons, requiresPower });
 
@@ -649,7 +653,8 @@ export default function App() {
       const prod = {};
       Object.entries(def.prod || {}).forEach(([k, v]) => {
         const traitMult = traitMods.prod[k] || 1;
-        prod[k] = v * lvl * workerMult(id) * focusBoost(focus, k) * (eventMods.mult[k] || 1) * traitMult * (maintenance.factor || 1);
+        const workforceMult = k === "research" ? workforce.researchMult : workforce.productionMult;
+        prod[k] = v * lvl * workerMult(id) * focusBoost(focus, k) * (eventMods.mult[k] || 1) * traitMult * (maintenance.factor || 1) * workforceMult;
       });
       addContribution(applyProdMult(prod, focusMods, contractMods), scaleCons(def.cons, lvl), !!def.cons?.power);
     });
@@ -674,15 +679,56 @@ export default function App() {
       rates.signal *= 0.8;
       rates.research *= 0.85;
     }
+    const popCheck = Math.max(state.population?.total || 0, state.workers.total || 0);
+    const upkeepCheck = populationFoodUpkeep(popCheck);
+    const foodCheck = populationFoodState(state.resources.food || 0, rates.food || 0, upkeepCheck);
+    const foodPenalty = foodCheck.state === "low" ? 0.9 : foodCheck.state === "negative" ? 0.75 : 1;
+    if (foodPenalty !== 1) {
+      ["metal", "organics", "fuel", "power", "research", "rare", "signal", "habitat"].forEach((k) => {
+        rates[k] = (rates[k] || 0) * foodPenalty;
+      });
+    }
     rates.morale = (rates.morale || 0) + (traitMods.morale || 0);
     const saturation = signalSaturation(state);
     if (rates.signal > 0 && saturation.factor < 1) rates.signal *= saturation.factor;
 
     Object.keys(rates).forEach((k) => { r[k] = Math.max(0, r[k] + rates[k] * (k === "power" ? 1 : prodBoost)); });
-    const foodUpkeep = state.workers.total * 0.2; r.food = Math.max(0, r.food - foodUpkeep);
 
-    const morale = computeMorale(r, rates, state, currentBase, eventMods, powerGate);
-    dispatch({ type: "UPDATE", patch: { resources: r, rates, workers: { ...state.workers, satisfaction: morale } } });
+    const popState = state.population || { total: state.workers.total || 0, progress: 0 };
+    let popTotal = Math.max(popState.total || 0, state.workers.total || 0);
+    const popCap = Math.max(popTotal, Math.floor(r.habitat || 0));
+    const upkeep = populationFoodUpkeep(popTotal);
+    const foodSnapshot = r.food;
+    const foodInfo = populationFoodState(foodSnapshot, rates.food || 0, upkeep);
+    r.food = Math.max(0, foodSnapshot - upkeep);
+
+    const growthBase = 1 / Math.max(1, Math.round(30000 / TICK_MS));
+    const declineBase = 1 / Math.max(1, Math.round(60000 / TICK_MS));
+    let progress = popState.progress || 0;
+    if (foodInfo.state === "negative") {
+      progress -= declineBase;
+    } else if (popTotal < popCap) {
+      let mult = foodInfo.state === "abundant" ? 1.5 : foodInfo.state === "low" ? 0.5 : 1;
+      if (popCap > 0 && popTotal / popCap >= 0.9) mult *= 0.5;
+      progress += growthBase * mult;
+    }
+    if (progress >= 1) {
+      const add = Math.floor(progress);
+      popTotal = Math.min(popCap, popTotal + add);
+      progress -= add;
+    }
+    if (progress <= -1) {
+      const sub = Math.floor(Math.abs(progress));
+      popTotal = Math.max(0, popTotal - sub);
+      progress += sub;
+    }
+    popTotal = Math.max(popTotal, state.workers.total || 0);
+    const population = { total: popTotal, progress };
+
+    const netRates = { ...rates, food: (rates.food || 0) - upkeep };
+
+    const morale = computeMorale(r, netRates, state, currentBase, eventMods, powerGate);
+    dispatch({ type: "UPDATE", patch: { resources: r, rates: netRates, workers: { ...state.workers, satisfaction: morale }, population } });
   }
 
   function workerMult(buildingId) {
@@ -804,6 +850,7 @@ export default function App() {
       const base = ensureBaseState(bases[body.id], body);
       if (!bases[body.id]) { bases[body.id] = base; changed = true; }
       const maintenance = baseMaintenanceStats(base);
+      const workforce = baseWorkforceStats(base);
       const traitMods = traitEffects(base.traits);
       if (!base.nextEventAt) base.nextEventAt = now + randomBetween(...EVENT_COOLDOWN_MS);
       if (now >= base.nextEventAt) {
@@ -811,7 +858,7 @@ export default function App() {
           base.events = [...(base.events || []), createEvent(body)];
           log(`Event at ${body.name}: ${base.events[base.events.length - 1].name}`);
         }
-        const eventMult = (traitMods.eventMult || 1) * (maintenance.over ? 0.7 : 1) * (crewMods.baseEventRateMult || 1) * (focusMods.baseEventRateMult || 1) * (contractMods.baseEventRateMult || 1);
+        const eventMult = (traitMods.eventMult || 1) * (maintenance.over ? 0.7 : 1) * (workforce.eventRateMult || 1) * (crewMods.baseEventRateMult || 1) * (focusMods.baseEventRateMult || 1) * (contractMods.baseEventRateMult || 1);
         base.nextEventAt = now + randomBetween(...EVENT_COOLDOWN_MS) * eventMult;
         bases[body.id] = base; changed = true;
       }
@@ -1180,7 +1227,7 @@ export default function App() {
     const status = hubBuildingUnlockStatus(state, def);
     if (!status.unlocked) { log(`Fabrication locked. ${status.reasons[0] || "Advance the Nexus tier."}`); return; }
     const level = state.hubBuildings[id] || 0;
-    const cost = scaledHubCost(def.cost, level);
+    const cost = scaledHubCost(def.cost, level, def.costExp);
     if (!canAfford(cost)) { log("Not enough resources."); return; }
     spend(cost);
     dispatch({ type: "UPDATE", patch: { hubBuildings: { ...state.hubBuildings, [id]: (state.hubBuildings[id] || 0) + 1 } } });
@@ -1209,6 +1256,10 @@ export default function App() {
     const def = biomeBuildingById(id); if (!def) return;
     const level = (state.bases[state.selectedBody]?.buildings?.[id] || 0);
     const base = ensureBaseState(state.bases[state.selectedBody], selectedBody());
+    const zoneId = def.zone || "core";
+    const zoneDef = BASE_ZONES.find((z) => z.id === zoneId);
+    const zoneUnlocked = zoneId === "core" || base.zones?.[zoneId];
+    if (!zoneUnlocked) { log(`Unlock ${zoneDef?.name || zoneId} in Workforce before building.`); return; }
     if (!requirementsMet(base, def)) { log("Requirements not met for this structure."); return; }
     const cost = withLogisticsCost(scaledCost(def.cost, level, COST_EXP.base), selectedBody());
     if (!canAfford(cost)) { log("Not enough resources (includes logistics fuel)."); return; }
@@ -1230,6 +1281,88 @@ export default function App() {
     const updated = { ...base, events: bodyEvents(selectedBody()) };
     dispatch({ type: "UPDATE", patch: { bases: { ...state.bases, [state.selectedBody]: updated } } });
     log("Local events refreshed.");
+  }
+
+  function availablePopulationForBase(bodyId) {
+    const populationTotal = Math.max(state.population?.total || 0, state.workers.total || 0);
+    const assignedBase = totalBaseWorkers(state);
+    const base = ensureBaseState(state.bases[bodyId], bodyById(bodyId));
+    const currentTotal = baseWorkerTotals(base).total;
+    return Math.max(0, populationTotal - state.workers.total - (assignedBase - currentTotal));
+  }
+
+  function assignBaseWorkers(bodyId, role, delta) {
+    const base = ensureBaseState(state.bases[bodyId], bodyById(bodyId));
+    const assigned = { ...base.workers.assigned };
+    const current = assigned[role] || 0;
+    const next = current + delta;
+    if (next < 0) return;
+    assigned[role] = next;
+    const newTotal = Object.values(assigned).reduce((sum, v) => sum + (v || 0), 0);
+    const cap = baseWorkerCap(base);
+    if (newTotal > cap) {
+      log("Workforce cap reached. Build Maintenance Bays to expand.");
+      return;
+    }
+    const available = availablePopulationForBase(bodyId);
+    const currentTotal = baseWorkerTotals(base).total;
+    if (delta > 0 && newTotal > currentTotal + available) {
+      log("No available population to assign.");
+      return;
+    }
+    const workers = { total: newTotal, assigned };
+    const updated = { ...base, workers };
+    dispatch({ type: "UPDATE", patch: { bases: { ...state.bases, [bodyId]: updated } } });
+  }
+
+  function setBaseWorkerPreset(bodyId, preset) {
+    const base = ensureBaseState(state.bases[bodyId], bodyById(bodyId));
+    const available = availablePopulationForBase(bodyId);
+    const cap = baseWorkerCap(base);
+    const currentTotal = baseWorkerTotals(base).total;
+    const normalizedPreset = preset === "max" ? "balanced" : preset;
+    let target = normalizedPreset === "clear" ? 0 : Math.min(cap, currentTotal + available);
+    if (target < 0) target = 0;
+    const weights = {
+      balanced: { production: 0.5, maintenance: 0.3, research: 0.2 },
+      production: { production: 0.7, maintenance: 0.2, research: 0.1 },
+      maintenance: { production: 0.4, maintenance: 0.5, research: 0.1 },
+      research: { production: 0.3, maintenance: 0.2, research: 0.5 },
+    };
+    let assigned = { production: 0, maintenance: 0, research: 0 };
+    if (normalizedPreset !== "clear") {
+      const weight = weights[normalizedPreset] || weights.balanced;
+      assigned = {
+        production: Math.floor(target * weight.production),
+        maintenance: Math.floor(target * weight.maintenance),
+        research: Math.floor(target * weight.research),
+      };
+      let remainder = target - (assigned.production + assigned.maintenance + assigned.research);
+      const order = ["production", "maintenance", "research"];
+      let idx = 0;
+      while (remainder > 0) {
+        assigned[order[idx % order.length]] += 1;
+        remainder -= 1;
+        idx += 1;
+      }
+    }
+    const workers = { total: target, assigned };
+    const updated = { ...base, workers };
+    dispatch({ type: "UPDATE", patch: { bases: { ...state.bases, [bodyId]: updated } } });
+    log(normalizedPreset === "clear" ? "Workers recalled to hub pool." : "Workforce protocol applied.");
+  }
+
+  function unlockBaseZone(bodyId, zoneId) {
+    const zone = BASE_ZONES.find((z) => z.id === zoneId);
+    if (!zone || zoneId === "core") return;
+    const base = ensureBaseState(state.bases[bodyId], bodyById(bodyId));
+    if (base.zones?.[zoneId]) { log(`${zone.name} already unlocked.`); return; }
+    if ((state.resources.habitat || 0) < zone.cost) { log("Not enough habitat to unlock this zone."); return; }
+    spend({ habitat: zone.cost });
+    const zones = { ...(base.zones || { core: true }), [zoneId]: true };
+    const updated = { ...base, zones };
+    dispatch({ type: "UPDATE", patch: { bases: { ...state.bases, [bodyId]: updated } } });
+    log(`${zone.name} unlocked at ${bodyById(bodyId).name}.`);
   }
 
   function selectedBody() { return BODIES.find((b) => b.id === state.selectedBody) || BODIES[0]; }
@@ -1376,7 +1509,9 @@ export default function App() {
     if (!canAfford(op.cost)) { log("Not enough resources for this op."); return; }
     spend(op.cost);
     bumpResources(op.reward);
-    const updated = { ...base, opsReadyAt: Date.now() + op.cooldown };
+    const workforce = baseWorkforceStats(base);
+    const cooldownMult = clamp(workforce.opsCooldownMult || 1, 0.5, 1);
+    const updated = { ...base, opsReadyAt: Date.now() + op.cooldown * cooldownMult };
     dispatch({ type: "UPDATE", patch: { bases: { ...state.bases, [bodyId]: updated } } });
     log(`Ran ${op.name} on ${body.name}.`);
   }
@@ -1394,6 +1529,8 @@ export default function App() {
 
   function hire(id) {
     const cand = state.recruits.find((c) => c.id === id); if (!cand) return;
+    const populationTotal = Math.max(state.population?.total || 0, state.workers.total || 0);
+    if (populationTotal <= state.workers.total) { log("Need population surplus to train a specialist."); return; }
     if (state.resources.habitat <= state.workers.total) { log("Need spare habitat to house new crew."); return; }
     if (!canAfford(cand.cost)) { log("Not enough resources to hire."); return; }
     spend(cand.cost);
@@ -1446,6 +1583,8 @@ export default function App() {
   function acceptContract(offerId) {
     const offer = (state.crewContracts || []).find((c) => c.offerId === offerId);
     if (!offer) return;
+    const populationTotal = Math.max(state.population?.total || 0, state.workers.total || 0);
+    if (populationTotal <= state.workers.total) { log("Need population surplus to onboard a specialist."); return; }
     if (state.resources.habitat <= state.workers.total) { log("Need spare habitat for contract crew."); return; }
     if (!canAfford(offer.cost)) { log("Not enough resources for this contract."); return; }
     spend(offer.cost);
@@ -1616,6 +1755,11 @@ function biomeBuildingById(id) { return Object.values(BIOME_BUILDINGS).flat().fi
                   baseTraits={currentTraits}
                   maintenanceStats={currentMaintenance}
                   baseBonuses={(id) => baseBonuses(state, id)}
+                  availablePopulation={availablePopulation}
+                  assignBaseWorkers={assignBaseWorkers}
+                  setBaseWorkerPreset={setBaseWorkerPreset}
+                  unlockBaseZone={unlockBaseZone}
+                  baseZones={BASE_ZONES}
                 />
               </Suspense>
             )}
@@ -1855,6 +1999,28 @@ function HubView({ state, buildHub, buyHubUpgrade, crewBonusText, ascend, format
   const unlockHints = unlockHintText(state, supabaseReady);
   const priorityActions = bottleneckGuidance(state, state.rates);
   const intelCount = (priorityActions.length ? 1 : 0) + (unlockHints.length ? 1 : 0);
+  const populationTotal = Math.max(state.population?.total || 0, state.workers.total || 0);
+  const assignedBaseWorkers = totalBaseWorkers(state);
+  const availablePopulation = Math.max(0, populationTotal - state.workers.total - assignedBaseWorkers);
+  const populationCap = Math.max(populationTotal, Math.floor(state.resources.habitat || 0));
+  const populationUpkeep = populationFoodUpkeep(populationTotal);
+  const foodInfo = populationFoodState(state.resources.food || 0, state.rates.food || 0, populationUpkeep);
+  const foodStateLabel = {
+    abundant: "Abundant",
+    stable: "Stable",
+    low: "Low",
+    negative: "Negative",
+  }[foodInfo.state] || "Stable";
+  const foodMinutes = Number.isFinite(foodInfo.minutes) ? Math.max(0, Math.round(foodInfo.minutes)) : null;
+  let growthLabel = "At capacity";
+  if (foodInfo.state === "negative") growthLabel = "Declining (-1/60s)";
+  else if (populationTotal < populationCap) {
+    const mult = foodInfo.state === "abundant" ? 1.5 : foodInfo.state === "low" ? 0.5 : 1;
+    const slow = populationCap > 0 && populationTotal / populationCap >= 0.9;
+    const base = 30;
+    const seconds = Math.round(base / (mult * (slow ? 0.5 : 1)));
+    growthLabel = `Growth +1/${seconds}s`;
+  }
   const buildCategories = [
     { id: "all", label: "All" },
     { id: "materials", label: "Materials" },
@@ -1994,7 +2160,7 @@ function HubView({ state, buildHub, buyHubUpgrade, crewBonusText, ascend, format
             {command.over > 0 && (
               <div className="text-xs text-muted">Over capacity: mission efficiency reduced, stability drifting.</div>
             )}
-            <div className="text-xs text-muted">Keep power non-negative and food above upkeep ({(state.workers.total * 0.2).toFixed(1)}/tick).</div>
+            <div className="text-xs text-muted">Keep power non-negative and food above upkeep ({populationUpkeep.toFixed(2)}/tick).</div>
             <div className="text-xs text-muted">{bottleneckReport(state, state.rates).join(" ")}</div>
             <div className="text-xs text-muted">
               Prestige Protocol: {(state.milestonesUnlocked || []).includes("M4_PRESTIGE_UNLOCK") ? "Ready" : "Locked"} (Depth 2, 2 integrations, saturation 25%).
@@ -2104,8 +2270,8 @@ function HubView({ state, buildHub, buyHubUpgrade, crewBonusText, ascend, format
                     if (buildSort === "cost") {
                       const levelA = state.hubBuildings[a.id] || 0;
                       const levelB = state.hubBuildings[b.id] || 0;
-                      const costA = Object.values(scaledHubCost(a.cost, levelA)).reduce((sum, v) => sum + v, 0);
-                      const costB = Object.values(scaledHubCost(b.cost, levelB)).reduce((sum, v) => sum + v, 0);
+                      const costA = Object.values(scaledHubCost(a.cost, levelA, a.costExp)).reduce((sum, v) => sum + v, 0);
+                      const costB = Object.values(scaledHubCost(b.cost, levelB, b.costExp)).reduce((sum, v) => sum + v, 0);
                       return costA - costB;
                     }
                     const tierA = a.tier || 0;
@@ -2114,7 +2280,7 @@ function HubView({ state, buildHub, buyHubUpgrade, crewBonusText, ascend, format
                   })
                   .map((b) => {
                   const level = state.hubBuildings[b.id] || 0;
-                  const cost = scaledHubCost(b.cost, level);
+                  const cost = scaledHubCost(b.cost, level, b.costExp);
                   const status = hubBuildingUnlockStatus(state, b);
                   const can = status.unlocked && canAffordUI(state.resources, cost);
                   return (
@@ -2179,6 +2345,14 @@ function HubView({ state, buildHub, buyHubUpgrade, crewBonusText, ascend, format
                 ) : (
                   <div className="text-xs text-muted">No critical actions queued.</div>
                 )}
+              </div>
+              <div className="card space-y-2">
+                <div className="font-semibold">Population Command</div>
+                <div className="text-sm">{populationTotal} / {populationCap} population</div>
+                <div className="text-xs text-muted">Food upkeep {populationUpkeep.toFixed(2)}/tick</div>
+                <div className="text-xs text-muted">
+                  Food status: {foodStateLabel}{foodMinutes !== null ? ` (${foodMinutes}m)` : ""} | {growthLabel}
+                </div>
               </div>
               <div className="card space-y-2">
                 <div className="font-semibold">Command Array</div>
@@ -2810,10 +2984,11 @@ function scaledCost(baseCost, level, exp) {
 function hubTotalLevel(stateObj) {
   return Object.values(stateObj.hubBuildings || {}).reduce((sum, lvl) => sum + (lvl || 0), 0);
 }
-function scaledHubCost(baseCost, level) {
+function scaledHubCost(baseCost, level, expOverride) {
   const tier = Math.floor((level || 0) / HUB_TIER_STEP);
   const tierMult = Math.pow(HUB_TIER_COST_MULT, tier);
-  return scaleCost(scaledCost(baseCost, level, COST_EXP.hub), tierMult);
+  const exp = Number.isFinite(expOverride) ? expOverride : COST_EXP.hub;
+  return scaleCost(scaledCost(baseCost, level, exp), tierMult);
 }
 function scaledUpgradeCost(baseCost, level) {
   const tierMult = Math.pow(HUB_UPGRADE_TIER_MULT, (level || 0) + 1);
@@ -2857,10 +3032,28 @@ function aggregateEventMods(base) {
   });
   return { mult, moralePenalty };
 }
+function populationFoodUpkeep(popTotal) {
+  if (popTotal <= 100) return 0.1;
+  if (popTotal <= 500) return 0.5;
+  if (popTotal <= 1000) return 1.0;
+  if (popTotal <= 2500) return 2.5;
+  return 5.0;
+}
+function populationFoodState(foodStock, foodRate, upkeep) {
+  if (upkeep <= 0) return { state: "abundant", minutes: Infinity };
+  const minutes = (foodStock / upkeep) * (TICK_MS / 60000);
+  const net = (foodRate || 0) - upkeep;
+  if (foodStock <= 0 && net < 0) return { state: "negative", minutes };
+  if (minutes >= 60) return { state: "abundant", minutes };
+  if (minutes >= 10) return { state: "stable", minutes };
+  if (minutes > 0) return { state: "low", minutes };
+  return { state: "negative", minutes };
+}
 function computeMorale(resources, rates, state, currentBase, eventMods, powerGate) {
-  const foodUpkeep = state.workers.total * 0.2;
+  const populationTotal = Math.max(state.population?.total || 0, state.workers.total || 0);
+  const foodUpkeep = populationFoodUpkeep(populationTotal);
   const foodFactor = clamp((resources.food / Math.max(1, foodUpkeep)) * 0.9, 0.35, 1.25);
-  const habitatFactor = clamp((resources.habitat || 0) / Math.max(1, state.workers.total), 0.5, 1.2);
+  const habitatFactor = clamp((resources.habitat || 0) / Math.max(1, populationTotal), 0.5, 1.2);
   const powerFactor = powerGate ? 0.4 : 1;
   const unassigned = state.workers.total - Object.values(state.workers.assigned).reduce((a, b) => a + b, 0);
   const restFactor = clamp(0.9 + unassigned * 0.04, 0.85, 1.15);
@@ -2899,6 +3092,8 @@ function defaultBaseState(body) {
     nextEventAt: Date.now() + randomBetween(...EVENT_COOLDOWN_MS),
     opsReadyAt: 0,
     traits: body ? rollTraits(body) : [],
+    workers: { total: 0, assigned: { production: 0, maintenance: 0, research: 0 } },
+    zones: { core: true },
   };
 }
 function traitEffects(traitIds = []) {
@@ -2925,10 +3120,51 @@ function baseMaintenanceStats(base) {
   const factor = over ? Math.max(0.6, 1 - (used - cap) * 0.08) : 1;
   return { used, cap, over, factor };
 }
+function baseWorkerCap(base) {
+  const maintenance = base.buildings?.maintenance_bay || 0;
+  const residentialBonus = base.zones?.residential ? 15 : 0;
+  return 25 + maintenance * 5 + residentialBonus;
+}
+function baseWorkerTotals(base) {
+  const assigned = base.workers?.assigned || { production: 0, maintenance: 0, research: 0 };
+  const total = Object.values(assigned).reduce((sum, v) => sum + (v || 0), 0);
+  return { assigned, total };
+}
+function baseWorkforceStats(base) {
+  const { assigned, total } = baseWorkerTotals(base);
+  const cap = baseWorkerCap(base);
+  let efficiency = 0.5;
+  if (total <= 5) efficiency = 0.5;
+  else if (total <= 15) efficiency = 0.75;
+  else if (total <= 25) efficiency = 1;
+  else efficiency = 1 + Math.min(0.25, (total - 25) * 0.01);
+  const productionShare = total > 0 ? assigned.production / total : 0;
+  const maintenanceShare = total > 0 ? assigned.maintenance / total : 0;
+  const researchShare = total > 0 ? assigned.research / total : 0;
+  const productionMult = efficiency * (0.85 + productionShare * 0.3);
+  const researchMult = efficiency * (0.85 + researchShare * 0.3);
+  const eventRateMult = 1 - maintenanceShare * 0.3;
+  const opsCooldownMult = 1 - maintenanceShare * 0.5;
+  return { total, cap, assigned, efficiency, productionMult, researchMult, eventRateMult, opsCooldownMult };
+}
+function totalBaseWorkers(stateObj) {
+  return Object.values(stateObj?.bases || {}).reduce((sum, base) => {
+    const assigned = base?.workers?.assigned;
+    if (!assigned) return sum;
+    return sum + Object.values(assigned).reduce((acc, v) => acc + (v || 0), 0);
+  }, 0);
+}
 function ensureBaseState(base, body) {
   if (base) {
-    if (!base.traits?.length) return { ...base, traits: rollTraits(body) };
-    return base;
+    const next = { ...base };
+    if (!next.traits?.length) next.traits = rollTraits(body);
+    if (!next.workers) next.workers = { total: 0, assigned: { production: 0, maintenance: 0, research: 0 } };
+    if (!next.workers.assigned) next.workers.assigned = { production: 0, maintenance: 0, research: 0 };
+    if (!Number.isFinite(next.workers.total)) {
+      next.workers.total = Object.values(next.workers.assigned).reduce((sum, v) => sum + (v || 0), 0);
+    }
+    if (!next.zones) next.zones = { core: true };
+    return next;
   }
   return defaultBaseState(body);
 }
@@ -2984,6 +3220,31 @@ function migrateSave(save) {
   }
   if (version < 11) {
     out.fragments = out.fragments || { recovered: 0 };
+  }
+  if (!out.population) {
+    const total = Math.max(out.workers?.total || 0, 0);
+    out.population = { total, progress: 0 };
+  }
+  if (out.bases && typeof out.bases === "object") {
+    Object.entries(out.bases).forEach(([id, base]) => {
+      if (!base) return;
+      const assigned = base.workers?.assigned;
+      if (!base.workers) base.workers = { total: 0, assigned: { production: 0, maintenance: 0, research: 0 } };
+      if (!assigned) base.workers.assigned = { production: 0, maintenance: 0, research: 0 };
+      if (!Number.isFinite(base.workers.total)) {
+        base.workers.total = Object.values(base.workers.assigned).reduce((sum, v) => sum + (v || 0), 0);
+      }
+      if (!base.zones) base.zones = { core: true };
+      const zoneSet = { ...(base.zones || { core: true }) };
+      Object.entries(base.buildings || {}).forEach(([buildingId, lvl]) => {
+        if (!lvl) return;
+        const def = biomeBuildingById(buildingId);
+        const zoneId = def?.zone;
+        if (zoneId) zoneSet[zoneId] = true;
+      });
+      base.zones = zoneSet;
+      out.bases[id] = base;
+    });
   }
   if (!out.profile) out.profile = { name: "" };
   if (typeof out.profile?.name !== "string") out.profile.name = "";
@@ -3129,7 +3390,7 @@ function bottleneckGuidance(stateObj, rates) {
     guidance.push({ title: "Restore power", detail: "Warm biomes feed organics for reactors. Prioritize Lava Rock and power bays." });
   }
   if ((res.fuel || 0) <= 0 && (rates.fuel || 0) <= 0) {
-    guidance.push({ title: "Refuel the grid", detail: "Ice Moon and Cradle Station boost fuel. Build Fuel Refinery or Catalyst Cracker." });
+    guidance.push({ title: "Refuel the grid", detail: "Ice Moon and Cradle Station boost fuel. Build Fuel Refinery, Catalyst Cracker, or Hydrogen Cracker (after Advanced Refining)." });
   }
   if ((res.food || 0) <= 0 && (rates.food || 0) <= 0) {
     guidance.push({ title: "Stabilize food", detail: "Ice Moon yields food. Build Hydroponics or Bioforge to meet upkeep." });

@@ -10,9 +10,19 @@ export default function CrewView({ state, hire, rollRecruits, changeCrew, format
       ? 2
       : 1;
   const moralePct = Math.round((state.workers.satisfaction || 0) * 100);
-  const foodUpkeep = (state.workers.total || 0) * 0.2;
+  const populationTotal = Math.max(state.population?.total || 0, state.workers.total || 0);
+  const foodUpkeep = populationTotal <= 100
+    ? 0.1
+    : populationTotal <= 500
+      ? 0.5
+      : populationTotal <= 1000
+        ? 1.0
+        : populationTotal <= 2500
+          ? 2.5
+          : 5.0;
   const habitat = state.resources.habitat || 0;
-  const freeHabitat = Math.max(0, habitat - state.workers.total);
+  const populationCap = Math.max(populationTotal, habitat);
+  const freeHabitat = Math.max(0, habitat - populationTotal);
   const refreshMs = 45000;
   const sinceRoll = Date.now() - (state.lastRecruitRoll || 0);
   const nextRefresh = Math.max(0, refreshMs - sinceRoll);
@@ -128,8 +138,14 @@ export default function CrewView({ state, hire, rollRecruits, changeCrew, format
               <div className="list">
                 <div className="row-item">
                   <div className="row-details">
-                    <div className="row-title">Headcount</div>
+                    <div className="row-title">Specialists</div>
                     <div className="row-meta">{state.workers.total} total | {assignedCount} assigned | {unassigned} idle</div>
+                  </div>
+                </div>
+                <div className="row-item">
+                  <div className="row-details">
+                    <div className="row-title">Population</div>
+                    <div className="row-meta">{format(populationTotal)} / {format(populationCap)} capacity</div>
                   </div>
                 </div>
                 <div className="row-item">

@@ -26,10 +26,16 @@ export default function BasesView({
   baseTraits,
   maintenanceStats,
   baseBonuses,
+  availablePopulation,
+  assignBaseWorkers,
+  setBaseWorkerPreset,
+  baseZones,
+  unlockBaseZone,
 }) {
   const body = bodies.find((b) => b.id === state.selectedBody) || bodies[0];
   const buildings = biomeBuildings[body.type] || [];
   const base = state.bases[body.id] || { buildings: {}, events: bodyEvents(body), focus: "balanced" };
+  const zoneState = base.zones || { core: true };
   const ops = baseOps[body.type] || [];
   const opsCd = Math.max(0, (base.opsReadyAt || 0) - Date.now());
   const [pane, setPane] = useState("overview");
@@ -39,6 +45,16 @@ export default function BasesView({
   const maintenanceFill = Math.min(1, maintenanceStats.used / Math.max(1, maintenanceStats.cap));
   const incidents = base.events || [];
   const incidentFill = Math.min(1, incidents.length / 4);
+  const workforceAssigned = base.workers?.assigned || { production: 0, maintenance: 0, research: 0 };
+  const workforceTotal = Object.values(workforceAssigned).reduce((sum, v) => sum + (v || 0), 0);
+  const workforceCap = 25 + (base.buildings?.maintenance_bay || 0) * 5 + (zoneState.residential ? 15 : 0);
+  const workforceEfficiency = workforceTotal <= 5
+    ? 0.5
+    : workforceTotal <= 15
+      ? 0.75
+      : workforceTotal <= 25
+        ? 1
+        : 1 + Math.min(0.25, (workforceTotal - 25) * 0.01);
   const groupedBuildings = useMemo(() => {
     const classify = (b) => {
       if (b.maintenanceCap) return "Infrastructure";
@@ -64,6 +80,7 @@ export default function BasesView({
   const labelify = (value) => value.replace(/_/g, " ").replace(/\b\w/g, (m) => m.toUpperCase());
   const groupLabel = (group) => labelify(group || "");
   const buildingNameById = (id) => buildings.find((b) => b.id === id)?.name || labelify(id || "");
+  const zoneById = (id) => (baseZones || []).find((z) => z.id === id);
   const visibleGroups = buildGroup === "All"
     ? groupedBuildings
     : groupedBuildings.filter((g) => g.name === buildGroup);
@@ -81,8 +98,9 @@ export default function BasesView({
     ops: "Field Ops",
     focus: "Focus Protocols",
     traits: "Site Traits",
+    workforce: "Workforce",
   };
-  const tabOrder = ["overview", "build", "events", "ops", "focus", "traits"];
+  const tabOrder = ["overview", "workforce", "build", "events", "ops", "focus", "traits"];
   const formatMod = (value) => {
     const delta = Math.round((value - 1) * 100);
     if (delta === 0) return "0%";
@@ -229,6 +247,90 @@ export default function BasesView({
           </div>
         )}
 
+        {pane === "workforce" && (
+          <div className="grid lg:grid-cols-2 gap-3">
+            <div className="card space-y-3 base-panel">
+              <div>
+                <div className="font-semibold">Workforce Command</div>
+                <div className="text-xs text-muted">Assign population to keep output stable and incidents low.</div>
+              </div>
+              <div className="flex flex-wrap gap-2 text-xs">
+                <span className="tag">Workers {workforceTotal}/{workforceCap}</span>
+                <span className="tag">Available {format(availablePopulation || 0)}</span>
+                <span className="tag">Efficiency {Math.round(workforceEfficiency * 100)}%</span>
+              </div>
+              <div className="list">
+                {[
+                  { id: "production", label: "Production", hint: "Boosts output." },
+                  { id: "maintenance", label: "Maintenance", hint: "Reduces incidents, speeds ops." },
+                  { id: "research", label: "Research", hint: "Boosts research output." },
+                ].map((role) => (
+                  <div key={role.id} className="row-item">
+                    <div className="row-details">
+                      <div className="row-title">{role.label}</div>
+                      <div className="row-meta">{role.hint}</div>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <button className="btn" onClick={() => assignBaseWorkers(body.id, role.id, -1)}>-</button>
+                      <span className="text-sm w-6 text-center">{workforceAssigned[role.id] || 0}</span>
+                      <button className="btn" onClick={() => assignBaseWorkers(body.id, role.id, 1)}>+</button>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+
+            <div className="card space-y-3 base-panel">
+              <div>
+                <div className="font-semibold">Deployment Protocols</div>
+                <div className="text-xs text-muted">Apply a distribution template for this base.</div>
+              </div>
+              <div className="flex flex-wrap gap-2">
+                <button className="btn" onClick={() => setBaseWorkerPreset(body.id, "balanced")}>Balanced</button>
+                <button className="btn" onClick={() => setBaseWorkerPreset(body.id, "production")}>Production</button>
+                <button className="btn" onClick={() => setBaseWorkerPreset(body.id, "maintenance")}>Maintenance</button>
+                <button className="btn" onClick={() => setBaseWorkerPreset(body.id, "research")}>Research</button>
+              </div>
+              <div className="flex flex-wrap gap-2">
+                <button className="btn" onClick={() => setBaseWorkerPreset(body.id, "max")}>Fill to cap</button>
+                <button className="btn" onClick={() => setBaseWorkerPreset(body.id, "clear")}>Recall workers</button>
+              </div>
+              <div className="text-xs text-muted">Workforce draws from your population pool. Build habitat to expand capacity.</div>
+            </div>
+
+            <div className="card space-y-3 base-panel">
+              <div>
+                <div className="font-semibold">Expansion Zones</div>
+                <div className="text-xs text-muted">Unlock new build tiers by investing habitat.</div>
+              </div>
+              <div className="list">
+                {(baseZones || []).map((zone) => {
+                  const unlocked = zone.id === "core" || zoneState[zone.id];
+                  const cost = zone.cost || 0;
+                  return (
+                    <div key={zone.id} className="row-item">
+                      <div className="row-details">
+                        <div className="row-title">
+                          {zone.name} {unlocked ? <span className="tag">Online</span> : null}
+                        </div>
+                        <div className="row-meta">{zone.desc}</div>
+                        {zone.id !== "core" && (
+                          <div className="row-meta text-xs text-muted">Habitat cost: {format(cost)}</div>
+                        )}
+                      </div>
+                      {zone.id === "core" ? null : (
+                        <button className="btn" disabled={unlocked || (state.resources.habitat || 0) < cost} onClick={() => unlockBaseZone(body.id, zone.id)}>
+                          {unlocked ? "Unlocked" : `Unlock (${cost} habitat)`}
+                        </button>
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          </div>
+        )}
+
         {pane === "traits" && (
           <div className="card space-y-2 base-panel">
             <div className="font-semibold">Site Traits</div>
@@ -283,8 +385,14 @@ export default function BasesView({
                     const cost = withLogisticsCost(scaledCost(b.cost, lvl, costExpBase), body);
                     const logistics = Math.max(2, Math.floor((body.travel || 0) / 25));
                     const reqMet = requirementsMet(base, b);
+                    const zoneId = b.zone || "core";
+                    const zone = zoneById(zoneId);
+                    const zoneUnlocked = zoneId === "core" || zoneState[zoneId];
+                    const zoneLabel = zone?.name || labelify(zoneId);
                     const reqText = b.requires ? `Requires: ${b.requires.map((r) => `${buildingNameById(r.id)} Lv ${r.level || 1}`).join(", ")}` : "";
                     const groupText = b.group ? `Branch: ${groupLabel(b.group)} (choose one)` : "";
+                    const zoneText = zoneId === "core" ? "Zone: Core" : `Zone: ${zoneLabel}`;
+                    const canBuild = reqMet && zoneUnlocked && canAffordUI(state.resources, cost);
                     return (
                       <div key={b.id} className="row-item">
                         <div className="row-details">
@@ -295,11 +403,13 @@ export default function BasesView({
                           <div className="row-meta text-xs text-muted">Logistics: +{logistics} fuel</div>
                           <div className="row-meta text-xs text-muted">Crew bonus: {crewBonusText(b.id)}</div>
                           <div className="row-meta text-xs text-muted">Next cost: {costText(cost, format)}</div>
+                          <div className="row-meta text-xs text-muted">{zoneText}{zoneUnlocked ? "" : " (locked)"}</div>
                           {reqText && <div className="row-meta text-xs text-muted">{reqText}</div>}
                           {groupText && <div className="row-meta text-xs text-muted">{groupText}</div>}
+                          {!zoneUnlocked && <div className="row-meta text-xs text-muted">Unlock {zoneLabel} in Workforce.</div>}
                         </div>
-                        <button className="btn" disabled={!reqMet || !canAffordUI(state.resources, cost)} onClick={() => buildBase(b.id)}>
-                          {reqMet ? `Fabricate (${costText(cost, format)})` : "Locked"}
+                        <button className="btn" disabled={!canBuild} onClick={() => buildBase(b.id)}>
+                          {canBuild ? `Fabricate (${costText(cost, format)})` : "Locked"}
                         </button>
                       </div>
                     );
@@ -347,7 +457,12 @@ export default function BasesView({
                     <div className="row-title">{op.name}</div>
                     <div className="row-meta">{op.desc}</div>
                     <div className="row-meta text-xs text-muted">
-                      Cost {costText(op.cost, format)} | Cooldown {Math.round(op.cooldown / 1000)}s
+                      {(() => {
+                        const maintenanceShare = workforceTotal > 0 ? (workforceAssigned.maintenance || 0) / workforceTotal : 0;
+                        const cooldownMult = 1 - maintenanceShare * 0.5;
+                        const effective = Math.max(1, Math.round((op.cooldown * cooldownMult) / 1000));
+                        return `Cost ${costText(op.cost, format)} | Cooldown ${effective}s`;
+                      })()}
                     </div>
                   </div>
                   <button className="btn" disabled={opsCd > 0 || !canAffordUI(state.resources, op.cost)} onClick={() => runBaseOp(body.id, op.id)}>
