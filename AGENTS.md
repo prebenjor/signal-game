@@ -265,6 +265,7 @@ Why this works best:
 - Early/mid players still have progression path
 
 ## 8. UI/UX Recommendations
+Rule: ASCII examples in this manifesto are illustrative only. Do not implement ASCII art in the UI.
 Resource Dashboard
 [Power: 5.44M] <-> [+254/tick]
 [Metal: 252.0K] <-> [+84/tick]
@@ -512,6 +513,109 @@ TL;DR Summary
 - Outpost operations remain as current base management.
 - Range tiers gate discovery; signal + research gate surveys.
 - Traits create strategic choices; fragments tie to faction prestige.
+
+## 14. Crew-Base Integration and Population System
+Core Concept
+- Habitat = population capacity.
+- Food = population sustenance.
+- Crew = active workforce assigned to hub + bases.
+
+Population Mechanics
+Hub Population Pool
+- Total population capped by habitat.
+- Growth: +1 per 30 seconds (slows above 90% capacity, stops at 100%).
+- Growth modifiers:
+  - Food abundant (>2x consumption): +50% growth.
+  - Food stable (1-2x consumption): normal growth.
+  - Food scarce (<1x consumption): -50% growth, morale penalty.
+  - Food negative: growth stops, population declines (-1 per 60s).
+
+Habitat as Base Expansion Gates
+- Bases unlock development zones via one-time habitat investment per base:
+  - Core Zone: free, 10 slots (basic production).
+  - Industrial Zone: 50 habitat, +15 slots (advanced production).
+  - Research Zone: 150 habitat, +10 slots (research structures).
+  - Residential Zone: 300 habitat, +20 slots, +50 base population cap.
+  - Deep Sector: 500 habitat, +15 slots (rare/exotic structures).
+- Habitat is spent to unlock zones; remaining habitat stays available for new bases.
+
+Food States and Consequences
+- Abundant: +10% crew efficiency, +50% population growth.
+- Stable: baseline operations.
+- Low (<10 minutes stockpile): warning, growth -50%, morale -10%.
+- Negative: emergency rations consume reserves; after reserves, -25% production, -1 pop/60s.
+- Safety net: each Food Synthesizer level adds 100 food emergency reserve.
+
+Food Storage (New Hub Building)
+- Granary: +1,000 food storage base, +500 per level.
+- Cost: 500M, 200O x 1.11^level.
+- Unlock: Tier 1 (Nexus Lv 5).
+
+Crew Assignment Overhaul
+Specialists (hub-level)
+- Miners, Botanists, Engineers remain; boost relevant buildings and hazards.
+
+Workers (population-based, per base)
+- Assign workers from population pool to bases:
+  - Production, Maintenance, Research split.
+  - Base efficiency: +5% per worker up to 20; +2% per worker from 21-50.
+  - Max workers per base: 50 (requires Residential Zone).
+  - Upkeep: 0.01 food/tick per worker.
+- Auto-balance presets:
+  - Production Focus: 70/20/10 (prod/maint/research).
+  - Efficiency Focus: 40/50/10.
+  - Research Focus: 30/20/50.
+  - Custom: player sliders.
+
+Recruitment Pipeline
+- Recruitment Bay (Hub Building):
+  - Converts population + research + food into specialists.
+  - Cost per specialist: 100 population + 50 research + 500 food.
+  - Training time: 5 minutes; multiple slots per level.
+  - Unlock: Tier 2 (Nexus Lv 20).
+- Specialist tiers:
+  - Tier 1: +10% bonus.
+  - Tier 2: +20% bonus + secondary ability.
+  - Tier 3: +35% bonus + faction-specific abilities.
+
+Base-Crew Interconnection
+- Base efficiency by workers:
+  - 0-5 workers: 50% efficiency.
+  - 6-15 workers: 75% efficiency.
+  - 16-25 workers: 100% efficiency.
+  - 26-50 workers: 125% efficiency.
+- Incident response:
+  - No engineer: 2x resolve time.
+  - Engineer: normal.
+  - Engineer + 5 maintenance workers: -50% resolve time.
+- Field ops cooldown:
+  - Base 20s; -0.5s per maintenance worker (max -10s); engineer adds -5s.
+
+Habitat Production Buildings
+Hub
+- Habitat Module (repurposed): +50 habitat per level.
+- Hydroponics Bay (new): +20 food/tick, +10 habitat per level (Tier 1, Nexus 8).
+
+Bases
+- Residential Complex: +100 habitat global, +25 worker cap at base (Tier 2, Residential Zone).
+- Mess Hall: -50% food consumption for workers at base (Tier 2, Industrial Zone).
+
+Prestige Integration
+- Zone unlocks persist across prestige (one-time investment).
+- Outpost structures reset; zone access remains.
+- Population bonuses via prestige:
+  - +50% growth rate (5 points).
+  - -25% habitat zone cost (10 points).
+  - Workers grant +7% per worker (15 points).
+- Faction perks:
+  - Shepherds: no morale penalty in hazard zones.
+  - Brokers: -30% food consumption.
+  - Archive: specialists train 50% faster.
+
+Result
+- Habitat and food become strategic gating resources.
+- Population ties hub, bases, and crew into a single loop.
+- Crew assignment becomes a meaningful optimization layer.
 
 ## New Ideas
 - Resource Forecast Overlay: show time-to-zero per resource and the Auto-Balancer action chosen.
