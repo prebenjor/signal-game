@@ -2113,6 +2113,8 @@ function HubView({ state, buildHub, buyHubUpgrade, crewBonusText, ascend, format
     const seconds = Math.round(base / (mult * (slow ? 0.5 : 1)));
     growthLabel = `Growth +1/${seconds}s`;
   }
+  const tutorialStage = hubLevels < 3;
+  const tutorialBuildingIds = new Set(["salvage_dock", "food_synth"]);
   const buildCategories = [
     { id: "all", label: "All" },
     { id: "materials", label: "Materials" },
@@ -2178,8 +2180,6 @@ function HubView({ state, buildHub, buyHubUpgrade, crewBonusText, ascend, format
   ];
   const ownedCount = Object.values(state.hubBuildings || {}).filter((lvl) => lvl > 0).length;
   const showFilters = ownedCount > 6;
-  const tutorialStage = hubLevels < 3;
-  const tutorialBuildingIds = new Set(["salvage_dock", "food_synth"]);
   const fuelTech = TECH.find((tech) => tech.id === "fuel_synth");
   const fuelTechCost = fuelTech ? scaleCost(fuelTech.cost, PACE.techCostMult) : null;
   const fuelTechSignal = fuelTech ? Math.ceil(fuelTech.unlock * PACE.techUnlockMult) : 0;
