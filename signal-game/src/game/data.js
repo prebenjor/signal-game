@@ -67,6 +67,7 @@ export const HUB_BUILDING_TIERS = {
 };
 export const HUB_BUILDINGS = [
   { id: "salvage_dock", name: "Salvage Dock", desc: "+2 metal/tick", cost: { fuel: 8 }, prod: { metal: 2 }, cons: {}, tier: 0, category: "materials" },
+  { id: "food_synth", name: "Food Synthesizer", desc: "+2 food/tick", cost: { metal: 30 }, prod: { food: 2 }, cons: {}, tier: 0, category: "life" },
   { id: "biofilter_vats", name: "Biofilter Vats", desc: "+2 organics/tick", cost: { metal: 25 }, prod: { organics: 2 }, cons: {}, tier: 0, category: "life" },
   { id: "reactor", name: "Micro Reactor", desc: "+3 power/tick", cost: { metal: 70, organics: 10 }, prod: { power: 3 }, cons: {}, tier: 0, category: "power", costExp: 1.14, unlock: { requires: [{ id: "salvage_dock", level: 1 }] } },
   { id: "signal_uplink", name: "Signal Uplink", desc: "+2 signal/tick", cost: { metal: 40, organics: 12 }, prod: { signal: 2 }, cons: { power: 1 }, tier: 0, category: "signal", unlock: { requires: [{ id: "reactor", level: 1 }] } },

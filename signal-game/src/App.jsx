@@ -1742,7 +1742,7 @@ function biomeBuildingById(id) { return Object.values(BIOME_BUILDINGS).flat().fi
               </button>
             </div>
           </div>
-          <ResourceBar resources={state.resources} rates={state.rates} format={format} />
+          <ResourceBar resources={state.resources} rates={state.rates} format={format} hubLevel={hubTotalLevel(state)} />
         </header>
         <div className="flex flex-col md:flex-row gap-4">
           <nav className="md:w-48 w-full flex md:flex-col flex-wrap gap-2 overflow-x-auto pb-1">
@@ -1932,12 +1932,48 @@ function biomeBuildingById(id) { return Object.values(BIOME_BUILDINGS).flat().fi
   );
 }
 
-function ResourceBar({ resources, rates, format }) {
-  const entries = [
-    { label: 'Signal', key: 'signal' }, { label: 'Research', key: 'research' }, { label: 'Metal', key: 'metal' },
-    { label: 'Organics', key: 'organics' }, { label: 'Fuel', key: 'fuel' }, { label: 'Power', key: 'power' },
-    { label: 'Food', key: 'food' }, { label: 'Habitat', key: 'habitat' }, { label: 'Rare', key: 'rare' },
-  ];
+function ResourceBar({ resources, rates, format, hubLevel }) {
+  const stage = hubLevel < 3 ? 1 : hubLevel < 15 ? 2 : hubLevel < 31 ? 3 : 4;
+  const entriesByStage = {
+    1: [
+      { label: "Metal", key: "metal" },
+      { label: "Food", key: "food" },
+      { label: "Power", key: "power" },
+      { label: "Morale", key: "morale" },
+    ],
+    2: [
+      { label: "Metal", key: "metal" },
+      { label: "Organics", key: "organics" },
+      { label: "Food", key: "food" },
+      { label: "Power", key: "power" },
+      { label: "Signal", key: "signal" },
+      { label: "Morale", key: "morale" },
+    ],
+    3: [
+      { label: "Metal", key: "metal" },
+      { label: "Organics", key: "organics" },
+      { label: "Fuel", key: "fuel" },
+      { label: "Research", key: "research" },
+      { label: "Food", key: "food" },
+      { label: "Power", key: "power" },
+      { label: "Signal", key: "signal" },
+      { label: "Habitat", key: "habitat" },
+      { label: "Morale", key: "morale" },
+    ],
+    4: [
+      { label: "Metal", key: "metal" },
+      { label: "Organics", key: "organics" },
+      { label: "Fuel", key: "fuel" },
+      { label: "Research", key: "research" },
+      { label: "Food", key: "food" },
+      { label: "Power", key: "power" },
+      { label: "Signal", key: "signal" },
+      { label: "Habitat", key: "habitat" },
+      { label: "Rare", key: "rare" },
+      { label: "Morale", key: "morale" },
+    ],
+  };
+  const entries = entriesByStage[stage] || entriesByStage[4];
   return (
     <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-2">
       {entries.map((e) => (
@@ -2090,12 +2126,15 @@ function HubView({ state, buildHub, buyHubUpgrade, crewBonusText, ascend, format
   const nextTier = tierList.find((tier) => !hubTierUnlockStatus(state, tier).unlocked);
   const visibleTiers = new Set([...tierList.filter((tier) => hubTierUnlockStatus(state, tier).unlocked), nextTier].filter((t) => t !== undefined));
   const visibleBuildings = HUB_BUILDINGS.filter((b) => visibleTiers.has(b.tier || 0));
-  const fuelBuildOptions = visibleBuildings.filter((b) => (b.prod?.fuel || 0) > 0);
+  const stagedBuildings = tutorialStage
+    ? visibleBuildings.filter((b) => tutorialBuildingIds.has(b.id))
+    : visibleBuildings;
+  const fuelBuildOptions = stagedBuildings.filter((b) => (b.prod?.fuel || 0) > 0);
   const buildOptions = buildCategory === "all"
-    ? visibleBuildings
+    ? stagedBuildings
     : buildCategory === "fuel"
       ? fuelBuildOptions
-      : visibleBuildings.filter((b) => b.category === buildCategory);
+      : stagedBuildings.filter((b) => b.category === buildCategory);
   const nextTierStatus = nextTier !== undefined ? hubTierUnlockStatus(state, nextTier) : null;
   const fuelRate = state.rates.fuel || 0;
   const metalRate = state.rates.metal || 0;
@@ -2113,6 +2152,19 @@ function HubView({ state, buildHub, buyHubUpgrade, crewBonusText, ascend, format
   const lowHabitat = shouldBlink(state.resources.habitat, state.rates.habitat || 0);
   const lowLife = lowFood || lowHabitat;
   const lowMaterials = lowMetal || lowOrganics;
+  const readyUpgrades = HUB_BUILDINGS
+    .filter((b) => (state.hubBuildings[b.id] || 0) > 0)
+    .map((b) => {
+      const level = state.hubBuildings[b.id] || 0;
+      const cost = scaledHubCost(b.cost, level, b.costExp);
+      const status = hubBuildingUnlockStatus(state, b);
+      const can = status.unlocked && canAffordUI(state.resources, cost);
+      const score = Object.values(cost).reduce((sum, v) => sum + v, 0);
+      return { def: b, level, cost, can, score };
+    })
+    .filter((item) => item.can)
+    .sort((a, b) => a.score - b.score)
+    .slice(0, 3);
   const buildStageOptions = [
     { id: "all", label: "All" },
     { id: "available", label: "Available" },
@@ -2124,6 +2176,10 @@ function HubView({ state, buildHub, buyHubUpgrade, crewBonusText, ascend, format
     { id: "name", label: "Name" },
     { id: "cost", label: "Cost" },
   ];
+  const ownedCount = Object.values(state.hubBuildings || {}).filter((lvl) => lvl > 0).length;
+  const showFilters = ownedCount > 6;
+  const tutorialStage = hubLevels < 3;
+  const tutorialBuildingIds = new Set(["salvage_dock", "food_synth"]);
   const fuelTech = TECH.find((tech) => tech.id === "fuel_synth");
   const fuelTechCost = fuelTech ? scaleCost(fuelTech.cost, PACE.techCostMult) : null;
   const fuelTechSignal = fuelTech ? Math.ceil(fuelTech.unlock * PACE.techUnlockMult) : 0;
@@ -2261,61 +2317,67 @@ function HubView({ state, buildHub, buyHubUpgrade, crewBonusText, ascend, format
 
           {pane === "build" && (
             <div className="space-y-3">
-              <div className="card space-y-2">
-                <div className="text-xs text-muted">Filters</div>
-                <div className="flex flex-wrap gap-2 items-center">
-                  <input
-                    className="w-full md:w-64 rounded-lg border border-white/10 bg-slate-900 px-3 py-2 text-sm text-white"
-                    placeholder="Search bays, outputs, or keywords"
-                    value={buildQuery}
-                    onChange={(e) => setBuildQuery(e.target.value)}
-                  />
-                  <select className="select bg-slate-800 text-white" value={buildCategory} onChange={(e) => setBuildCategory(e.target.value)}>
-                    {buildCategories.map((tab) => (
-                      <option key={tab.id} value={tab.id}>{tab.label}</option>
-                    ))}
-                  </select>
-                  <select className="select bg-slate-800 text-white" value={buildTier} onChange={(e) => setBuildTier(e.target.value)}>
-                    <option value="all">All tiers</option>
-                    {tierList.map((tier) => (
-                      <option key={tier} value={String(tier)}>Tier {tier}</option>
-                    ))}
-                  </select>
+              {showFilters ? (
+                <div className="card space-y-2">
+                  <div className="text-xs text-muted">Filters</div>
                   <div className="flex flex-wrap gap-2 items-center">
-                    <span className="text-[11px] uppercase tracking-[0.2em] text-muted">Stage</span>
-                    {buildStageOptions.map((opt) => (
-                      <button key={opt.id} className={`tab ${buildStage === opt.id ? "active" : ""}`} onClick={() => setBuildStage(opt.id)}>
-                        {opt.label}
-                      </button>
-                    ))}
+                    <input
+                      className="w-full md:w-64 rounded-lg border border-white/10 bg-slate-900 px-3 py-2 text-sm text-white"
+                      placeholder="Search bays, outputs, or keywords"
+                      value={buildQuery}
+                      onChange={(e) => setBuildQuery(e.target.value)}
+                    />
+                    <select className="select bg-slate-800 text-white" value={buildCategory} onChange={(e) => setBuildCategory(e.target.value)}>
+                      {buildCategories.map((tab) => (
+                        <option key={tab.id} value={tab.id}>{tab.label}</option>
+                      ))}
+                    </select>
+                    <select className="select bg-slate-800 text-white" value={buildTier} onChange={(e) => setBuildTier(e.target.value)}>
+                      <option value="all">All tiers</option>
+                      {tierList.map((tier) => (
+                        <option key={tier} value={String(tier)}>Tier {tier}</option>
+                      ))}
+                    </select>
+                    <div className="flex flex-wrap gap-2 items-center">
+                      <span className="text-[11px] uppercase tracking-[0.2em] text-muted">Stage</span>
+                      {buildStageOptions.map((opt) => (
+                        <button key={opt.id} className={`tab ${buildStage === opt.id ? "active" : ""}`} onClick={() => setBuildStage(opt.id)}>
+                          {opt.label}
+                        </button>
+                      ))}
+                    </div>
+                    <div className="flex flex-wrap gap-2 items-center">
+                      <span className="text-[11px] uppercase tracking-[0.2em] text-muted">Sort</span>
+                      {buildSortOptions.map((opt) => (
+                        <button key={opt.id} className={`tab ${buildSort === opt.id ? "active" : ""}`} onClick={() => setBuildSort(opt.id)}>
+                          {opt.label}
+                        </button>
+                      ))}
+                    </div>
                   </div>
-                  <div className="flex flex-wrap gap-2 items-center">
-                    <span className="text-[11px] uppercase tracking-[0.2em] text-muted">Sort</span>
-                    {buildSortOptions.map((opt) => (
-                      <button key={opt.id} className={`tab ${buildSort === opt.id ? "active" : ""}`} onClick={() => setBuildSort(opt.id)}>
-                        {opt.label}
-                      </button>
-                    ))}
+                </div>
+              ) : (
+                <div className="text-xs text-muted">More filters unlock after 6 bays are online.</div>
+              )}
+              {!tutorialStage && (
+                <div className="card grid md:grid-cols-3 gap-2 text-xs">
+                  <div className={`stat-box ${lowMaterials ? "blink-alert" : ""}`}>
+                    <span className="text-muted text-[10px]">Materials</span>
+                    <strong className="text-sm">Metal {format(metalRate)}/t</strong>
+                    <div className="text-[10px] text-muted">Organics {format(organicsRate)}/t</div>
+                  </div>
+                  <div className={`stat-box ${lowLife ? "blink-alert" : ""}`}>
+                    <span className="text-muted text-[10px]">Life Support</span>
+                    <strong className="text-sm">Food {format(foodRate)}/t</strong>
+                    <div className="text-[10px] text-muted">Hab {format(habitatRate)}/t</div>
+                  </div>
+                  <div className={`stat-box ${lowFuel ? "blink-alert" : ""}`}>
+                    <span className="text-muted text-[10px]">Fuel</span>
+                    <strong className="text-sm">Net {format(fuelRate)}/t</strong>
+                    <div className="text-[10px] text-muted">Burn {format(hubFuelCons)}/t</div>
                   </div>
                 </div>
-              </div>
-              <div className="card grid md:grid-cols-3 gap-2 text-xs">
-                <div className={`stat-box ${lowMaterials ? "blink-alert" : ""}`}>
-                  <span className="text-muted text-[10px]">Materials</span>
-                  <strong className="text-sm">Metal {format(metalRate)}/t</strong>
-                  <div className="text-[10px] text-muted">Organics {format(organicsRate)}/t</div>
-                </div>
-                <div className={`stat-box ${lowLife ? "blink-alert" : ""}`}>
-                  <span className="text-muted text-[10px]">Life Support</span>
-                  <strong className="text-sm">Food {format(foodRate)}/t</strong>
-                  <div className="text-[10px] text-muted">Hab {format(habitatRate)}/t</div>
-                </div>
-                <div className={`stat-box ${lowFuel ? "blink-alert" : ""}`}>
-                  <span className="text-muted text-[10px]">Fuel</span>
-                  <strong className="text-sm">Net {format(fuelRate)}/t</strong>
-                  <div className="text-[10px] text-muted">Burn {format(hubFuelCons)}/t</div>
-                </div>
-              </div>
+              )}
               {nextTierStatus && (
                 <div className="card space-y-1">
                   <div className="font-semibold">Tier {nextTier} Unlock</div>
@@ -2334,6 +2396,28 @@ function HubView({ state, buildHub, buyHubUpgrade, crewBonusText, ascend, format
                   <button className="btn" disabled={!canResearchFuel} onClick={() => buyTech("fuel_synth")}>
                     {canResearchFuel ? "Research Fuel Synthesis" : "Requires more resources"}
                   </button>
+                </div>
+              )}
+              {showFilters && readyUpgrades.length > 0 && (
+                <div className="card space-y-2">
+                  <div className="font-semibold">Ready to Upgrade</div>
+                  <div className="list">
+                    {readyUpgrades.map(({ def, level, cost }) => (
+                      <div key={def.id} className="row-item">
+                        <div className="row-details">
+                          <div className="row-title">{def.name} <span className="tag">Lv {level}</span></div>
+                          <div className="row-meta text-xs text-muted">Cost: {costText(cost, format)}</div>
+                        </div>
+                        <button className="btn" onClick={() => buildHub(def.id)}>Upgrade</button>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+              {tutorialStage && (
+                <div className="card space-y-1">
+                  <div className="font-semibold">Foundations Online</div>
+                  <div className="text-xs text-muted">Two bays only. More unlock at Nexus level 3.</div>
                 </div>
               )}
               <div className="list max-h-[520px] overflow-y-auto pr-1 virtual-list">
@@ -2435,12 +2519,12 @@ function HubView({ state, buildHub, buyHubUpgrade, crewBonusText, ascend, format
               {earlyOpsLocked && (
                 <div className="card space-y-2">
                   <div className="font-semibold">Early Hub Loop</div>
-                  <div className="text-xs text-muted">Hub-only startup. Unlock Expeditions at Signal 60 + Nexus Lv 4.</div>
+                  <div className="text-xs text-muted">Hub-only startup. Unlock Expeditions at Nexus level 10.</div>
                   <ul className="text-sm text-muted list-disc list-inside space-y-1">
                     <li>Build Salvage Dock to start metal flow.</li>
-                    <li>Add Biofilter Vats for organics.</li>
-                    <li>Bring Micro Reactor online for power.</li>
-                    <li>Deploy Signal Uplink to raise Signal.</li>
+                    <li>Add Food Synthesizer to stabilize food.</li>
+                    <li>Bring Micro Reactor online once power unlocks.</li>
+                    <li>Deploy Signal Uplink when it appears.</li>
                     <li>Install Hydroponics Bay to stabilize food.</li>
                   </ul>
                 </div>
@@ -3541,20 +3625,20 @@ const FRAGMENT_MILESTONES = FRAGMENT_THRESHOLDS.map((threshold) => ({
   condition: (state) => fragmentProgress(state).percent >= threshold.percent,
 }));
 const UNLOCKS = {
-  missions: { signal: 60, hubLevel: 4 },
-  tech: { signal: 80, research: 10 },
-  crew: { signal: 90, hubLevel: 6, missions: 2 },
-  bases: { signal: 120, missions: 4 },
-  faction: { signal: 100, missions: 3 },
+  missions: { signal: 0, hubLevel: 10 },
+  tech: { signal: 0, research: 0, hubLevel: 15 },
+  crew: { signal: 0, hubLevel: 20, missions: 2 },
+  bases: { signal: 0, hubLevel: 16, missions: 1 },
+  faction: { signal: 0, hubLevel: 30, missions: 3 },
 };
 const MILESTONES = [
   { id: "M0_FOUNDATIONS", title: "Foundations Online", codexEntryId: "foundations", condition: (state) => true },
   { id: "M0_SIGNAL_UPLINK", title: "Signal Uplink Online", codexEntryId: "scan_ops", condition: (state) => (state.hubBuildings?.signal_uplink || 0) >= 1 },
   { id: "M1_LOCAL_OPS", title: "Local Operations", codexEntryId: "local_ops", condition: (state) => (state.resources.signal || 0) >= UNLOCKS.missions.signal && hubTotalLevel(state) >= UNLOCKS.missions.hubLevel },
-  { id: "M1_TECH_ACCESS", title: "Research Grid Online", codexEntryId: "tech_ops", condition: (state) => (state.resources.signal || 0) >= UNLOCKS.tech.signal && (state.resources.research || 0) >= UNLOCKS.tech.research },
+  { id: "M1_TECH_ACCESS", title: "Research Grid Online", codexEntryId: "tech_ops", condition: (state) => (state.resources.signal || 0) >= UNLOCKS.tech.signal && (state.resources.research || 0) >= UNLOCKS.tech.research && hubTotalLevel(state) >= UNLOCKS.tech.hubLevel },
   { id: "M1_CREW_COMMAND", title: "Crew Command", codexEntryId: "crew_ops", condition: (state) => (state.resources.signal || 0) >= UNLOCKS.crew.signal && hubTotalLevel(state) >= UNLOCKS.crew.hubLevel && (state.milestones?.missionsDone || 0) >= UNLOCKS.crew.missions },
-  { id: "M1_BASES_ONLINE", title: "Outpost Charter", codexEntryId: "base_ops", condition: (state) => (state.resources.signal || 0) >= UNLOCKS.bases.signal && (state.milestones?.missionsDone || 0) >= UNLOCKS.bases.missions },
-  { id: "M1_NETWORK_LINK", title: "Relay Network Access", condition: (state) => (state.resources.signal || 0) >= UNLOCKS.faction.signal && (state.milestones?.missionsDone || 0) >= UNLOCKS.faction.missions },
+  { id: "M1_BASES_ONLINE", title: "Outpost Charter", codexEntryId: "base_ops", condition: (state) => (state.resources.signal || 0) >= UNLOCKS.bases.signal && hubTotalLevel(state) >= UNLOCKS.bases.hubLevel && (state.milestones?.missionsDone || 0) >= UNLOCKS.bases.missions },
+  { id: "M1_NETWORK_LINK", title: "Relay Network Access", condition: (state) => (state.resources.signal || 0) >= UNLOCKS.faction.signal && hubTotalLevel(state) >= UNLOCKS.faction.hubLevel && (state.milestones?.missionsDone || 0) >= UNLOCKS.faction.missions },
   { id: "M2_SYSTEMS_DISCOVERED", title: "Systems Unlocked", codexEntryId: "systems_light", condition: (state) => hubRange(state) >= 3 },
   { id: "M2_FIRST_COLONY", title: "First Colony", codexEntryId: "colonies_anchor", condition: (state) => (state.colonies || []).length >= 1 },
   { id: "M3_INTEGRATION_UNLOCK", title: "Integration Projects", codexEntryId: "integration_projects", condition: (state) => (state.systems || []).some((s) => s.integratedAt) },
@@ -4122,54 +4206,57 @@ function unlockHintText(state, supabaseReady) {
   const range = hubRange(state);
   const hints = [];
   if (!unlocked.has("M1_LOCAL_OPS")) {
+    const reqs = [];
+    if (UNLOCKS.missions.signal > 0) reqs.push(`Signal ${Math.floor(signal)}/${UNLOCKS.missions.signal}`);
+    if (UNLOCKS.missions.hubLevel > 0) reqs.push(`Nexus level ${hubLevel}/${UNLOCKS.missions.hubLevel}`);
     hints.push({
       id: "missions",
       title: "Expedition Command",
-      reqs: [
-        `Signal ${Math.floor(signal)}/${UNLOCKS.missions.signal}`,
-        `Nexus level ${hubLevel}/${UNLOCKS.missions.hubLevel}`,
-      ],
+      reqs,
     });
   }
   if (!unlocked.has("M1_TECH_ACCESS")) {
+    const reqs = [];
+    if (UNLOCKS.tech.signal > 0) reqs.push(`Signal ${Math.floor(signal)}/${UNLOCKS.tech.signal}`);
+    if (UNLOCKS.tech.research > 0) reqs.push(`Research ${Math.floor(research)}/${UNLOCKS.tech.research}`);
+    if (UNLOCKS.tech.hubLevel > 0) reqs.push(`Nexus level ${hubLevel}/${UNLOCKS.tech.hubLevel}`);
     hints.push({
       id: "tech",
       title: "Research Command",
-      reqs: [
-        `Signal ${Math.floor(signal)}/${UNLOCKS.tech.signal}`,
-        `Research ${Math.floor(research)}/${UNLOCKS.tech.research}`,
-      ],
+      reqs,
     });
   }
   if (!unlocked.has("M1_CREW_COMMAND")) {
+    const reqs = [];
+    if (UNLOCKS.crew.signal > 0) reqs.push(`Signal ${Math.floor(signal)}/${UNLOCKS.crew.signal}`);
+    if (UNLOCKS.crew.hubLevel > 0) reqs.push(`Nexus level ${hubLevel}/${UNLOCKS.crew.hubLevel}`);
+    if (UNLOCKS.crew.missions > 0) reqs.push(`Expeditions ${missionsDone}/${UNLOCKS.crew.missions}`);
     hints.push({
       id: "crew",
       title: "Crew Command",
-      reqs: [
-        `Signal ${Math.floor(signal)}/${UNLOCKS.crew.signal}`,
-        `Nexus level ${hubLevel}/${UNLOCKS.crew.hubLevel}`,
-        `Expeditions ${missionsDone}/${UNLOCKS.crew.missions}`,
-      ],
+      reqs,
     });
   }
   if (!unlocked.has("M1_BASES_ONLINE")) {
+    const reqs = [];
+    if (UNLOCKS.bases.signal > 0) reqs.push(`Signal ${Math.floor(signal)}/${UNLOCKS.bases.signal}`);
+    if (UNLOCKS.bases.hubLevel > 0) reqs.push(`Nexus level ${hubLevel}/${UNLOCKS.bases.hubLevel}`);
+    if (UNLOCKS.bases.missions > 0) reqs.push(`Expeditions ${missionsDone}/${UNLOCKS.bases.missions}`);
     hints.push({
       id: "bases",
       title: "Outpost Charter",
-      reqs: [
-        `Signal ${Math.floor(signal)}/${UNLOCKS.bases.signal}`,
-        `Expeditions ${missionsDone}/${UNLOCKS.bases.missions}`,
-      ],
+      reqs,
     });
   }
   if (supabaseReady && !unlocked.has("M1_NETWORK_LINK")) {
+    const reqs = [];
+    if (UNLOCKS.faction.signal > 0) reqs.push(`Signal ${Math.floor(signal)}/${UNLOCKS.faction.signal}`);
+    if (UNLOCKS.faction.hubLevel > 0) reqs.push(`Nexus level ${hubLevel}/${UNLOCKS.faction.hubLevel}`);
+    if (UNLOCKS.faction.missions > 0) reqs.push(`Expeditions ${missionsDone}/${UNLOCKS.faction.missions}`);
     hints.push({
       id: "faction",
       title: "Relay Network",
-      reqs: [
-        `Signal ${Math.floor(signal)}/${UNLOCKS.faction.signal}`,
-        `Expeditions ${missionsDone}/${UNLOCKS.faction.missions}`,
-      ],
+      reqs,
     });
   }
   if (!unlocked.has("M2_SYSTEMS_DISCOVERED")) {
