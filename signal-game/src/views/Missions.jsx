@@ -5,8 +5,9 @@ import { PACE, TECH } from "../game/data";
 const scaleCost = (baseCost, mult) => Object.fromEntries(Object.entries(baseCost || {}).map(([key, value]) => [key, Math.ceil(value * mult)]));
 const costText = (cost, format) => Object.entries(cost || {}).map(([key, value]) => `${format(value)} ${key}`).join(", ");
 
-export default function MissionsView({ state, startMission, setAutoLaunch, setSelected, format, missionModeById, missionYield, formatDuration, bodies, missionModes, isUnlockedUI, baseBonuses, hubRange, depletionFactor, missionMods, missionDurationMult, bodyUnlockMult, buyTech, embedded = false, defaultPane = "targeting" }) {
+export default function MissionsView({ state, startMission, setAutoLaunch, setSelected, format, missionModeById, missionYield, formatDuration, bodies, missionModes, isUnlockedUI, baseBonuses, hubRange, depletionFactor, missionMods, missionDurationMult, bodyUnlockMult, buyTech, embedded = false, defaultPane = "targeting", compact = false }) {
   const [pane, setPane] = useState(defaultPane);
+  const showTabs = !embedded || defaultPane === "targeting";
   const missionTabs = [
     { id: "targeting", label: "Target Lattice" },
     { id: "launch", label: "Launch Bay" },
@@ -59,6 +60,22 @@ export default function MissionsView({ state, startMission, setAutoLaunch, setSe
     return entries.map(([key, value]) => `${format(value)} ${key}`).join(" | ");
   };
 
+  if (compact && pane === "active") {
+    return (
+      <div className={`${embedded ? "" : "panel "}space-y-3 mission-command`}>
+        <div className="card mission-panel">
+          <div className="font-semibold">Active Expeditions</div>
+          <ActiveMissions
+            state={state}
+            bodies={bodies}
+            missionModeById={missionModeById}
+            formatDuration={formatDuration}
+          />
+        </div>
+      </div>
+    );
+  }
+
   const content = (
     <div className={`${embedded ? "" : "panel "}space-y-4 mission-command`}>
       {!embedded && (
@@ -85,14 +102,18 @@ export default function MissionsView({ state, startMission, setAutoLaunch, setSe
             <div className="font-semibold">Expedition Operations Deck</div>
             <div className="text-xs text-muted">Targeting, launch routing, and live ops telemetry.</div>
           </div>
-          <div className="text-xs text-muted">Each biome feeds a different bottleneck. Use Target Intel to pick the right supply chain.</div>
-          <div className="flex flex-wrap gap-2">
-            {missionTabs.map((tab) => (
-              <button key={tab.id} className={`tab ${pane === tab.id ? "active" : ""}`} onClick={() => setPane(tab.id)}>
-                {tab.label}
-              </button>
-            ))}
+          <div className="text-xs text-muted">
+            {showTabs ? "Each biome feeds a different bottleneck. Use Target Intel to pick the right supply chain." : "Live expedition telemetry and returns in progress."}
           </div>
+          {showTabs && (
+            <div className="flex flex-wrap gap-2">
+              {missionTabs.map((tab) => (
+                <button key={tab.id} className={`tab ${pane === tab.id ? "active" : ""}`} onClick={() => setPane(tab.id)}>
+                  {tab.label}
+                </button>
+              ))}
+            </div>
+          )}
         </div>
         {firstLaunch && (
           <div className="card space-y-1">

@@ -43,12 +43,14 @@ export default function ExpeditionsView(props) {
           {...props}
           embedded
           defaultPane="active"
+          compact
         />
       )}
       {pane === "outposts" && (
         <BasesView
           {...props}
           embedded
+          compact
         />
       )}
     </section>

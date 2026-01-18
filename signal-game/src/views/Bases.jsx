@@ -32,6 +32,7 @@ export default function BasesView({
   baseZones,
   unlockBaseZone,
   embedded = false,
+  compact = false,
 }) {
   const body = bodies.find((b) => b.id === state.selectedBody) || bodies[0];
   const buildings = biomeBuildings[body.type] || [];
@@ -136,14 +137,33 @@ export default function BasesView({
             <div className="text-xs text-muted">Site-level controls, fabrication, and field protocols.</div>
           </div>
           <div className="text-xs text-muted">Each site is tuned to its biome. Build for the resource chain your hub lacks.</div>
-          <div className="flex flex-wrap gap-2">
-            {tabOrder.map((key) => (
-              <button key={key} className={`tab ${pane === key ? "active" : ""}`} onClick={() => setPane(key)}>
-                {paneLabels[key] || key[0].toUpperCase() + key.slice(1)}
-              </button>
-            ))}
-          </div>
+          {compact ? (
+            <select className="select bg-slate-800 text-white" value={pane} onChange={(e) => setPane(e.target.value)}>
+              {tabOrder.map((key) => (
+                <option key={key} value={key}>{paneLabels[key] || key[0].toUpperCase() + key.slice(1)}</option>
+              ))}
+            </select>
+          ) : (
+            <div className="flex flex-wrap gap-2">
+              {tabOrder.map((key) => (
+                <button key={key} className={`tab ${pane === key ? "active" : ""}`} onClick={() => setPane(key)}>
+                  {paneLabels[key] || key[0].toUpperCase() + key.slice(1)}
+                </button>
+              ))}
+            </div>
+          )}
         </div>
+        {compact && (
+          <div className="row row-between rounded-xl border border-emerald-400/10 bg-slate-900/60 px-3 py-2 text-xs">
+            <div className="flex items-center gap-2">
+              <span className="tag">{body.name}</span>
+              <span className="tag">{labelify(body.type)} Site</span>
+              <span className="tag">Travel {formatDuration(body.travel * 1000)}</span>
+              <span className="tag">Hazard {(body.hazard * 100).toFixed(0)}%</span>
+            </div>
+            <span className="text-muted">Focus: {labelify(base.focus)}</span>
+          </div>
+        )}
 
         {pane === "overview" && (
           <div className="grid lg:grid-cols-2 gap-3">
