@@ -1,7 +1,11 @@
 // Expeditions view: handles target selection, launch config, specialists, auto-launch, and showing active expeditions.
 import { useEffect, useState } from "react";
+import { PACE, TECH } from "../game/data";
 
-export default function MissionsView({ state, startMission, setAutoLaunch, setSelected, format, missionModeById, missionYield, formatDuration, bodies, missionModes, isUnlockedUI, baseBonuses, hubRange, depletionFactor, missionMods, missionDurationMult, bodyUnlockMult, embedded = false, defaultPane = "targeting" }) {
+const scaleCost = (baseCost, mult) => Object.fromEntries(Object.entries(baseCost || {}).map(([key, value]) => [key, Math.ceil(value * mult)]));
+const costText = (cost, format) => Object.entries(cost || {}).map(([key, value]) => `${format(value)} ${key}`).join(", ");
+
+export default function MissionsView({ state, startMission, setAutoLaunch, setSelected, format, missionModeById, missionYield, formatDuration, bodies, missionModes, isUnlockedUI, baseBonuses, hubRange, depletionFactor, missionMods, missionDurationMult, bodyUnlockMult, buyTech, embedded = false, defaultPane = "targeting" }) {
   const [pane, setPane] = useState(defaultPane);
   const missionTabs = [
     { id: "targeting", label: "Target Lattice" },
@@ -158,24 +162,25 @@ export default function MissionsView({ state, startMission, setAutoLaunch, setSe
 
         {pane === "launch" && (
           <div className="space-y-2">
-            <div className="font-semibold">Launch Bay</div>
-            <MissionLaunch
-              state={state}
-              startMission={startMission}
-              setAutoLaunch={setAutoLaunch}
-              format={format}
+          <div className="font-semibold">Launch Bay</div>
+          <MissionLaunch
+            state={state}
+            startMission={startMission}
+            setAutoLaunch={setAutoLaunch}
+            format={format}
               missionModeById={missionModeById}
               missionYield={missionYield}
               formatDuration={formatDuration}
               bodies={bodies}
               missionModes={unlockedModes}
-              baseBonuses={baseBonuses}
-              depletionFactor={depletionFactor}
-              missionMods={missionMods}
-              missionDurationMult={missionDurationMult}
-              isUnlockedUI={isUnlockedUI}
-            />
-          </div>
+            baseBonuses={baseBonuses}
+            depletionFactor={depletionFactor}
+            missionMods={missionMods}
+            missionDurationMult={missionDurationMult}
+            isUnlockedUI={isUnlockedUI}
+            buyTech={buyTech}
+          />
+        </div>
         )}
 
         {pane === "active" && (
@@ -229,7 +234,7 @@ export default function MissionsView({ state, startMission, setAutoLaunch, setSe
   return content;
 }
 
-function MissionLaunch({ state, startMission, setAutoLaunch, format, missionModeById, missionYield, formatDuration, bodies, missionModes, baseBonuses, depletionFactor, missionMods, missionDurationMult, isUnlockedUI }) {
+function MissionLaunch({ state, startMission, setAutoLaunch, format, missionModeById, missionYield, formatDuration, bodies, missionModes, baseBonuses, depletionFactor, missionMods, missionDurationMult, isUnlockedUI, buyTech }) {
   const [fuelBoost, setFuelBoost] = useState(0);
   const [modeId, setModeId] = useState("balanced");
   const [specialist, setSpecialist] = useState("none");
@@ -255,6 +260,11 @@ function MissionLaunch({ state, startMission, setAutoLaunch, format, missionMode
   const slotsFull = active.length >= slots;
   const fuelBlocked = fuelCost > 0 && (state.resources.fuel || 0) < fuelCost;
   const canDeploy = !targetLocked && !slotsFull && !fuelBlocked;
+  const fuelTech = TECH.find((tech) => tech.id === "fuel_synth");
+  const fuelTechCost = fuelTech ? scaleCost(fuelTech.cost, PACE.techCostMult) : null;
+  const fuelTechSignal = fuelTech ? Math.ceil(fuelTech.unlock * PACE.techUnlockMult) : 0;
+  const fuelTechSignalMet = (state.resources.signal || 0) >= fuelTechSignal;
+  const canResearchFuel = fuelTechCost ? Object.entries(fuelTechCost).every(([key, value]) => (state.resources[key] || 0) >= value) && fuelTechSignalMet : false;
   const deployMessage = targetLocked
     ? "Target locked. Select an available body in Target Lattice."
     : slotsFull
@@ -331,6 +341,22 @@ function MissionLaunch({ state, startMission, setAutoLaunch, format, missionMode
           </div>
         )}
       </div>
+
+      {!state.tech?.fuel_synth && fuelTech && (
+        <div className="card space-y-2 mission-panel">
+          <div className="font-semibold">Fuel Unlock</div>
+          <div className="text-xs text-muted">Research Fuel Synthesis to open the Fuel Refinery in the Hub.</div>
+          {fuelTechCost && (
+            <div className="text-xs text-muted">
+              Cost: {costText(fuelTechCost, format)}
+              {fuelTechSignal > 0 ? ` | Signal ${format(fuelTechSignal)}` : ""}
+            </div>
+          )}
+          <button className="btn" disabled={!canResearchFuel} onClick={() => buyTech?.("fuel_synth")}>
+            Research Fuel Synthesis
+          </button>
+        </div>
+      )}
 
       <div className="card space-y-2 mission-panel">
         <div className="font-semibold">Auto-deploy</div>

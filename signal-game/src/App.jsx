@@ -1815,6 +1815,7 @@ function biomeBuildingById(id) { return Object.values(BIOME_BUILDINGS).flat().fi
                   setBaseWorkerPreset={setBaseWorkerPreset}
                   unlockBaseZone={unlockBaseZone}
                   baseZones={BASE_ZONES}
+                  buyTech={buyTech}
                 />
               </Suspense>
             )}
