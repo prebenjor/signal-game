@@ -307,6 +307,7 @@ function MissionLaunch({ state, startMission, setAutoLaunch, format, missionMode
       <div className="card space-y-2 mission-panel">
         <div className="font-semibold">Cargo Projection</div>
         <div className="text-sm">{Object.entries(forecast).map(([k, v]) => `${format(v)} ${k}`).join(" - ")}</div>
+        <div className="text-xs text-muted">Fuel cost: {fuelCost}{isFirstMission ? " (first expedition)" : ""}</div>
         <div className="text-xs text-muted">Hazard {Math.round(hazard * 100)}% | Failure risk ~{failChance}% | Travel {formatDuration(travelMs)} | Mode {mode?.name}</div>
         <div className="text-xs text-muted">Efficiency {efficiencyPct}% | Variance +/-10%</div>
         {command.over > 0 && <div className="text-xs text-muted">Command over-capacity: -{Math.round(command.over * 7)}% cargo, +{Math.round(command.over * 8)}% travel time.</div>}
