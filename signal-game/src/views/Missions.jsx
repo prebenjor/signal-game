@@ -17,7 +17,7 @@ export default function MissionsView({ state, startMission, setAutoLaunch, setSe
   const missionsDone = state.milestones?.missionsDone || 0;
   const signal = state.resources.signal || 0;
   const techState = state.tech || {};
-  const firstLaunch = !state.milestones?.firstLaunch;
+  const firstLaunch = (state.milestones?.missionsDone || 0) === 0;
   const formatName = (value) => value
     .split("_")
     .map((word) => word.charAt(0).toUpperCase() + word.slice(1))
@@ -250,7 +250,8 @@ function MissionLaunch({ state, startMission, setAutoLaunch, format, missionMode
   const efficiencyPct = Math.round(efficiency * 100);
   const command = missionMods?.command || { used: 0, capacity: 0, over: 0 };
   const targetLocked = isUnlockedUI ? !isUnlockedUI(state, body) : false;
-  const fuelCost = !state.milestones?.firstLaunch ? 0 : Math.max(5, Math.floor(body.travel / 3)) + fuelBoost;
+  const isFirstMission = (state.milestones?.missionsDone || 0) === 0;
+  const fuelCost = isFirstMission ? 0 : Math.max(5, Math.floor(body.travel / 3)) + fuelBoost;
   const slotsFull = active.length >= slots;
   const fuelBlocked = fuelCost > 0 && (state.resources.fuel || 0) < fuelCost;
   const canDeploy = !targetLocked && !slotsFull && !fuelBlocked;
@@ -322,6 +323,11 @@ function MissionLaunch({ state, startMission, setAutoLaunch, format, missionMode
         </button>
         {(deployMessage || launchMessage) && (
           <div className="text-xs text-muted">{deployMessage || launchMessage}</div>
+        )}
+        {fuelBlocked && (
+          <div className="text-xs text-muted">
+            Unlock fuel production via Hub &gt; Fabrication: Research Fuel Synthesis, then build Fuel Refinery.
+          </div>
         )}
       </div>
 

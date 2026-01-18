@@ -1217,7 +1217,8 @@ export default function App() {
     const hubMods = hubUpgradeMods(state);
     let fuelCost = Math.max(5, Math.floor(body.travel / 3)) + fuelBoost;
     fuelCost = Math.ceil(fuelCost * (missionMods.fuelMult || 1) * (crewMods.fuelMult || 1) * (hubMods.fuelMult || 1));
-    if (!state.milestones?.firstLaunch) fuelCost = 0;
+    const isFirstMission = (state.milestones?.missionsDone || 0) === 0;
+    if (isFirstMission || !state.milestones?.firstLaunch) fuelCost = 0;
     if (fuelCost > 0 && state.resources.fuel < fuelCost) return fail("Not enough fuel.");
     bumpResources({ fuel: -fuelCost });
     const mode = isMissionModeUnlocked(state, missionModeById(modeId)) ? missionModeById(modeId) : firstUnlockedMissionMode(state);
@@ -1769,6 +1770,7 @@ function biomeBuildingById(id) { return Object.values(BIOME_BUILDINGS).flat().fi
                 supabaseReady={supabaseReady}
                 toggleAutoBalance={toggleAutoBalance}
                 setPriority={setPriority}
+                buyTech={buyTech}
               />
             )}
             {state.tab === 'expeditions' && (
@@ -2023,7 +2025,7 @@ function AccountView({ state, exportProfile, importProfile, compact, setCompact,
   );
 }
 
-function HubView({ state, buildHub, buyHubUpgrade, crewBonusText, ascend, format, supabaseReady, toggleAutoBalance, setPriority }) {
+function HubView({ state, buildHub, buyHubUpgrade, crewBonusText, ascend, format, supabaseReady, toggleAutoBalance, setPriority, buyTech }) {
   const [pane, setPane] = useState("build");
   const initialCategory = (state.resources.power || 0) <= 0 && !(state.hubBuildings?.reactor) ? "power" : "all";
   const [buildCategory, setBuildCategory] = useState(initialCategory);
@@ -2121,6 +2123,11 @@ function HubView({ state, buildHub, buyHubUpgrade, crewBonusText, ascend, format
     { id: "name", label: "Name" },
     { id: "cost", label: "Cost" },
   ];
+  const fuelTech = TECH.find((tech) => tech.id === "fuel_synth");
+  const fuelTechCost = fuelTech ? scaleCost(fuelTech.cost, PACE.techCostMult) : null;
+  const fuelTechSignal = fuelTech ? Math.ceil(fuelTech.unlock * PACE.techUnlockMult) : 0;
+  const fuelTechUnlocked = !fuelTech || state.tech.fuel_synth;
+  const canResearchFuel = fuelTechCost ? canAffordUI(state.resources, fuelTechCost) && (state.resources.signal || 0) >= fuelTechSignal : false;
   const hubTabs = [
     { id: "build", label: "Fabrication" },
     { id: "upgrades", label: "Upgrades" },
@@ -2313,6 +2320,19 @@ function HubView({ state, buildHub, buyHubUpgrade, crewBonusText, ascend, format
                   <div className="font-semibold">Tier {nextTier} Unlock</div>
                   <div className="text-xs text-muted">Advance the hub to surface the next fabrication tier.</div>
                   <div className="text-xs text-muted">{nextTierStatus.reasons.join(" | ")}</div>
+                </div>
+              )}
+              {!fuelTechUnlocked && fuelTechCost && (
+                <div className="card space-y-2">
+                  <div className="font-semibold">Fuel Synthesis Research</div>
+                  <div className="text-xs text-muted">Unlocks Fuel Refinery and early fuel bays.</div>
+                  <div className="text-xs text-muted">
+                    Cost: {costText(fuelTechCost, format)}
+                    {fuelTechSignal > 0 ? ` | Signal ${format(fuelTechSignal)}` : ""}
+                  </div>
+                  <button className="btn" disabled={!canResearchFuel} onClick={() => buyTech("fuel_synth")}>
+                    {canResearchFuel ? "Research Fuel Synthesis" : "Requires more resources"}
+                  </button>
                 </div>
               )}
               <div className="list max-h-[520px] overflow-y-auto pr-1 virtual-list">
@@ -4006,7 +4026,10 @@ function hubTierUnlockStatus(stateObj, tier) {
   if (rules.signal && signal < rules.signal) reasons.push(`Signal ${Math.floor(signal)}/${rules.signal}`);
   if (rules.hubLevel && hubLevel < rules.hubLevel) reasons.push(`Nexus level ${hubLevel}/${rules.hubLevel}`);
   if (rules.missions && missionsDone < rules.missions) reasons.push(`Expeditions ${missionsDone}/${rules.missions}`);
-  if (rules.tech && !stateObj.tech?.[rules.tech]) reasons.push(`Tech: ${rules.tech}`);
+  if (rules.tech && !stateObj.tech?.[rules.tech]) {
+    const techName = TECH.find((tech) => tech.id === rules.tech)?.name || rules.tech;
+    reasons.push(`Research: ${techName}`);
+  }
   if (rules.milestone && !(stateObj.milestonesUnlocked || []).includes(rules.milestone)) reasons.push("Milestone not met");
   return { unlocked: reasons.length === 0, reasons };
 }
@@ -4018,7 +4041,10 @@ function hubBuildingUnlockStatus(stateObj, def) {
   if (unlock.signal && (stateObj.resources?.signal || 0) < unlock.signal) reasons.push(`Signal ${Math.floor(stateObj.resources.signal || 0)}/${unlock.signal}`);
   if (unlock.hubLevel && hubTotalLevel(stateObj) < unlock.hubLevel) reasons.push(`Nexus level ${hubTotalLevel(stateObj)}/${unlock.hubLevel}`);
   if (unlock.missions && (stateObj.milestones?.missionsDone || 0) < unlock.missions) reasons.push(`Expeditions ${stateObj.milestones?.missionsDone || 0}/${unlock.missions}`);
-  if (unlock.tech && !stateObj.tech?.[unlock.tech]) reasons.push(`Tech: ${unlock.tech}`);
+  if (unlock.tech && !stateObj.tech?.[unlock.tech]) {
+    const techName = TECH.find((tech) => tech.id === unlock.tech)?.name || unlock.tech;
+    reasons.push(`Research: ${techName}`);
+  }
   if (unlock.milestone && !(stateObj.milestonesUnlocked || []).includes(unlock.milestone)) reasons.push("Milestone not met");
   (unlock.requires || []).forEach((req) => {
     const level = stateObj.hubBuildings?.[req.id] || 0;
@@ -4036,7 +4062,10 @@ function hubUpgradeUnlockStatus(stateObj, def) {
   const unlock = def.unlock || {};
   if (unlock.signal && (stateObj.resources?.signal || 0) < unlock.signal) reasons.push(`Signal ${Math.floor(stateObj.resources.signal || 0)}/${unlock.signal}`);
   if (unlock.missions && (stateObj.milestones?.missionsDone || 0) < unlock.missions) reasons.push(`Expeditions ${stateObj.milestones?.missionsDone || 0}/${unlock.missions}`);
-  if (unlock.tech && !stateObj.tech?.[unlock.tech]) reasons.push(`Tech: ${unlock.tech}`);
+  if (unlock.tech && !stateObj.tech?.[unlock.tech]) {
+    const techName = TECH.find((tech) => tech.id === unlock.tech)?.name || unlock.tech;
+    reasons.push(`Research: ${techName}`);
+  }
   if (unlock.milestone && !(stateObj.milestonesUnlocked || []).includes(unlock.milestone)) reasons.push("Milestone not met");
   (def.requires || []).forEach((req) => {
     const lvl = stateObj.hubBuildings?.[req.id] || 0;

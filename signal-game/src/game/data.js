@@ -70,7 +70,7 @@ export const HUB_BUILDINGS = [
   { id: "biofilter_vats", name: "Biofilter Vats", desc: "+2 organics/tick", cost: { metal: 25 }, prod: { organics: 2 }, cons: {}, tier: 0, category: "life" },
   { id: "reactor", name: "Micro Reactor", desc: "+3 power/tick", cost: { metal: 70, organics: 10 }, prod: { power: 3 }, cons: {}, tier: 0, category: "power", costExp: 1.14, unlock: { requires: [{ id: "salvage_dock", level: 1 }] } },
   { id: "signal_uplink", name: "Signal Uplink", desc: "+2 signal/tick", cost: { metal: 40, organics: 12 }, prod: { signal: 2 }, cons: { power: 1 }, tier: 0, category: "signal", unlock: { requires: [{ id: "reactor", level: 1 }] } },
-  { id: "refinery", name: "Fuel Refinery", desc: "+1 fuel/tick", cost: { metal: 110, organics: 20 }, prod: { fuel: 1 }, cons: { power: 1 }, tier: 1, category: "logistics", costExp: 1.1, unlock: { tech: "fuel_synth", requires: [{ id: "biofilter_vats", level: 2 }] } },
+  { id: "refinery", name: "Fuel Refinery", desc: "+1 fuel/tick", cost: { metal: 110, organics: 20 }, prod: { fuel: 1 }, cons: { power: 1 }, tier: 1, category: "logistics", costExp: 1.1, unlock: { tech: "fuel_synth" } },
   { id: "hab", name: "Hab Module", desc: "+3 habitat", cost: { metal: 140, organics: 50 }, prod: { habitat: 3 }, cons: { power: 1 }, tier: 1, category: "life", unlock: { requires: [{ id: "biofilter_vats", level: 1 }] } },
   { id: "hydroponics", name: "Hydroponics Bay", desc: "+2 food/tick, +1 habitat", cost: { metal: 130, organics: 45 }, prod: { food: 2, habitat: 1 }, cons: { power: 1 }, tier: 1, category: "life", unlock: { requires: [{ id: "hab", level: 1 }] } },
   { id: "rec", name: "Rec Dome", desc: "Boosts morale", cost: { metal: 120, organics: 80 }, prod: { morale: 0.02 }, cons: { power: 1 }, tier: 1, category: "life", unlock: { requires: [{ id: "hydroponics", level: 1 }] } },
@@ -164,7 +164,7 @@ export const BASE_TRAITS = {
 };
 
 export const TECH = [
-  { id: "fuel_synth", tier: 1, name: "Fuel Synthesis", desc: "Unlocks Fuel Refinery building.", cost: { research: 12 }, unlock: 300, requires: [] },
+  { id: "fuel_synth", tier: 1, name: "Fuel Synthesis", desc: "Unlocks Fuel Refinery building.", cost: { research: 12 }, unlock: 0, requires: [] },
   { id: "advanced_refining", tier: 2, name: "Advanced Refining", desc: "Unlocks Hydrogen Cracker fuel bays.", cost: { research: 140 }, unlock: 1200, requires: ["fuel_synth"] },
   { id: "hazard_gear", tier: 2, name: "Hazard Gear", desc: "-25% expedition hazard", cost: { research: 60 }, unlock: 900, requires: ["fuel_synth"] },
   { id: "drone_log", tier: 2, name: "Logistics Drones", desc: "+20% expedition cargo", cost: { research: 90 }, unlock: 1400, requires: ["fuel_synth"] },
